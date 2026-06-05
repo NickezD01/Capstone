@@ -1,0 +1,29 @@
+﻿using AutoMapper;
+using cpms_Application.Request.User;
+using cpms_Application.Response.UserAccount;
+using cpms_Domain.Models;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+
+namespace cpms_Application.MyMapper
+{
+    public class MapperConfigurationsProfile : Profile
+    {
+        public MapperConfigurationsProfile()
+        {
+            //UserAccount
+            //CreateMap<UserProfileResponse, UserAccount>();
+
+            CreateMap<UpdateUserRoleRequest, UserAccount>();
+            CreateMap<UpdateUserRequest, UserAccount>();
+            CreateMap<UserAccount, UserProfileResponse>();
+            CreateMap<UserAccount, AccountResponse>();
+
+
+
+        }
+    }
+}
