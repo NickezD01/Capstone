@@ -28,7 +28,7 @@ namespace cpms_Application.MyMapper
             // Project mapping
             CreateMap<CreateProjectRequest, Project>();
             CreateMap<Project, ProjectResponse>();
-            //
+            
 
         }
     }
