@@ -13,6 +13,7 @@ namespace cpms_Application.Repository
         Task<T> GetAsync(Expression<Func<T, bool>> filter);
         Task AddAsync(T entity);
         Task RemoveByIdAsync(object id);
+        Task<T?> GetByIdAsync(object id);
 
         void Remove(T entity);
         Task<int> CountAsync();

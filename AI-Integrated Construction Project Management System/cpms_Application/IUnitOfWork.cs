@@ -30,6 +30,7 @@ namespace cpms_Application
         ISupplierRepository Suppliers { get; }
         ISupplierCatalogRepository SupplierCatalogs { get; }
         ISupplierMetricRepository SupplierMetrics { get; }
+        ICategoryRepository Categories { get; }
 
         // ========================================================
         // PURCHASING & ORDERS

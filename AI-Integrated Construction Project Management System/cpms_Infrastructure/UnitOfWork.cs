@@ -30,6 +30,7 @@ namespace cpms_Infrastructure
         public IOrderLineItemRepository OrderLineItems { get; }
         public IEmailVerificationRepository EmailVerifications { get; }
         public IRefreshTokenRepository RefreshTokens { get; }
+        public ICategoryRepository Categories { get; }
 
         // =========================================
         // CONSTRUCTOR (Khởi tạo toàn bộ Repo bằng context)
@@ -50,6 +51,7 @@ namespace cpms_Infrastructure
             OrderLineItems = new OrderLineItemRepository(context);
             EmailVerifications = new EmailVerificationRepository(context);
             RefreshTokens = new RefreshTokenRepository(context);
+            Categories = new CategoryRepository(context);
         }
 
         // =========================================

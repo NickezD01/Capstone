@@ -14,6 +14,8 @@ namespace cpms_Domain.Models
         public ProjectStatus Status { get; set; } = ProjectStatus.PLANNING;
         public DateTime BaselineStart { get; set; }
         public DateTime BaselineEnd { get; set; }
+        public decimal TotalProjectBudget { get; set; }
+        public string Currency { get; set; }
 
         // Navigation
         public virtual ICollection<TaskItem> Tasks { get; set; } = new List<TaskItem>();

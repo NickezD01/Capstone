@@ -10,8 +10,11 @@ namespace cpms_Domain.Models
     {
         public int MaterialId { get; set; }
         public string MaterialName { get; set; } = null!;
-        public string Unit { get; set; } = null!; // kg, tons, bags
-        public string Category { get; set; } = null!;
+        public string Unit { get; set; } = null!;
+
+        // SỬA: Thay string bằng Id
+        public int CategoryId { get; set; }
+        public virtual Category Category { get; set; } = null!;
 
         // Navigation
         public virtual ICollection<SupplierCatalog> SupplierCatalogs { get; set; } = new List<SupplierCatalog>();

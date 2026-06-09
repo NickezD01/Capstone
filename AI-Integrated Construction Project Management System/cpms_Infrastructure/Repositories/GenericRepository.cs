@@ -100,5 +100,10 @@ namespace cpms_Infrastructure.Repositories
         {
             _db.Remove(entity);
         }
+        public async Task<T?> GetByIdAsync(object id)
+        {
+            // Sử dụng FindAsync của EF Core để lấy entity theo khóa chính
+            return await _db.FindAsync(id);
+        }
     }
 }

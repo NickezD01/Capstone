@@ -1,5 +1,7 @@
 ﻿using AutoMapper;
+using cpms_Application.Request.Project;
 using cpms_Application.Request.User;
+using cpms_Application.Response.Project;
 using cpms_Application.Response.UserAccount;
 using cpms_Domain.Models;
 using System;
@@ -23,6 +25,10 @@ namespace cpms_Application.MyMapper
             CreateMap<UserAccount, AccountResponse>();
 
 
+            // Project mapping
+            CreateMap<CreateProjectRequest, Project>();
+            CreateMap<Project, ProjectResponse>();
+            //
 
         }
     }

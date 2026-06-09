@@ -19,6 +19,10 @@ namespace cpms_Infrastructure.Configuration
             builder.Property(t => t.PhaseName).IsRequired().HasMaxLength(100);
             builder.Property(t => t.TaskName).IsRequired().HasMaxLength(200);
 
+            // BỔ SUNG: Cấu hình kiểu dữ liệu tài chính cho AI phân tích
+            builder.Property(t => t.PlannedBudget).HasColumnType("decimal(18,2)");
+            builder.Property(t => t.ActualCost).HasColumnType("decimal(18,2)");
+
             builder.Property(t => t.Status)
                    .HasMaxLength(30)
                    .HasConversion<string>();
@@ -27,7 +31,7 @@ namespace cpms_Infrastructure.Configuration
             builder.Property(t => t.IsDeleted).HasDefaultValue(false);
             builder.HasQueryFilter(t => !t.IsDeleted);
 
-            // Mối quan hệ [1]: TaskItem -> Project (1-N)
+            // Mối quan hệ 1-N: Project -> TaskItem
             builder.HasOne(t => t.Project)
                    .WithMany(p => p.Tasks)
                    .HasForeignKey(t => t.ProjectId)

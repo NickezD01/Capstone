@@ -18,7 +18,14 @@ namespace cpms_Infrastructure.Configuration
 
             builder.Property(m => m.MaterialName).IsRequired().HasMaxLength(200);
             builder.Property(m => m.Unit).HasMaxLength(50);
-            builder.Property(m => m.Category).HasMaxLength(100);
+
+            // XÓA DÒNG NÀY: builder.Property(m => m.Category).HasMaxLength(100);
+
+            // THÊM QUAN HỆ NÀY ĐỂ EF CORE TỰ HIỂU:
+            builder.HasOne(m => m.Category) // Thuộc tính navigation trong Material
+                   .WithMany(c => c.Materials) // Thuộc tính collection trong Category
+                   .HasForeignKey(m => m.CategoryId) // Khóa ngoại
+                   .OnDelete(DeleteBehavior.Restrict);
 
             builder.Property(m => m.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
             builder.Property(m => m.IsDeleted).HasDefaultValue(false);

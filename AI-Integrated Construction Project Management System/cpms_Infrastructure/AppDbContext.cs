@@ -35,6 +35,7 @@ namespace cpms_Infrastructure
         public DbSet<OrderLineItem> OrderLineItems { get; set; }
         public DbSet<EmailVerification> EmailVerifications { get; set; }
         public DbSet<RefreshToken> RefreshTokens { get; set; }
+        public DbSet<Category> Categories { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

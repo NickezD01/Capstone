@@ -16,12 +16,9 @@ namespace cpms_Infrastructure.Configuration
             builder.ToTable("UserAccounts");
             builder.HasKey(u => u.Id);
 
+            // Cấu hình thuộc tính người dùng
             builder.Property(u => u.Email).IsRequired().HasMaxLength(150);
             builder.HasIndex(u => u.Email).IsUnique();
-            builder.Property(u => u.FirstName).HasMaxLength(50);
-            builder.Property(u => u.LastName).HasMaxLength(50);
-            builder.Property(u => u.PhoneNumber).HasMaxLength(20);
-            builder.Property(u => u.ImgUrl).HasMaxLength(500);
             builder.Property(u => u.PasswordHash).IsRequired();
             builder.Property(u => u.PasswordSalt).IsRequired();
 
@@ -29,10 +26,20 @@ namespace cpms_Infrastructure.Configuration
                    .HasMaxLength(20)
                    .HasConversion<string>();
 
-            // Cấu hình thuộc tính từ lớp Base
+            // Thiết lập quan hệ với các bảng liên quan
+            builder.HasMany(u => u.PurchaseOrders)
+                   .WithOne(po => po.UserAccount)
+                   .HasForeignKey(po => po.UserAccountId)
+                   .OnDelete(DeleteBehavior.Restrict); // Tránh xóa User nếu PO còn tồn tại
+
+            builder.HasMany(u => u.ProgressReports)
+                   .WithOne(pr => pr.Engineer)
+                   .HasForeignKey(pr => pr.EngineerId)
+                   .OnDelete(DeleteBehavior.Restrict);
+
             builder.Property(u => u.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
             builder.Property(u => u.IsDeleted).HasDefaultValue(false);
-            builder.HasQueryFilter(u => !u.IsDeleted); // Tự động lọc khi dùng Soft Delete
+            builder.HasQueryFilter(u => !u.IsDeleted);
         }
     }
 }
