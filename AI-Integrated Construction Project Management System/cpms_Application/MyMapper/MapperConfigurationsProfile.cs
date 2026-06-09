@@ -1,5 +1,6 @@
 ﻿using AutoMapper;
 using cpms_Application.Request.Project;
+using cpms_Application.Request.PurchaseOrder;
 using cpms_Application.Request.User;
 using cpms_Application.Response.Project;
 using cpms_Application.Response.UserAccount;
@@ -28,7 +29,10 @@ namespace cpms_Application.MyMapper
             // Project mapping
             CreateMap<CreateProjectRequest, Project>();
             CreateMap<Project, ProjectResponse>();
-            
+
+            CreateMap<CreatePurchaseOrderRequest, PurchaseOrder>();
+            CreateMap<OrderLineItemDto, OrderLineItem>();
+
 
         }
     }
