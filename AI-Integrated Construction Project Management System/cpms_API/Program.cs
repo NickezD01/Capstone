@@ -122,7 +122,9 @@ builder.Services.AddScoped<IClaimService, ClaimService>();
 builder.Services.AddScoped<IUserAccountService, UserAccountService>();
 builder.Services.AddScoped<IProjectService, ProjectService>();
 builder.Services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
-
+builder.Services.AddScoped<ISupplierService, SupplierService>();
+builder.Services.AddScoped<ICatalogService, CatalogService>();
+builder.Services.AddScoped<IMaterialService, MaterialService>();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
