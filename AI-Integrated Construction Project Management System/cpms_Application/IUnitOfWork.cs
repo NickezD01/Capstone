@@ -1,4 +1,5 @@
 ﻿using cpms_Application.Repository;
+using cpms_Domain.Models;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -37,6 +38,8 @@ namespace cpms_Application
         // ========================================================
         IPurchaseOrderRepository PurchaseOrders { get; }
         IOrderLineItemRepository OrderLineItems { get; }
+        IWarehouseRepository Warehouses { get; }
+        IInventoryRepository Inventories { get; }
 
         // ========================================================
         // CORE METHODS

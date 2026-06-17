@@ -31,6 +31,9 @@ namespace cpms_Infrastructure
         public IEmailVerificationRepository EmailVerifications { get; }
         public IRefreshTokenRepository RefreshTokens { get; }
         public ICategoryRepository Categories { get; }
+        public IWarehouseRepository Warehouses { get; }
+        public IInventoryRepository Inventories { get; }
+
 
         // =========================================
         // CONSTRUCTOR (Khởi tạo toàn bộ Repo bằng context)
@@ -52,6 +55,9 @@ namespace cpms_Infrastructure
             EmailVerifications = new EmailVerificationRepository(context);
             RefreshTokens = new RefreshTokenRepository(context);
             Categories = new CategoryRepository(context);
+            Warehouses = new WarehouseRepository(context);
+            Inventories = new InventoryRepository(context);
+
         }
 
         // =========================================

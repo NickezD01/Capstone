@@ -50,5 +50,11 @@ namespace cpms_API.Controllers
             var result = await _poService.ApprovePurchaseOrderAsync(id);
             return result.IsSuccess ? Ok(result) : BadRequest(result);
         }
+        [HttpPost("{poId}/import")]
+        public async Task<IActionResult> Import(int poId, [FromQuery] int warehouseId)
+        {
+            var result = await _poService.ImportToWarehouseAsync(poId, warehouseId);
+            return Ok(result);
+        }
     }
 }

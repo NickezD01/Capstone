@@ -19,5 +19,6 @@ namespace cpms_Domain.Models
         // Navigation
         public virtual ICollection<SupplierCatalog> SupplierCatalogs { get; set; } = new List<SupplierCatalog>();
         public virtual ICollection<OrderLineItem> OrderLineItems { get; set; } = new List<OrderLineItem>();
+        public virtual ICollection<Inventory> Inventories { get; set; } = new List<Inventory>();
     }
 }

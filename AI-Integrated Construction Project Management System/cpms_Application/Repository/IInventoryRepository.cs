@@ -7,8 +7,7 @@ using System.Threading.Tasks;
 
 namespace cpms_Application.Repository
 {
-    public interface IPurchaseOrderRepository : IGenericRepository<PurchaseOrder>
+    public interface IInventoryRepository : IGenericRepository<Inventory>
     {
-        Task<PurchaseOrder?> GetWithItemsAsync(int poId);
     }
 }

@@ -99,5 +99,48 @@ namespace cpms_Application.Services
                 return response.SetBadRequest(ex.Message);
             }
         }
+
+        public async Task<ApiResponse> ImportToWarehouseAsync(int poId, int warehouseId)
+        {
+            var po = await _uow.PurchaseOrders.GetWithItemsAsync(poId);
+            if (po == null || po.Status != PurchaseOrderStatus.APPROVED)
+                return new ApiResponse().SetBadRequest("Đơn hàng không tồn tại hoặc chưa được phê duyệt!");
+
+            await _uow.BeginTransactionAsync(); // Gọi qua UnitOfWork
+            try
+            {
+                foreach (var item in po.OrderLineItems)
+                {
+                    // Sử dụng repository mới được tạo
+                    var inventory = await _uow.Inventories.GetAsync(x =>
+                        x.WarehouseId == warehouseId && x.MaterialId == item.MaterialId);
+
+                    if (inventory == null)
+                    {
+                        await _uow.Inventories.AddAsync(new Inventory
+                        {
+                            WarehouseId = warehouseId,
+                            MaterialId = item.MaterialId,
+                            Quantity = item.Quantity
+                        });
+                    }
+                    else
+                    {
+                        inventory.Quantity += item.Quantity;
+                    }
+                }
+
+                po.Status = PurchaseOrderStatus.DELIVERED;
+                await _uow.SaveChangeAsync();
+                await _uow.CommitTransactionAsync();
+
+                return new ApiResponse().SetOk("Nhập kho thành công!");
+            }
+            catch (Exception ex)
+            {
+                await _uow.RollbackTransactionAsync();
+                return new ApiResponse().SetBadRequest("Lỗi nhập kho: " + ex.Message);
+            }
+        }
     }
 }

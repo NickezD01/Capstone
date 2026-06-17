@@ -5,6 +5,7 @@ using cpms_Application.Request.PurchaseOrder;
 using cpms_Application.Request.Supplier;
 using cpms_Application.Request.SupplierCatalog;
 using cpms_Application.Request.User;
+using cpms_Application.Request.Warehouse;
 using cpms_Application.Response.Project;
 using cpms_Application.Response.UserAccount;
 using cpms_Domain.Models;
@@ -41,6 +42,8 @@ namespace cpms_Application.MyMapper
             CreateMap<CreateSupplierRequest, Supplier>();
             
             CreateMap<CreateCatalogRequest, SupplierCatalog>();
+
+            CreateMap<CreateWarehouseRequest, Warehouse>();
         }
     }
 }

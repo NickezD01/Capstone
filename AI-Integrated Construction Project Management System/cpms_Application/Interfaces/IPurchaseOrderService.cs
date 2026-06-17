@@ -13,5 +13,6 @@ namespace cpms_Application.Interfaces
         Task<ApiResponse> CreatePurchaseOrderAsync(CreatePurchaseOrderRequest request);
         Task<ApiResponse> GetAllPurchaseOrdersAsync(); // Lấy danh sách
         Task<ApiResponse> ApprovePurchaseOrderAsync(int poId); // Phê duyệt
+        Task<ApiResponse> ImportToWarehouseAsync(int poId, int warehouseId);
     }
 }
