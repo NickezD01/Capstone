@@ -9,5 +9,6 @@ namespace cpms_Application.Repository
 {
     public interface IInventoryRepository : IGenericRepository<Inventory>
     {
+        void Update(Inventory entity);
     }
 }

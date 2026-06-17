@@ -105,5 +105,11 @@ namespace cpms_Infrastructure.Repositories
             // Sử dụng FindAsync của EF Core để lấy entity theo khóa chính
             return await _db.FindAsync(id);
         }
+        public void Update(T entity)
+        {
+            // Đánh dấu thực thể là đã thay đổi để EF theo dõi
+            _db.Update(entity);
+        }
+
     }
 }

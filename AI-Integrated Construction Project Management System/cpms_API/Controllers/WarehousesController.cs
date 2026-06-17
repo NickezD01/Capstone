@@ -26,5 +26,12 @@ namespace cpms_API.Controllers
         {
             return Ok(await _warehouseService.GetAllWarehousesAsync());
         }
+
+        [HttpGet("{id}/inventory")]
+        public async Task<IActionResult> GetWarehouseInventory(int id)
+        {
+            var result = await _warehouseService.GetWarehouseInventoryAsync(id);
+            return Ok(result);
+        }
     }
 }

@@ -15,6 +15,8 @@ namespace cpms_Application.Repository
         Task RemoveByIdAsync(object id);
         Task<T?> GetByIdAsync(object id);
 
+        void Update(T entity);
+
         void Remove(T entity);
         Task<int> CountAsync();
         Task AddRangeAsync(List<T> entities);

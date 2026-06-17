@@ -12,5 +12,7 @@ namespace cpms_Application.Interfaces
     {
         Task<ApiResponse> CreateWarehouseAsync(CreateWarehouseRequest request);
         Task<ApiResponse> GetAllWarehousesAsync();
+
+        Task<ApiResponse> GetWarehouseInventoryAsync(int warehouseId);
     }
 }

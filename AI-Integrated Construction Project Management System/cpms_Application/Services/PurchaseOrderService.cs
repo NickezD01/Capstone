@@ -5,8 +5,6 @@ using cpms_Application.Response;
 using cpms_Domain.Models;
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace cpms_Application.Services
@@ -15,11 +13,14 @@ namespace cpms_Application.Services
     {
         private readonly IUnitOfWork _uow;
         private readonly IMapper _mapper;
+        private readonly IClaimService _claimService; // Đã thêm
 
-        public PurchaseOrderService(IUnitOfWork uow, IMapper mapper)
+        // Cập nhật Constructor để nhận IClaimService
+        public PurchaseOrderService(IUnitOfWork uow, IMapper mapper, IClaimService claimService)
         {
             _uow = uow;
             _mapper = mapper;
+            _claimService = claimService;
         }
 
         public async Task<ApiResponse> CreatePurchaseOrderAsync(CreatePurchaseOrderRequest request)
@@ -28,48 +29,57 @@ namespace cpms_Application.Services
             await _uow.BeginTransactionAsync();
             try
             {
+                // 1. Map request sang entity
                 var po = _mapper.Map<PurchaseOrder>(request);
-                po.OrderDate = DateTime.UtcNow;
-                po.Status = PurchaseOrderStatus.PENDING; // Đã sửa lỗi kiểu dữ liệu
 
-                // Khởi tạo biến lưu tổng tiền
+                // 2. Lấy User Id từ Token của người dùng đang đăng nhập
+                var userClaim = _claimService.GetUserClaim();
+                po.UserAccountId = userClaim.Id;
+
+                // 3. Thiết lập thông tin mặc định
+                po.OrderDate = DateTime.UtcNow;
+                po.Status = PurchaseOrderStatus.PENDING;
+
                 decimal total = 0;
 
-                // Lưu PO trước để lấy PoId (Database tạo khóa chính)
+                // 4. Lưu PO để lấy PoId từ DB
                 await _uow.PurchaseOrders.AddAsync(po);
                 await _uow.SaveChangeAsync();
 
+                // 5. Lưu các item con
                 foreach (var item in request.Items)
                 {
                     var lineItem = _mapper.Map<OrderLineItem>(item);
                     lineItem.PoId = po.PoId;
-
-                    // Tính toán giá trị từng dòng
                     total += (lineItem.Quantity * lineItem.UnitPrice);
 
                     await _uow.OrderLineItems.AddAsync(lineItem);
                 }
 
-                // Cập nhật tổng tiền vào PO
                 po.TotalAmount = total;
-
                 await _uow.SaveChangeAsync();
-                await _uow.CommitTransactionAsync();
 
+                await _uow.CommitTransactionAsync();
                 return response.SetOk("Order created successfully with total amount: " + total);
             }
             catch (Exception ex)
             {
                 await _uow.RollbackTransactionAsync();
-                return response.SetBadRequest(ex.Message);
+
+                // CẢI TIẾN: Lấy chi tiết lỗi từ Database (InnerException)
+                var errorMsg = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
+                return response.SetBadRequest("Error saving order: " + errorMsg);
             }
         }
+
+        // ... (Các hàm GetAllPurchaseOrdersAsync, ApprovePurchaseOrderAsync, ImportToWarehouseAsync giữ nguyên)
+
         public async Task<ApiResponse> GetAllPurchaseOrdersAsync()
         {
             var response = new ApiResponse();
             try
             {
-                var pos = await _uow.PurchaseOrders.GetAllAsync(null); // Lấy tất cả
+                var pos = await _uow.PurchaseOrders.GetAllAsync(null);
                 return response.SetOk(pos);
             }
             catch (Exception ex)
@@ -102,21 +112,24 @@ namespace cpms_Application.Services
 
         public async Task<ApiResponse> ImportToWarehouseAsync(int poId, int warehouseId)
         {
+            // Lấy PO kèm các vật liệu
             var po = await _uow.PurchaseOrders.GetWithItemsAsync(poId);
+
             if (po == null || po.Status != PurchaseOrderStatus.APPROVED)
                 return new ApiResponse().SetBadRequest("Đơn hàng không tồn tại hoặc chưa được phê duyệt!");
 
-            await _uow.BeginTransactionAsync(); // Gọi qua UnitOfWork
+            await _uow.BeginTransactionAsync();
             try
             {
                 foreach (var item in po.OrderLineItems)
                 {
-                    // Sử dụng repository mới được tạo
+                    // Kiểm tra vật liệu đã có trong kho này chưa
                     var inventory = await _uow.Inventories.GetAsync(x =>
                         x.WarehouseId == warehouseId && x.MaterialId == item.MaterialId);
 
                     if (inventory == null)
                     {
+                        // Nếu chưa có thì thêm mới
                         await _uow.Inventories.AddAsync(new Inventory
                         {
                             WarehouseId = warehouseId,
@@ -126,12 +139,16 @@ namespace cpms_Application.Services
                     }
                     else
                     {
+                        // Nếu có rồi thì cộng dồn
                         inventory.Quantity += item.Quantity;
+                        // CỰC KỲ QUAN TRỌNG: Nếu repo có .AsNoTracking(), 
+                        // bạn phải gọi hàm Update để EF theo dõi thay đổi
+                        _uow.Inventories.Update(inventory);
                     }
                 }
 
                 po.Status = PurchaseOrderStatus.DELIVERED;
-                await _uow.SaveChangeAsync();
+                await _uow.SaveChangeAsync(); // Lưu tất cả thay đổi vào DB
                 await _uow.CommitTransactionAsync();
 
                 return new ApiResponse().SetOk("Nhập kho thành công!");
@@ -139,7 +156,7 @@ namespace cpms_Application.Services
             catch (Exception ex)
             {
                 await _uow.RollbackTransactionAsync();
-                return new ApiResponse().SetBadRequest("Lỗi nhập kho: " + ex.Message);
+                return new ApiResponse().SetBadRequest("Lỗi hệ thống: " + ex.Message);
             }
         }
     }
