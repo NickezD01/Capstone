@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace cpms_Application.Repository
 {
-    public interface IUserAccountRepository : IGenericRepository<UserAccount>
+    public interface IUserRepository : IGenericRepository<User>
     {
     }
 }

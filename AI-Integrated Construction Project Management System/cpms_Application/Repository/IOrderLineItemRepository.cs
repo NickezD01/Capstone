@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace cpms_Application.Repository
 {
-    public interface IOrderLineItemRepository : IGenericRepository<OrderLineItem>
+    public interface IOrderLineItemRepository : IGenericRepository<PurchaseOrderDetail>
     {
     }
 }

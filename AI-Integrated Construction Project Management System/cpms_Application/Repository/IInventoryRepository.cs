@@ -7,8 +7,8 @@ using System.Threading.Tasks;
 
 namespace cpms_Application.Repository
 {
-    public interface IInventoryRepository : IGenericRepository<Inventory>
+    public interface IInventoryRepository : IGenericRepository<MaterialInventory>
     {
-        void Update(Inventory entity);
+        void Update(MaterialInventory entity);
     }
 }

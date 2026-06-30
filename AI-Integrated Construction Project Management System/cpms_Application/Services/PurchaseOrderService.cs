@@ -32,13 +32,9 @@ namespace cpms_Application.Services
                 // 1. Map request sang entity
                 var po = _mapper.Map<PurchaseOrder>(request);
 
-                // 2. Lấy User Id từ Token của người dùng đang đăng nhập
-                var userClaim = _claimService.GetUserClaim();
-                po.UserAccountId = userClaim.Id;
-
-                // 3. Thiết lập thông tin mặc định
+                // 2. Thiết lập thông tin mặc định
                 po.OrderDate = DateTime.UtcNow;
-                po.Status = PurchaseOrderStatus.PENDING;
+                po.Status = "PENDING";
 
                 decimal total = 0;
 
@@ -49,9 +45,9 @@ namespace cpms_Application.Services
                 // 5. Lưu các item con
                 foreach (var item in request.Items)
                 {
-                    var lineItem = _mapper.Map<OrderLineItem>(item);
-                    lineItem.PoId = po.PoId;
-                    total += (lineItem.Quantity * lineItem.UnitPrice);
+                    var lineItem = _mapper.Map<PurchaseOrderDetail>(item);
+                    lineItem.Poid = po.Poid;
+                    total += lineItem.Quantity.GetValueOrDefault() * lineItem.UnitPrice.GetValueOrDefault();
 
                     await _uow.OrderLineItems.AddAsync(lineItem);
                 }
@@ -93,13 +89,13 @@ namespace cpms_Application.Services
             var response = new ApiResponse();
             try
             {
-                var po = await _uow.PurchaseOrders.GetAsync(p => p.PoId == poId);
+                var po = await _uow.PurchaseOrders.GetAsync(p => p.Poid == poId);
                 if (po == null) return response.SetNotFound("Order not found");
 
-                if (po.Status != PurchaseOrderStatus.PENDING)
+                if (po.Status != "PENDING")
                     return response.SetBadRequest("Only PENDING orders can be approved");
 
-                po.Status = PurchaseOrderStatus.APPROVED;
+                po.Status = "APPROVED";
 
                 await _uow.SaveChangeAsync();
                 return response.SetOk("Order approved successfully");
@@ -115,13 +111,13 @@ namespace cpms_Application.Services
             // Lấy PO kèm các vật liệu
             var po = await _uow.PurchaseOrders.GetWithItemsAsync(poId);
 
-            if (po == null || po.Status != PurchaseOrderStatus.APPROVED)
+            if (po == null || po.Status != "APPROVED")
                 return new ApiResponse().SetBadRequest("Đơn hàng không tồn tại hoặc chưa được phê duyệt!");
 
             await _uow.BeginTransactionAsync();
             try
             {
-                foreach (var item in po.OrderLineItems)
+                foreach (var item in po.PurchaseOrderDetails)
                 {
                     // Kiểm tra vật liệu đã có trong kho này chưa
                     var inventory = await _uow.Inventories.GetAsync(x =>
@@ -130,7 +126,7 @@ namespace cpms_Application.Services
                     if (inventory == null)
                     {
                         // Nếu chưa có thì thêm mới
-                        await _uow.Inventories.AddAsync(new Inventory
+                        await _uow.Inventories.AddAsync(new MaterialInventory
                         {
                             WarehouseId = warehouseId,
                             MaterialId = item.MaterialId,
@@ -147,7 +143,7 @@ namespace cpms_Application.Services
                     }
                 }
 
-                po.Status = PurchaseOrderStatus.DELIVERED;
+                po.Status = "DELIVERED";
                 await _uow.SaveChangeAsync(); // Lưu tất cả thay đổi vào DB
                 await _uow.CommitTransactionAsync();
 

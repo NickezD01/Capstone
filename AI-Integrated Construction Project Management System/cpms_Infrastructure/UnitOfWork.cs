@@ -18,7 +18,7 @@ namespace cpms_Infrastructure
         // =========================================
         // PROPERTIES (Chỉ đọc bên ngoài, gán bên trong)
         // =========================================
-        public IUserAccountRepository UserAccounts { get; }
+        public IUserRepository Users { get; }
         public IProjectRepository Projects { get; }
         public ITaskItemRepository TaskItems { get; }
         public IProgressReportRepository ProgressReports { get; }
@@ -42,7 +42,7 @@ namespace cpms_Infrastructure
         {
             _context = context;
 
-            UserAccounts = new UserAccountRepository(context);
+            Users = new UserRepository(context);
             Projects = new ProjectRepository(context);
             TaskItems = new TaskItemRepository(context);
             ProgressReports = new ProgressReportRepository(context);

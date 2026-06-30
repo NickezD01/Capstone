@@ -10,6 +10,8 @@ namespace cpms_Application.Request.Project
     {
         public string ProjectName { get; set; } = null!;
         public string? Address { get; set; }
-        public DateTime StartDate { get; set; }
+        public DateTime? StartDate { get; set; }
+        public long? ProjectManagerId { get; set; }
+        public long? CustomerId { get; set; }
     }
 }

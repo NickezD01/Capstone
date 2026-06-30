@@ -1,24 +1,39 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
-namespace cpms_Domain.Models
+namespace cpms_Domain.Models;
+
+public partial class Material
 {
-    public class Material : Base
-    {
-        public int MaterialId { get; set; }
-        public string MaterialName { get; set; } = null!;
-        public string Unit { get; set; } = null!;
+    public long MaterialId { get; set; }
 
-        // SỬA: Thay string bằng Id
-        public int CategoryId { get; set; }
-        public virtual Category Category { get; set; } = null!;
+    public string? MaterialCode { get; set; }
 
-        // Navigation
-        public virtual ICollection<SupplierCatalog> SupplierCatalogs { get; set; } = new List<SupplierCatalog>();
-        public virtual ICollection<OrderLineItem> OrderLineItems { get; set; } = new List<OrderLineItem>();
-        public virtual ICollection<Inventory> Inventories { get; set; } = new List<Inventory>();
-    }
+    public string? MaterialName { get; set; }
+
+    public long? CategoryId { get; set; }
+
+    public long? UnitId { get; set; }
+
+    public string? Specification { get; set; }
+
+    public string? Description { get; set; }
+
+    public decimal? MinStock { get; set; }
+
+    public string? Status { get; set; }
+
+    public virtual MaterialCategory? Category { get; set; }
+
+    public virtual ICollection<GoodsReceiptDetail> GoodsReceiptDetails { get; set; } = new List<GoodsReceiptDetail>();
+
+    public virtual ICollection<MaterialInventory> MaterialInventories { get; set; } = new List<MaterialInventory>();
+
+    public virtual ICollection<MaterialIssueDetail> MaterialIssueDetails { get; set; } = new List<MaterialIssueDetail>();
+
+    public virtual ICollection<MaterialRequestDetail> MaterialRequestDetails { get; set; } = new List<MaterialRequestDetail>();
+
+    public virtual ICollection<PurchaseOrderDetail> PurchaseOrderDetails { get; set; } = new List<PurchaseOrderDetail>();
+
+    public virtual Unit? Unit { get; set; }
 }

@@ -1,31 +1,31 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
-namespace cpms_Domain.Models
+namespace cpms_Domain.Models;
+
+public partial class Project
 {
-    public class Project : Base
-    {
-        public int ProjectId { get; set; }
-        public string ProjectName { get; set; } = null!;
-        public string? Address { get; set; }
-        public ProjectStatus Status { get; set; } = ProjectStatus.PLANNING;
-        public DateTime BaselineStart { get; set; }
-        public DateTime BaselineEnd { get; set; }
-        public decimal TotalProjectBudget { get; set; }
-        public string Currency { get; set; }
+    public long ProjectId { get; set; }
 
-        // Navigation
-        public virtual ICollection<TaskItem> Tasks { get; set; } = new List<TaskItem>();
-        public virtual ICollection<PurchaseOrder> PurchaseOrders { get; set; } = new List<PurchaseOrder>();
-    }
-    public enum ProjectStatus
-    {
-        PLANNING,
-        IN_PROGRESS,
-        COMPLETED,
-        DELAYED
-    }
+    public string? ProjectName { get; set; }
+
+    public string? Address { get; set; }
+
+    public string? Status { get; set; }
+
+    public long? ProjectManagerId { get; set; }
+
+    public long? CustomerId { get; set; }
+
+    public DateOnly? BaselineStart { get; set; }
+
+    public DateOnly? BaselineEnd { get; set; }
+
+    public DateTime? CreatedDate { get; set; }
+
+    public virtual ICollection<MaterialIssue> MaterialIssues { get; set; } = new List<MaterialIssue>();
+
+    public virtual ICollection<MaterialRequest> MaterialRequests { get; set; } = new List<MaterialRequest>();
+
+    public virtual ICollection<Task> Tasks { get; set; } = new List<Task>();
 }

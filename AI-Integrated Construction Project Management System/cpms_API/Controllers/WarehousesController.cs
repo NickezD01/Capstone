@@ -1,11 +1,14 @@
-﻿using cpms_Application.Interfaces;
+﻿using cpms_Application.Authorization;
+using cpms_Application.Interfaces;
 using cpms_Application.Request.Warehouse;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace cpms_API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize(Roles = AppRoles.WarehouseManager + "," + AppRoles.Admin)]
     public class WarehousesController : ControllerBase
     {
         private readonly IWarehouseService _warehouseService;

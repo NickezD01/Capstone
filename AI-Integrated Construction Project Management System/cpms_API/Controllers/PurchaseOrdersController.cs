@@ -1,4 +1,5 @@
-﻿using cpms_Application.Interfaces;
+﻿using cpms_Application.Authorization;
+using cpms_Application.Interfaces;
 using cpms_Application.Request.PurchaseOrder;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -7,7 +8,7 @@ namespace cpms_API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize] // Yêu cầu đăng nhập để thực hiện mua sắm
+    [Authorize(Roles = AppRoles.WarehouseManager)] // Warehouse manager is the only actor allowed to manage purchase orders
     public class PurchaseOrdersController : ControllerBase
     {
         private readonly IPurchaseOrderService _poService;

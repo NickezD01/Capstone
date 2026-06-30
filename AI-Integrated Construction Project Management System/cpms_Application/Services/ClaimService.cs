@@ -33,7 +33,7 @@ namespace cpms_Application.Services
                 throw new ArgumentNullException("UserId cannot be found!");
             }
 
-            int userId = int.Parse(tokenUserId.Value);
+            long userId = long.Parse(tokenUserId.Value);
 
             string role = tokenUserRole?.Value ?? string.Empty;
 
@@ -52,7 +52,7 @@ namespace cpms_Application.Services
 
     public class ClaimDTO
     {
-        public int Id { get; set; }
+        public long Id { get; set; }
 
         public string Role { get; set; } = string.Empty;
 

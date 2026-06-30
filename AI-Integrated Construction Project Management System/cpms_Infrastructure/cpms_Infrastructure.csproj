@@ -27,5 +27,8 @@
 	  <ProjectReference Include="..\cpms_Application\cpms_Application.csproj" />
 	  <ProjectReference Include="..\cpms_Domain\cpms_Domain.csproj" />
 	</ItemGroup>
+	<ItemGroup>
+	  <Compile Remove="Configuration\**\*.cs" />
+	</ItemGroup>
 
 </Project>

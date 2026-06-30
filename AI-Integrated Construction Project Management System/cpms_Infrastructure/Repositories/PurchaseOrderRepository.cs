@@ -17,8 +17,8 @@ namespace cpms_Infrastructure.Repositories
         public async Task<PurchaseOrder?> GetWithItemsAsync(int poId)
         {
             return await _context.PurchaseOrders
-                .Include(po => po.OrderLineItems) // Load danh sách vật liệu kèm theo
-                .FirstOrDefaultAsync(po => po.PoId == poId);
+                .Include(po => po.PurchaseOrderDetails) // Load danh sách vật liệu kèm theo
+                .FirstOrDefaultAsync(po => po.Poid == poId);
         }
     }
 }

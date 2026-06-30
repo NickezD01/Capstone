@@ -9,9 +9,9 @@ using System.Threading.Tasks;
 
 namespace cpms_Infrastructure.Repositories
 {
-    public class UserAccountRepository : GenericRepository<UserAccount>, IUserAccountRepository
+    public class UserRepository : GenericRepository<User>, IUserRepository
     {
-        public UserAccountRepository(AppDbContext context) : base(context)
+        public UserRepository(AppDbContext context) : base(context)
         {
         }
     }

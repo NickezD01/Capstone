@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Task = System.Threading.Tasks.Task;
 
 namespace cpms_Application
 {
@@ -13,7 +14,7 @@ namespace cpms_Application
         // ========================================================
         // USER MANAGEMENT
         // ========================================================
-        IUserAccountRepository UserAccounts { get; }
+        IUserRepository Users { get; }
         IRefreshTokenRepository RefreshTokens { get; }
         IEmailVerificationRepository EmailVerifications { get; }
 

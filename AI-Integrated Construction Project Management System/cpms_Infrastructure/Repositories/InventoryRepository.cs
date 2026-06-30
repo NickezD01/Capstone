@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 namespace cpms_Infrastructure.Repositories
 {
-    public class InventoryRepository : GenericRepository<Inventory>, IInventoryRepository
+    public class InventoryRepository : GenericRepository<MaterialInventory>, IInventoryRepository
     {
         public InventoryRepository(AppDbContext context) : base(context) { }
     }

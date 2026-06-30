@@ -9,30 +9,23 @@ using System.Threading.Tasks;
 
 namespace cpms_Infrastructure.Configuration
 {
-    public class InventoryConfiguration : IEntityTypeConfiguration<Inventory>
+    public class InventoryConfiguration : IEntityTypeConfiguration<MaterialInventory>
     {
-        public void Configure(EntityTypeBuilder<Inventory> builder)
+        public void Configure(EntityTypeBuilder<MaterialInventory> builder)
         {
-            builder.ToTable("Inventories");
             builder.HasKey(i => i.InventoryId);
 
             // Cấu hình Quan hệ 1-N (Warehouse - Inventory)
             builder.HasOne(i => i.Warehouse)
-                   .WithMany(w => w.Inventories)
-                   .HasForeignKey(i => i.WarehouseId)
-                   .OnDelete(DeleteBehavior.Cascade); // Xóa kho sẽ xóa luôn tồn kho trong đó
+                   .WithMany(w => w.MaterialInventories)
+                   .HasForeignKey(i => i.WarehouseId);
 
             // Cấu hình Quan hệ 1-N (Material - Inventory)
             builder.HasOne(i => i.Material)
-                   .WithMany(m => m.Inventories)
-                   .HasForeignKey(i => i.MaterialId)
-                   .OnDelete(DeleteBehavior.Restrict); // Không cho xóa vật liệu nếu còn trong kho
+                   .WithMany(m => m.MaterialInventories)
+                   .HasForeignKey(i => i.MaterialId);
 
             builder.Property(i => i.Quantity).HasPrecision(18, 4); // Độ chính xác cao cho số lượng
-
-            builder.Property(i => i.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
-            builder.Property(i => i.IsDeleted).HasDefaultValue(false);
-            builder.HasQueryFilter(i => !i.IsDeleted);
         }
     }
 }

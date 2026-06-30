@@ -13,5 +13,6 @@ namespace cpms_Application.Interfaces
         Task<ApiResponse> CreateProjectAsync(CreateProjectRequest request);
         Task<ApiResponse> GetAllProjectsAsync();
         Task<ApiResponse> GetProjectByIdAsync(int id);
+        Task<ApiResponse> UpdateProjectStatusAsync(int id, UpdateProjectStatusRequest request);
     }
 }

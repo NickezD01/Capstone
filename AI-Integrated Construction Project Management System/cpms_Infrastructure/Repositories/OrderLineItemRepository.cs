@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 namespace cpms_Infrastructure.Repositories
 {
-    public class OrderLineItemRepository : GenericRepository<OrderLineItem>, IOrderLineItemRepository
+    public class OrderLineItemRepository : GenericRepository<PurchaseOrderDetail>, IOrderLineItemRepository
     {
         public OrderLineItemRepository(AppDbContext context) : base(context)
         {
