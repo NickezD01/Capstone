@@ -9,30 +9,35 @@ using System.Threading.Tasks;
 
 namespace cpms_Infrastructure.Configuration
 {
-    public class InventoryConfiguration : IEntityTypeConfiguration<Inventory>
+    public class InventoryRecordConfiguration : IEntityTypeConfiguration<InventoryRecord>
     {
-        public void Configure(EntityTypeBuilder<Inventory> builder)
+        public void Configure(EntityTypeBuilder<InventoryRecord> builder)
         {
-            builder.ToTable("Inventories");
-            builder.HasKey(i => i.InventoryId);
+            // 🚀 ĐỒNG BỘ: Map trúng tên bảng InventoryRecords theo ERD
+            builder.ToTable("InventoryRecords");
+            builder.HasKey(ir => ir.InventoryId);
 
-            // Cấu hình Quan hệ 1-N (Warehouse - Inventory)
-            builder.HasOne(i => i.Warehouse)
-                   .WithMany(w => w.Inventories)
-                   .HasForeignKey(i => i.WarehouseId)
-                   .OnDelete(DeleteBehavior.Cascade); // Xóa kho sẽ xóa luôn tồn kho trong đó
+            // Cấu hình Quan hệ 1-N (Warehouse - InventoryRecord)
+            builder.HasOne(ir => ir.Warehouse)
+                   .WithMany(w => w.InventoryRecords) // Sử dụng đúng tên thuộc tính mới ở Warehouse
+                   .HasForeignKey(ir => ir.WarehouseId)
+                   .OnDelete(DeleteBehavior.Cascade);
 
-            // Cấu hình Quan hệ 1-N (Material - Inventory)
-            builder.HasOne(i => i.Material)
-                   .WithMany(m => m.Inventories)
-                   .HasForeignKey(i => i.MaterialId)
-                   .OnDelete(DeleteBehavior.Restrict); // Không cho xóa vật liệu nếu còn trong kho
+            // Cấu hình Quan hệ 1-N (Material - InventoryRecord)
+            builder.HasOne(ir => ir.Material)
+                   .WithMany(m => m.Inventories) // Sử dụng đúng tên thuộc tính mới ở Material
+                   .HasForeignKey(ir => ir.MaterialId)
+                   .OnDelete(DeleteBehavior.Restrict);
 
-            builder.Property(i => i.Quantity).HasPrecision(18, 4); // Độ chính xác cao cho số lượng
+            // 🚀 ĐỒNG BỘ: Cấu hình chi tiết các trường số lượng mới theo ERD
+            builder.Property(ir => ir.QuantityOnHand).HasColumnType("decimal(18,4)").HasDefaultValue(0);
+            builder.Property(ir => ir.ReservedQuantity).HasColumnType("decimal(18,4)").HasDefaultValue(0);
+            builder.Property(ir => ir.ReorderLevel).HasColumnType("decimal(18,4)").HasDefaultValue(0);
+            builder.Property(ir => ir.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
 
-            builder.Property(i => i.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
-            builder.Property(i => i.IsDeleted).HasDefaultValue(false);
-            builder.HasQueryFilter(i => !i.IsDeleted);
+            builder.Property(ir => ir.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
+            builder.Property(ir => ir.IsDeleted).HasDefaultValue(false);
+            builder.HasQueryFilter(ir => !ir.IsDeleted);
         }
     }
 }

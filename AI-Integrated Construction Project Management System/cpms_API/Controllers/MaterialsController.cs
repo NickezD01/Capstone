@@ -4,19 +4,43 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace cpms_API.Controllers
 {
-    [Route("api/[controller]")]
-    [ApiController]
-    public class MaterialsController : ControllerBase
+    using cpms_Application.Interfaces;
+    using cpms_Application.Request.Material;
+    using Microsoft.AspNetCore.Mvc;
+
+    namespace cpms_API.Controllers
     {
-        private readonly IMaterialService _service;
-        public MaterialsController(IMaterialService service) => _service = service;
+        [Route("api/[controller]")]
+        [ApiController]
+        public class MaterialsController : ControllerBase
+        {
+            private readonly IMaterialService _service;
+            public MaterialsController(IMaterialService service) => _service = service;
 
-        [HttpPost]
-        public async Task<IActionResult> Create(CreateMaterialRequest request)
-            => Ok(await _service.CreateMaterialAsync(request));
+            // 1. Tạo mới vật tư
+            [HttpPost]
+            public async Task<IActionResult> Create([FromBody] CreateMaterialRequest request)
+                => Ok(await _service.CreateMaterialAsync(request));
 
-        [HttpGet]
-        public async Task<IActionResult> GetAll()
-            => Ok(await _service.GetAllMaterialsAsync());
+            // 2. Lấy toàn bộ danh sách vật tư
+            [HttpGet]
+            public async Task<IActionResult> GetAll()
+                => Ok(await _service.GetAllMaterialsAsync());
+
+            // 3. Lấy chi tiết vật tư theo ID
+            [HttpGet("{id}")]
+            public async Task<IActionResult> GetById(int id)
+                => Ok(await _service.GetMaterialByIdAsync(id));
+
+            // 4. Cập nhật thông tin vật tư
+            [HttpPut("{id}")]
+            public async Task<IActionResult> Update(int id, [FromBody] UpdateMaterialRequest request)
+                => Ok(await _service.UpdateMaterialAsync(id, request));
+
+            // 5. Xóa vật tư
+            [HttpDelete("{id}")]
+            public async Task<IActionResult> Delete(int id)
+                => Ok(await _service.DeleteMaterialAsync(id));
+        }
     }
 }

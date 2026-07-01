@@ -11,5 +11,10 @@ namespace cpms_Application.Request.Project
         public string ProjectName { get; set; } = null!;
         public string? Address { get; set; }
         public DateTime StartDate { get; set; }
+
+        // 🚀 Bổ sung các trường bắt buộc dưới đây
+        public int PMUserID { get; set; }
+        public DateTime BaselineStart { get; set; }
+        public DateTime BaselineEnd { get; set; }
     }
 }

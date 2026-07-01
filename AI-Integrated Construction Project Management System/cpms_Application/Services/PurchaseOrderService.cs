@@ -13,9 +13,8 @@ namespace cpms_Application.Services
     {
         private readonly IUnitOfWork _uow;
         private readonly IMapper _mapper;
-        private readonly IClaimService _claimService; // Đã thêm
+        private readonly IClaimService _claimService;
 
-        // Cập nhật Constructor để nhận IClaimService
         public PurchaseOrderService(IUnitOfWork uow, IMapper mapper, IClaimService claimService)
         {
             _uow = uow;
@@ -29,34 +28,42 @@ namespace cpms_Application.Services
             await _uow.BeginTransactionAsync();
             try
             {
-                // 1. Map request sang entity
-                var po = _mapper.Map<PurchaseOrder>(request);
+                // 1. Kiểm tra nhanh xem Project và Supplier truyền lên có tồn tại thật không
+                var projectExists = await _uow.Projects.GetByIdAsync(request.ProjectId);
+                if (projectExists == null) return response.SetBadRequest($"ProjectId {request.ProjectId} không tồn tại.");
 
-                // 2. Lấy User Id từ Token của người dùng đang đăng nhập
+                var supplierExists = await _uow.Suppliers.GetByIdAsync(request.SupplierId); // Giả định uow có Suppliers
+                if (supplierExists == null) return response.SetBadRequest($"SupplierId {request.SupplierId} không tồn tại.");
+
+                // 2. Map dữ liệu cơ bản
+                var po = _mapper.Map<PurchaseOrder>(request);
                 var userClaim = _claimService.GetUserClaim();
                 po.UserAccountId = userClaim.Id;
-
-                // 3. Thiết lập thông tin mặc định
                 po.OrderDate = DateTime.UtcNow;
                 po.Status = PurchaseOrderStatus.PENDING;
 
                 decimal total = 0;
 
-                // 4. Lưu PO để lấy PoId từ DB
-                await _uow.PurchaseOrders.AddAsync(po);
-                await _uow.SaveChangeAsync();
-
-                // 5. Lưu các item con
+                // 3. Duyệt danh sách items và add TRỰC TIẾP vào Navigation Property của po
                 foreach (var item in request.Items)
                 {
+                    // Kiểm tra vật tư có tồn tại không
+                    var materialExists = await _uow.Materials.GetByIdAsync(item.MaterialId);
+                    if (materialExists == null) return response.SetBadRequest($"MaterialId {item.MaterialId} không tồn tại.");
+
                     var lineItem = _mapper.Map<OrderLineItem>(item);
-                    lineItem.PoId = po.PoId;
+
+                    // Tính tổng tiền
                     total += (lineItem.Quantity * lineItem.UnitPrice);
 
-                    await _uow.OrderLineItems.AddAsync(lineItem);
+                    // Nạp vào list con của po (EF Core sẽ tự động map PoId khi lưu)
+                    po.OrderLineItems.Add(lineItem);
                 }
 
                 po.TotalAmount = total;
+
+                // 4. Lưu 1 lần duy nhất cho cả đơn hàng và chi tiết đơn hàng
+                await _uow.PurchaseOrders.AddAsync(po);
                 await _uow.SaveChangeAsync();
 
                 await _uow.CommitTransactionAsync();
@@ -66,13 +73,14 @@ namespace cpms_Application.Services
             {
                 await _uow.RollbackTransactionAsync();
 
-                // CẢI TIẾN: Lấy chi tiết lỗi từ Database (InnerException)
-                var errorMsg = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
+                // 🚀 ĐÀO SÂU XUỐNG 3 TẦNG ĐỂ LẤY LỖI GỐC TỪ SQL SERVER/POSTGRES
+                var errorMsg = ex.InnerException?.InnerException != null
+                    ? ex.InnerException.InnerException.Message
+                    : (ex.InnerException != null ? ex.InnerException.Message : ex.Message);
+
                 return response.SetBadRequest("Error saving order: " + errorMsg);
             }
         }
-
-        // ... (Các hàm GetAllPurchaseOrdersAsync, ApprovePurchaseOrderAsync, ImportToWarehouseAsync giữ nguyên)
 
         public async Task<ApiResponse> GetAllPurchaseOrdersAsync()
         {
@@ -112,7 +120,6 @@ namespace cpms_Application.Services
 
         public async Task<ApiResponse> ImportToWarehouseAsync(int poId, int warehouseId)
         {
-            // Lấy PO kèm các vật liệu
             var po = await _uow.PurchaseOrders.GetWithItemsAsync(poId);
 
             if (po == null || po.Status != PurchaseOrderStatus.APPROVED)
@@ -123,32 +130,36 @@ namespace cpms_Application.Services
             {
                 foreach (var item in po.OrderLineItems)
                 {
-                    // Kiểm tra vật liệu đã có trong kho này chưa
+                    // 🚀 ĐỒNG BỘ ERD: Tìm bản ghi tồn kho qua InventoryRecords repo
                     var inventory = await _uow.Inventories.GetAsync(x =>
                         x.WarehouseId == warehouseId && x.MaterialId == item.MaterialId);
 
                     if (inventory == null)
                     {
-                        // Nếu chưa có thì thêm mới
-                        await _uow.Inventories.AddAsync(new Inventory
+                        // 🚀 ĐỒNG BỘ ERD: Nếu chưa có vật tư này trong kho, tạo mới bản ghi InventoryRecord
+                        await _uow.Inventories.AddAsync(new InventoryRecord
                         {
                             WarehouseId = warehouseId,
                             MaterialId = item.MaterialId,
-                            Quantity = item.Quantity
+                            QuantityOnHand = item.Quantity,     // Gán số lượng nhập vào thực tế
+                            ReservedQuantity = 0,               // Đơn hàng mới nhập kho chưa bị dự án nào giữ chỗ
+                            ReorderLevel = 10,                   // Định mức mặc định cảnh báo sắp hết hàng
+                            UpdatedAt = DateTime.UtcNow
                         });
                     }
                     else
                     {
-                        // Nếu có rồi thì cộng dồn
-                        inventory.Quantity += item.Quantity;
-                        // CỰC KỲ QUAN TRỌNG: Nếu repo có .AsNoTracking(), 
-                        // bạn phải gọi hàm Update để EF theo dõi thay đổi
+                        // 🚀 ĐỒNG BỘ ERD: Cộng dồn số lượng thực tế (QuantityOnHand) và cập nhật thời gian
+                        inventory.QuantityOnHand += item.Quantity;
+                        inventory.UpdatedAt = DateTime.UtcNow;
+
+                        // Gọi hàm Update để thông báo EF Core theo dõi thay đổi thực thể
                         _uow.Inventories.Update(inventory);
                     }
                 }
 
                 po.Status = PurchaseOrderStatus.DELIVERED;
-                await _uow.SaveChangeAsync(); // Lưu tất cả thay đổi vào DB
+                await _uow.SaveChangeAsync();
                 await _uow.CommitTransactionAsync();
 
                 return new ApiResponse().SetOk("Nhập kho thành công!");
@@ -156,7 +167,7 @@ namespace cpms_Application.Services
             catch (Exception ex)
             {
                 await _uow.RollbackTransactionAsync();
-                return new ApiResponse().SetBadRequest("Lỗi hệ thống: " + ex.Message);
+                return new ApiResponse().SetBadRequest("Lỗi hệ thống khi nhập kho: " + ex.Message);
             }
         }
     }

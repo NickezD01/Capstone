@@ -8,8 +8,8 @@ namespace cpms_Domain.Models
 {
     public class Category
     {
-        public int id { get; set; }
-        public string CategorylName { get; set; } = null!;
+        public int Id { get; set; } // SỬA: Từ id sang Id
+        public string CategoryName { get; set; } = null!; // SỬA: Lỗi chính tả CategorylName -> CategoryName
         public virtual ICollection<Material> Materials { get; set; } = new List<Material>();
     }
 }

@@ -5,7 +5,6 @@ using cpms_Application.MyMapper;
 using cpms_Application.Services;
 using cpms_Domain;
 using cpms_Infrastructure;
-using DocumentFormat.OpenXml.Office2016.Drawing.ChartDrawing;
 using FluentValidation;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -19,8 +18,10 @@ using System.Text;
 var builder = WebApplication.CreateBuilder(args);
 
 // ======================================================
-// CONFIGURATION
+// CONFIGURATION & APPSETTINGS
 // ======================================================
+builder.Configuration.AddJsonFile("appsettings.json", optional: true, reloadOnChange: true);
+
 var configuration = builder.Configuration.Get<AppSetting>();
 if (configuration != null)
 {
@@ -39,23 +40,24 @@ builder.Services.Configure<ApiBehaviorOptions>(options =>
 // Kích hoạt tính năng tự động validate đầu vào của FluentValidation trên Controller
 builder.Services.AddFluentValidationAutoValidation();
 
-// Nạp toàn bộ các class Validator (bao gồm cả SubPlanValidator) trong tầng Application vào DI Container
-//builder.Services.AddValidatorsFromAssemblyContaining<SubPlanValidator>();
+// 🚀 SỬA/MỞ LẠI: Nạp toàn bộ các class Validator từ tầng Application để FluentValidation hoạt động
+// Thay 'MapperConfigurationsProfile' bằng bất kỳ class nào nằm trong tầng Application để nó quét qua Assembly đó
+builder.Services.AddValidatorsFromAssemblyContaining<MapperConfigurationsProfile>();
 
 // ======================================================
-// DATABASE (Đã fix lỗi Design-time Migration)
+// DATABASE CONFIGURATION
 // ======================================================
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
     var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-    options.UseSqlServer(connectionString);
+    options.UseSqlServer(connectionString, b => b.MigrationsAssembly("cpms_Infrastructure")); // 🚀 ƯU TIÊN: Chỉ định rõ Assembly chứa Migration để tránh lỗi Command-line
 
     options.ConfigureWarnings(warnings =>
         warnings.Ignore(CoreEventId.NavigationBaseIncludeIgnored));
 });
 
 // ======================================================
-// JWT AUTHENTICATION (Đã fix cách đọc dữ liệu từ JSON)
+// JWT AUTHENTICATION
 // ======================================================
 var secretValue = builder.Configuration["SecretToken:Value"];
 if (string.IsNullOrWhiteSpace(secretValue))
@@ -79,13 +81,14 @@ builder.Services
             ClockSkew = TimeSpan.Zero
         };
     });
-// Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 
-
+// ======================================================
+// SWAGGER / OPENAPI
+// ======================================================
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
-    options.SwaggerDoc("v1", new OpenApiInfo { Title = "AntiPhisher API", Version = "v1" });
+    options.SwaggerDoc("v1", new OpenApiInfo { Title = "BuildSense API", Version = "v1" });
 
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
@@ -109,13 +112,16 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
+// ======================================================
+// CORE SERVICES INFRASTRUCTURE & MAPPING
+// ======================================================
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddAutoMapper(typeof(MapperConfigurationsProfile).Assembly);
-builder.Services.AddSingleton(configuration!);
-builder.Configuration.AddJsonFile("appsettings.json", optional: true, reloadOnChange: true);
+builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
-// Services Registration
+// ======================================================
+// APPLICATION SERVICES REGISTRATION
+// ======================================================
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IEmailService, EmailService>();
 builder.Services.AddScoped<IClaimService, ClaimService>();
@@ -124,10 +130,14 @@ builder.Services.AddScoped<IProjectService, ProjectService>();
 builder.Services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
 builder.Services.AddScoped<ISupplierService, SupplierService>();
 builder.Services.AddScoped<ICatalogService, CatalogService>();
+builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<IMaterialService, MaterialService>();
 builder.Services.AddScoped<IWarehouseService, WarehouseService>();
 
 
+// ======================================================
+// CORS POLICY
+// ======================================================
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
@@ -138,10 +148,13 @@ builder.Services.AddCors(options =>
 
 var app = builder.Build();
 
+// ======================================================
+// HTTP REQUEST PIPELINE (MIDDLEWARES)
+// ======================================================
+// 💡 Lưu ý: Đặt Middleware Custom trước để bắt lỗi toàn cục cho pipeline
 app.UseMiddleware<ValidationMiddleware>();
 app.UseMiddleware<ExceptionMiddleware>();
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
@@ -149,9 +162,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-app.UseCors("AllowAll"); 
-app.UseAuthentication();
+app.UseCors("AllowAll");
 
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();

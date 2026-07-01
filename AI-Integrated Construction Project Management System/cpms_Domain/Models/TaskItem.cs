@@ -12,6 +12,8 @@ namespace cpms_Domain.Models
         public int ProjectId { get; set; }
         public string PhaseName { get; set; } = null!;
         public string TaskName { get; set; } = null!;
+        public int AssignedToUserID { get; set; } // Thêm FK này
+        public virtual UserAccount AssignedToUser { get; set; } = null!; // Thêm Navigation này
 
         // SỬA: Thêm các cột cho tính toán tài chính
         public decimal PlannedBudget { get; set; } // PV - Planned Value

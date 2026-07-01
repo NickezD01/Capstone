@@ -12,5 +12,8 @@ namespace cpms_Application.Interfaces
     {
         Task<ApiResponse> CreateMaterialAsync(CreateMaterialRequest request);
         Task<ApiResponse> GetAllMaterialsAsync();
+        Task<ApiResponse> GetMaterialByIdAsync(int id);
+        Task<ApiResponse> UpdateMaterialAsync(int id, UpdateMaterialRequest request);
+        Task<ApiResponse> DeleteMaterialAsync(int id);
     }
 }

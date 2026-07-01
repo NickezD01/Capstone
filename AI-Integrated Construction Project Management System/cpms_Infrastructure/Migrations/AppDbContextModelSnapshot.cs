@@ -22,21 +22,123 @@ namespace cpms_Infrastructure.Migrations
 
             SqlServerModelBuilderExtensions.UseIdentityColumns(modelBuilder);
 
-            modelBuilder.Entity("cpms_Domain.Models.Category", b =>
+            modelBuilder.Entity("cpms_Domain.Models.AIAlert", b =>
                 {
-                    b.Property<int>("id")
+                    b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("id"));
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<string>("CategorylName")
+                    b.Property<string>("AlertType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CreatedDate")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("Message")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("ProjectID")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int?>("UserAccountId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectID");
+
+                    b.HasIndex("UserAccountId");
+
+                    b.ToTable("AIAlerts", (string)null);
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.ActivityLog", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ActivityName")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.HasKey("id");
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
 
-                    b.ToTable("Categories");
+                    b.Property<DateTime?>("CreatedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("EntityType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("UserID")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserID");
+
+                    b.ToTable("Activities");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.Category", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("CategoryName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Categories", (string)null);
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.EmailVerification", b =>
@@ -47,8 +149,8 @@ namespace cpms_Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("CreatedDate")
                         .HasColumnType("datetime2");
@@ -62,8 +164,8 @@ namespace cpms_Infrastructure.Migrations
                     b.Property<bool>("IsUsed")
                         .HasColumnType("bit");
 
-                    b.Property<Guid?>("ModifiedBy")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("ModifiedDate")
                         .HasColumnType("datetime2");
@@ -83,7 +185,7 @@ namespace cpms_Infrastructure.Migrations
                     b.ToTable("EmailVerifications");
                 });
 
-            modelBuilder.Entity("cpms_Domain.Models.Inventory", b =>
+            modelBuilder.Entity("cpms_Domain.Models.InventoryRecord", b =>
                 {
                     b.Property<int>("InventoryId")
                         .ValueGeneratedOnAdd()
@@ -91,8 +193,8 @@ namespace cpms_Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("InventoryId"));
 
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("CreatedDate")
                         .ValueGeneratedOnAdd()
@@ -107,15 +209,31 @@ namespace cpms_Infrastructure.Migrations
                     b.Property<int>("MaterialId")
                         .HasColumnType("int");
 
-                    b.Property<Guid?>("ModifiedBy")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("ModifiedDate")
                         .HasColumnType("datetime2");
 
-                    b.Property<decimal>("Quantity")
-                        .HasPrecision(18, 4)
-                        .HasColumnType("decimal(18,4)");
+                    b.Property<decimal>("QuantityOnHand")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,4)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<decimal>("ReorderLevel")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,4)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<decimal>("ReservedQuantity")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,4)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
 
                     b.Property<int>("WarehouseId")
                         .HasColumnType("int");
@@ -126,7 +244,7 @@ namespace cpms_Infrastructure.Migrations
 
                     b.HasIndex("WarehouseId");
 
-                    b.ToTable("Inventories", (string)null);
+                    b.ToTable("InventoryRecords", (string)null);
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.Material", b =>
@@ -140,8 +258,8 @@ namespace cpms_Infrastructure.Migrations
                     b.Property<int>("CategoryId")
                         .HasColumnType("int");
 
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("CreatedDate")
                         .ValueGeneratedOnAdd()
@@ -158,8 +276,8 @@ namespace cpms_Infrastructure.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
-                    b.Property<Guid?>("ModifiedBy")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("ModifiedDate")
                         .HasColumnType("datetime2");
@@ -176,16 +294,70 @@ namespace cpms_Infrastructure.Migrations
                     b.ToTable("Materials", (string)null);
                 });
 
-            modelBuilder.Entity("cpms_Domain.Models.OrderLineItem", b =>
+            modelBuilder.Entity("cpms_Domain.Models.MaterialRequest", b =>
                 {
-                    b.Property<int>("LineItemId")
+                    b.Property<int>("RequestId")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("LineItemId"));
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("RequestId"));
 
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CreatedDate")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("RequestDate")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<int>("RequestedBy")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("PENDING");
+
+                    b.HasKey("RequestId");
+
+                    b.HasIndex("ProjectId");
+
+                    b.HasIndex("RequestedBy");
+
+                    b.ToTable("MaterialsRequests", (string)null);
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.MaterialRequisition", b =>
+                {
+                    b.Property<int>("ItemId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ItemId"));
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("CreatedDate")
                         .ValueGeneratedOnAdd()
@@ -200,8 +372,58 @@ namespace cpms_Infrastructure.Migrations
                     b.Property<int>("MaterialId")
                         .HasColumnType("int");
 
-                    b.Property<Guid?>("ModifiedBy")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("NeededByDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("Quantity")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,4)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<int>("RequestId")
+                        .HasColumnType("int");
+
+                    b.HasKey("ItemId");
+
+                    b.HasIndex("MaterialId");
+
+                    b.HasIndex("RequestId");
+
+                    b.ToTable("MaterialsRequisitions", (string)null);
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.OrderLineItem", b =>
+                {
+                    b.Property<int>("LineItemId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("LineItemId"));
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CreatedDate")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<int>("MaterialId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("ModifiedDate")
                         .HasColumnType("datetime2");
@@ -232,8 +454,8 @@ namespace cpms_Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ReportId"));
 
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("CreatedDate")
                         .ValueGeneratedOnAdd()
@@ -248,8 +470,8 @@ namespace cpms_Infrastructure.Migrations
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
 
-                    b.Property<Guid?>("ModifiedBy")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("ModifiedDate")
                         .HasColumnType("datetime2");
@@ -297,8 +519,8 @@ namespace cpms_Infrastructure.Migrations
                     b.Property<DateTime>("BaselineStart")
                         .HasColumnType("datetime2");
 
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("CreatedDate")
                         .ValueGeneratedOnAdd()
@@ -314,16 +536,22 @@ namespace cpms_Infrastructure.Migrations
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
 
-                    b.Property<Guid?>("ModifiedBy")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("ModifiedDate")
                         .HasColumnType("datetime2");
+
+                    b.Property<int>("PMUserID")
+                        .HasColumnType("int");
 
                     b.Property<string>("ProjectName")
                         .IsRequired()
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateTime>("StartDate")
+                        .HasColumnType("datetime2");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -334,6 +562,8 @@ namespace cpms_Infrastructure.Migrations
                         .HasColumnType("decimal(18,2)");
 
                     b.HasKey("ProjectId");
+
+                    b.HasIndex("PMUserID");
 
                     b.ToTable("Projects", (string)null);
                 });
@@ -346,8 +576,8 @@ namespace cpms_Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("PoId"));
 
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("CreatedDate")
                         .HasColumnType("datetime2");
@@ -358,8 +588,8 @@ namespace cpms_Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
-                    b.Property<Guid?>("ModifiedBy")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("ModifiedDate")
                         .HasColumnType("datetime2");
@@ -408,8 +638,8 @@ namespace cpms_Infrastructure.Migrations
                         .HasColumnType("datetime2")
                         .HasDefaultValueSql("GETUTCDATE()");
 
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("CreatedDate")
                         .HasColumnType("datetime2");
@@ -425,8 +655,8 @@ namespace cpms_Infrastructure.Migrations
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
 
-                    b.Property<Guid?>("ModifiedBy")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("ModifiedDate")
                         .HasColumnType("datetime2");
@@ -470,8 +700,8 @@ namespace cpms_Infrastructure.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("CreatedDate")
                         .HasColumnType("datetime2");
@@ -479,8 +709,8 @@ namespace cpms_Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
-                    b.Property<Guid?>("ModifiedBy")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("ModifiedDate")
                         .HasColumnType("datetime2");
@@ -498,8 +728,8 @@ namespace cpms_Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("CatalogId"));
 
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("CreatedDate")
                         .HasColumnType("datetime2");
@@ -513,8 +743,8 @@ namespace cpms_Infrastructure.Migrations
                     b.Property<int>("MaterialId")
                         .HasColumnType("int");
 
-                    b.Property<Guid?>("ModifiedBy")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("ModifiedDate")
                         .HasColumnType("datetime2");
@@ -545,8 +775,8 @@ namespace cpms_Infrastructure.Migrations
                     b.Property<double>("AvgDeliveryDelay")
                         .HasColumnType("float");
 
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("CreatedDate")
                         .ValueGeneratedOnAdd()
@@ -561,8 +791,8 @@ namespace cpms_Infrastructure.Migrations
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
 
-                    b.Property<Guid?>("ModifiedBy")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("ModifiedDate")
                         .HasColumnType("datetime2");
@@ -581,6 +811,51 @@ namespace cpms_Infrastructure.Migrations
                     b.ToTable("SupplierMetrics", (string)null);
                 });
 
+            modelBuilder.Entity("cpms_Domain.Models.SystemReport", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CreatedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("GeneratedBy")
+                        .HasColumnType("int");
+
+                    b.Property<int>("GeneratorId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("ProjectID")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ReportType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GeneratorId");
+
+                    b.HasIndex("ProjectID");
+
+                    b.ToTable("SystemReports");
+                });
+
             modelBuilder.Entity("cpms_Domain.Models.TaskItem", b =>
                 {
                     b.Property<int>("TaskId")
@@ -595,14 +870,17 @@ namespace cpms_Infrastructure.Migrations
                     b.Property<int>("ActualProgressPct")
                         .HasColumnType("int");
 
+                    b.Property<int>("AssignedToUserID")
+                        .HasColumnType("int");
+
                     b.Property<DateTime>("BaselineEnd")
                         .HasColumnType("datetime2");
 
                     b.Property<DateTime>("BaselineStart")
                         .HasColumnType("datetime2");
 
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("CreatedDate")
                         .ValueGeneratedOnAdd()
@@ -614,8 +892,8 @@ namespace cpms_Infrastructure.Migrations
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
 
-                    b.Property<Guid?>("ModifiedBy")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("ModifiedDate")
                         .HasColumnType("datetime2");
@@ -641,14 +919,11 @@ namespace cpms_Infrastructure.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
-                    b.Property<int?>("UserAccountId")
-                        .HasColumnType("int");
-
                     b.HasKey("TaskId");
 
-                    b.HasIndex("ProjectId");
+                    b.HasIndex("AssignedToUserID");
 
-                    b.HasIndex("UserAccountId");
+                    b.HasIndex("ProjectId");
 
                     b.ToTable("Tasks", (string)null);
                 });
@@ -661,8 +936,8 @@ namespace cpms_Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
 
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("CreatedDate")
                         .ValueGeneratedOnAdd()
@@ -691,8 +966,8 @@ namespace cpms_Infrastructure.Migrations
                     b.Property<string>("LastName")
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<Guid?>("ModifiedBy")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("ModifiedDate")
                         .HasColumnType("datetime2");
@@ -729,8 +1004,8 @@ namespace cpms_Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("WarehouseId"));
 
-                    b.Property<Guid?>("CreatedBy")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("CreatedDate")
                         .ValueGeneratedOnAdd()
@@ -747,8 +1022,11 @@ namespace cpms_Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
-                    b.Property<Guid?>("ModifiedBy")
-                        .HasColumnType("uniqueidentifier");
+                    b.Property<int>("ManagerId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
 
                     b.Property<DateTime?>("ModifiedDate")
                         .HasColumnType("datetime2");
@@ -760,7 +1038,35 @@ namespace cpms_Infrastructure.Migrations
 
                     b.HasKey("WarehouseId");
 
+                    b.HasIndex("ManagerId");
+
                     b.ToTable("Warehouses", (string)null);
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.AIAlert", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.Project", "Project")
+                        .WithMany("AIAlerts")
+                        .HasForeignKey("ProjectID")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.UserAccount", null)
+                        .WithMany("AIAlerts")
+                        .HasForeignKey("UserAccountId");
+
+                    b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.ActivityLog", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.UserAccount", "User")
+                        .WithMany("Activities")
+                        .HasForeignKey("UserID")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.EmailVerification", b =>
@@ -774,7 +1080,7 @@ namespace cpms_Infrastructure.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("cpms_Domain.Models.Inventory", b =>
+            modelBuilder.Entity("cpms_Domain.Models.InventoryRecord", b =>
                 {
                     b.HasOne("cpms_Domain.Models.Material", "Material")
                         .WithMany("Inventories")
@@ -783,7 +1089,7 @@ namespace cpms_Infrastructure.Migrations
                         .IsRequired();
 
                     b.HasOne("cpms_Domain.Models.Warehouse", "Warehouse")
-                        .WithMany("Inventories")
+                        .WithMany("InventoryRecords")
                         .HasForeignKey("WarehouseId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
@@ -802,6 +1108,44 @@ namespace cpms_Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Category");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.MaterialRequest", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.Project", "Project")
+                        .WithMany("MaterialRequests")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.UserAccount", "Requester")
+                        .WithMany()
+                        .HasForeignKey("RequestedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Project");
+
+                    b.Navigation("Requester");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.MaterialRequisition", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.Material", "Material")
+                        .WithMany("MaterialRequisitions")
+                        .HasForeignKey("MaterialId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.MaterialRequest", "MaterialRequest")
+                        .WithMany("Requisitions")
+                        .HasForeignKey("RequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Material");
+
+                    b.Navigation("MaterialRequest");
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.OrderLineItem", b =>
@@ -840,6 +1184,17 @@ namespace cpms_Infrastructure.Migrations
                     b.Navigation("Engineer");
 
                     b.Navigation("Task");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.Project", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.UserAccount", "ProjectManager")
+                        .WithMany("ManagedProjects")
+                        .HasForeignKey("PMUserID")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ProjectManager");
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.PurchaseOrder", b =>
@@ -910,19 +1265,53 @@ namespace cpms_Infrastructure.Migrations
                     b.Navigation("Supplier");
                 });
 
+            modelBuilder.Entity("cpms_Domain.Models.SystemReport", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.UserAccount", "Generator")
+                        .WithMany("SystemReports")
+                        .HasForeignKey("GeneratorId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.Project", "Project")
+                        .WithMany("SystemReports")
+                        .HasForeignKey("ProjectID")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Generator");
+
+                    b.Navigation("Project");
+                });
+
             modelBuilder.Entity("cpms_Domain.Models.TaskItem", b =>
                 {
+                    b.HasOne("cpms_Domain.Models.UserAccount", "AssignedToUser")
+                        .WithMany("Tasks")
+                        .HasForeignKey("AssignedToUserID")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
                     b.HasOne("cpms_Domain.Models.Project", "Project")
                         .WithMany("Tasks")
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("cpms_Domain.Models.UserAccount", null)
-                        .WithMany("Tasks")
-                        .HasForeignKey("UserAccountId");
+                    b.Navigation("AssignedToUser");
 
                     b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.Warehouse", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.UserAccount", "Manager")
+                        .WithMany()
+                        .HasForeignKey("ManagerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Manager");
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.Category", b =>
@@ -934,14 +1323,27 @@ namespace cpms_Infrastructure.Migrations
                 {
                     b.Navigation("Inventories");
 
+                    b.Navigation("MaterialRequisitions");
+
                     b.Navigation("OrderLineItems");
 
                     b.Navigation("SupplierCatalogs");
                 });
 
+            modelBuilder.Entity("cpms_Domain.Models.MaterialRequest", b =>
+                {
+                    b.Navigation("Requisitions");
+                });
+
             modelBuilder.Entity("cpms_Domain.Models.Project", b =>
                 {
+                    b.Navigation("AIAlerts");
+
+                    b.Navigation("MaterialRequests");
+
                     b.Navigation("PurchaseOrders");
+
+                    b.Navigation("SystemReports");
 
                     b.Navigation("Tasks");
                 });
@@ -967,7 +1369,13 @@ namespace cpms_Infrastructure.Migrations
 
             modelBuilder.Entity("cpms_Domain.Models.UserAccount", b =>
                 {
+                    b.Navigation("AIAlerts");
+
+                    b.Navigation("Activities");
+
                     b.Navigation("EmailVerifications");
+
+                    b.Navigation("ManagedProjects");
 
                     b.Navigation("ProgressReports");
 
@@ -975,12 +1383,14 @@ namespace cpms_Infrastructure.Migrations
 
                     b.Navigation("RefreshTokens");
 
+                    b.Navigation("SystemReports");
+
                     b.Navigation("Tasks");
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.Warehouse", b =>
                 {
-                    b.Navigation("Inventories");
+                    b.Navigation("InventoryRecords");
                 });
 #pragma warning restore 612, 618
         }

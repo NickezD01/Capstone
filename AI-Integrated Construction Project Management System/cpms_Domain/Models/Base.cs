@@ -10,8 +10,8 @@ namespace cpms_Domain.Models
     {
         public DateTime? CreatedDate { get; set; } = DateTime.UtcNow;
         public DateTime? ModifiedDate { get; set; }
-        public Guid? CreatedBy { get; set; }
-        public Guid? ModifiedBy { get; set; }
+        public int? CreatedBy { get; set; } // Sửa: Guid? -> int?
+        public int? ModifiedBy { get; set; } // Sửa: Guid? -> int?
         public bool IsDeleted { get; set; }
     }
 }

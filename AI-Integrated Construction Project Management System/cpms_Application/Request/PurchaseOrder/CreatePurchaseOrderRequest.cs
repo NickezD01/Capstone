@@ -10,7 +10,7 @@ namespace cpms_Application.Request.PurchaseOrder
     {
         public int ProjectId { get; set; }
         public int SupplierId { get; set; }
-        public List<OrderLineItemDto> Items { get; set; }
+        public List<OrderLineItemDto> Items { get; set; } = new List<OrderLineItemDto>();
     }
     public class OrderLineItemDto
     {

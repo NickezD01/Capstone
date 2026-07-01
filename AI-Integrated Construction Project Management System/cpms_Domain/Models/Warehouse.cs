@@ -8,22 +8,17 @@ namespace cpms_Domain.Models
 {
     public class Warehouse : Base
     {
-        public int WarehouseId { get; set; }
+        public int WarehouseId { get; set; } // WarehouseID (PK)
         public string WarehouseName { get; set; } = null!;
         public string Location { get; set; } = null!;
 
-        // Navigation: Danh sách vật liệu đang có trong kho này
-        public virtual ICollection<Inventory> Inventories { get; set; } = new List<Inventory>();
-    }
+        // 🚀 BỔ SUNG: Khóa ngoại quản lý kho (Trỏ sang bảng Users/UserAccount)
+        public int ManagerId { get; set; }
 
-    public class Inventory : Base
-    {
-        public int InventoryId { get; set; }
-        public int WarehouseId { get; set; }
-        public int MaterialId { get; set; }
-        public decimal Quantity { get; set; } // Số lượng tồn kho
+        // Navigation Properties
+        public virtual UserAccount Manager { get; set; } = null!;
 
-        public virtual Warehouse Warehouse { get; set; } = null!;
-        public virtual Material Material { get; set; } = null!;
+        // SỬA: Đổi từ Inventories sang InventoryRecords theo ERD
+        public virtual ICollection<InventoryRecord> InventoryRecords { get; set; } = new List<InventoryRecord>();
     }
 }

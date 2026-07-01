@@ -19,13 +19,17 @@ namespace cpms_Infrastructure.Configuration
             builder.Property(m => m.MaterialName).IsRequired().HasMaxLength(200);
             builder.Property(m => m.Unit).HasMaxLength(50);
 
-            // XÓA DÒNG NÀY: builder.Property(m => m.Category).HasMaxLength(100);
+            // Cấu hình quan hệ với Category
+            builder.HasOne(m => m.Category)
+       .WithMany(c => c.Materials)
+       .HasForeignKey(m => m.CategoryId)
+       .OnDelete(DeleteBehavior.Restrict);
 
-            // THÊM QUAN HỆ NÀY ĐỂ EF CORE TỰ HIỂU:
-            builder.HasOne(m => m.Category) // Thuộc tính navigation trong Material
-                   .WithMany(c => c.Materials) // Thuộc tính collection trong Category
-                   .HasForeignKey(m => m.CategoryId) // Khóa ngoại
-                   .OnDelete(DeleteBehavior.Restrict);
+            // 💡 EF Core tự hiểu mối quan hệ 1-N với InventoryRecord thông qua cấu hình ở file InventoryRecordConfiguration, 
+            // tuy nhiên bạn có thể ghi đè tường minh tại đây nếu muốn:
+            builder.HasMany(m => m.Inventories)
+                   .WithOne(ir => ir.Material)
+                   .HasForeignKey(ir => ir.MaterialId);
 
             builder.Property(m => m.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
             builder.Property(m => m.IsDeleted).HasDefaultValue(false);

@@ -26,6 +26,10 @@ namespace cpms_Infrastructure.Configuration
             builder.Property(p => p.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
             builder.Property(p => p.IsDeleted).HasDefaultValue(false);
             builder.HasQueryFilter(p => !p.IsDeleted);
+            builder.HasOne(p => p.ProjectManager)
+       .WithMany(u => u.ManagedProjects)
+       .HasForeignKey(p => p.PMUserID)
+       .OnDelete(DeleteBehavior.Restrict);
         }
     }
 }
