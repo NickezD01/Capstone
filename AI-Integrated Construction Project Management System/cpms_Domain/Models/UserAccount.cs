@@ -24,13 +24,13 @@ namespace cpms_Domain.Models
         // RELATIONSHIPS MAP THEO ĐÚNG ERD
         // ==========================================
 
-        // 1. Một User với vai trò PM có thể quản lý nhiều Dự án (FK: PMUserID trong Projects)
+        // 1. Một User với vai trò Project Manager có thể quản lý nhiều Dự án (FK: PMUserID trong Projects)
         public virtual ICollection<Project> ManagedProjects { get; set; } = new List<Project>();
 
-        // 2. Một User (Engineer) được giao nhiều Tasks (FK: AssignedToUserID trong Tasks)
+        // 2. Một User được giao nhiều Tasks (FK: AssignedToUserID trong Tasks)
         public virtual ICollection<TaskItem> Tasks { get; set; } = new List<TaskItem>();
 
-        // 3. Một User (Engineer) báo cáo nhiều tiến độ (FK: ReporterID trong ProgressReports)
+        // 3. Một User báo cáo nhiều tiến độ (FK: ReporterID trong ProgressReports)
         public virtual ICollection<ProgressReport> ProgressReports { get; set; } = new List<ProgressReport>();
 
         // 4. Các bảng phục vụ nghiệp vụ Mua sắm vật tư (Purchase Orders)
@@ -56,6 +56,8 @@ namespace cpms_Domain.Models
     {
         ADMIN,
         PM,
-        ENGINEER
+        WAREHOUSE_MANAGER,
+        SUPPLIER,
+        CUSTOMER
     }
 }

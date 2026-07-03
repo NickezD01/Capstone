@@ -28,7 +28,7 @@ namespace cpms_API.Controllers
             var result = await _service.UpdateUserProfileAsync(updateUserRequest);
             return result.IsSuccess ? Ok(result) : BadRequest(result);
         }
-        [Authorize(Roles = "Manager")]
+        [Authorize(Roles = "ADMIN")]
         [HttpGet("GetAllAccountAsync")]
         public async Task<IActionResult> GetAllAccountAsync()
         {
@@ -42,7 +42,7 @@ namespace cpms_API.Controllers
             var result = await _service.GetUserIdAsync();
             return result.IsSuccess ? Ok(result) : BadRequest(result);
         }
-        [Authorize(Roles = "Manager")]
+        [Authorize(Roles = "ADMIN")]
         [HttpPut("UpdateUserRoleProfile/{customerId}")]
         public async Task<IActionResult> UpdateUserRole(int customerId, UpdateUserRoleRequest request)
         {
@@ -50,7 +50,7 @@ namespace cpms_API.Controllers
             return resposne.IsSuccess ? Ok(resposne) : BadRequest(resposne);
         }
 
-        [Authorize(Roles = "Manager")]
+        [Authorize(Roles = "ADMIN")]
         [HttpGet("CountUser")]
         public async Task<IActionResult> CountUser()
         {
