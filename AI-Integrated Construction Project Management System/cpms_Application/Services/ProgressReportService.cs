@@ -9,7 +9,6 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
-// 🚀 KHẮC PHỤC LỖI AMBIGUOUS: Đặt bí danh cho Enum của Domain
 using DomainTaskStatus = cpms_Domain.Models.TaskStatus;
 
 namespace cpms_Application.Services
@@ -18,11 +17,13 @@ namespace cpms_Application.Services
     {
         private readonly IUnitOfWork _uow;
         private readonly IMapper _mapper;
+        private readonly IClaimService _claimService; // 🚀 BỔ SUNG: Tiêm ClaimService
 
-        public ProgressReportService(IUnitOfWork uow, IMapper mapper)
+        public ProgressReportService(IUnitOfWork uow, IMapper mapper, IClaimService claimService)
         {
             _uow = uow;
             _mapper = mapper;
+            _claimService = claimService;
         }
 
         public async Task<ApiResponse> SubmitReportAsync(SubmitProgressReportRequest request)
@@ -30,24 +31,29 @@ namespace cpms_Application.Services
             var response = new ApiResponse();
             try
             {
+                // 🚀 CLAIM ĐƯỢC Ở ĐÂY: Lấy thẳng ID của người dùng đang đăng nhập từ Token
+                var currentUser = _claimService.GetUserClaim();
+                int currentEngineerId = currentUser.Id;
+
+                // 1. Kiểm tra đầu việc (TaskItem) có tồn tại không
                 var task = await _uow.TaskItems.GetAsync(t => t.TaskId == request.TaskId);
                 if (task == null) return response.SetNotFound("Đầu việc không tồn tại.");
 
-                var engineer = await _uow.UserAccounts.GetAsync(u => u.Id == request.EngineerId);
-                if (engineer == null) return response.SetNotFound("Kỹ sư báo cáo không tồn tại trong hệ thống.");
-
+                // 2. Sử dụng Database Transaction
                 await _uow.BeginTransactionAsync();
 
+                // 3. Map dữ liệu và gán ID kỹ sư bảo mật lấy từ Claim
                 var report = _mapper.Map<ProgressReport>(request);
                 report.ReportDate = DateTime.UtcNow;
+                report.EngineerId = currentEngineerId; // 🚀 Gán trực tiếp ID từ Claim, chấp Client truyền bậy từ ngoài vào
 
                 await _uow.ProgressReports.AddAsync(report);
 
-                // Cộng dồn tiến độ tích lũy
+                // 4. LOGIC NGHIỆP VỤ: Cộng dồn tiến độ tích lũy
                 task.ActualProgressPct += request.ProgressIncrement;
                 if (task.ActualProgressPct > 100) task.ActualProgressPct = 100;
 
-                // 🚀 Cập nhật trạng thái thông qua Alias
+                // 5. Cập nhật trạng thái
                 if (task.ActualProgressPct >= 100)
                 {
                     task.Status = DomainTaskStatus.COMPLETED;
@@ -61,6 +67,11 @@ namespace cpms_Application.Services
                 await _uow.CommitTransactionAsync();
 
                 return response.SetOk("Gửi báo cáo tiến độ và cập nhật đầu việc thành công!");
+            }
+            catch (ArgumentNullException ex)
+            {
+                // Bắt lỗi nếu Token thiếu Claim "UserId"
+                return response.SetBadRequest(ex.Message);
             }
             catch (Exception ex)
             {
@@ -76,7 +87,7 @@ namespace cpms_Application.Services
             {
                 var reports = await _uow.ProgressReports.GetAllAsync(
                     filter: r => r.TaskId == taskId,
-                    include: query => query.Include(r => r.Engineer).Include(r => r.Task) // Gọi đúng thuộc tính .Task
+                    include: query => query.Include(r => r.Engineer).Include(r => r.Task)
                 );
 
                 var result = _mapper.Map<IEnumerable<ProgressReportResponse>>(reports);

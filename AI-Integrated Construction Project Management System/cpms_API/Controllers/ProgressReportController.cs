@@ -8,7 +8,7 @@ namespace cpms_API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize] // Bảo mật endpoint bằng JWT Token
+    [Authorize]
     public class ProgressReportController : ControllerBase
     {
         private readonly IProgressReportService _progressReportService;
