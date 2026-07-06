@@ -1,15 +1,19 @@
 ﻿using AutoMapper;
 using cpms_Application.Request.Category;
 using cpms_Application.Request.Material;
+using cpms_Application.Request.ProgressReport;
 using cpms_Application.Request.Project;
 using cpms_Application.Request.PurchaseOrder;
 using cpms_Application.Request.Supplier;
 using cpms_Application.Request.SupplierCatalog;
+using cpms_Application.Request.Tasks;
 using cpms_Application.Request.User;
 using cpms_Application.Request.Warehouse;
 using cpms_Application.Response.Category;
 using cpms_Application.Response.Inventory; // 🚀 Nạp thêm namespace của InventoryReportResponse
+using cpms_Application.Response.ProgressReport;
 using cpms_Application.Response.Project;
+using cpms_Application.Response.Tasks;
 using cpms_Application.Response.UserAccount;
 using cpms_Application.Response.Warehouse;
 using cpms_Domain.Models;
@@ -73,6 +77,22 @@ namespace cpms_Application.MyMapper
                 .ForMember(dest => dest.Unit, opt => opt.MapFrom(src => src.Material.Unit))
                 .ForMember(dest => dest.AvailableQuantity, opt => opt.MapFrom(src => src.QuantityOnHand - src.ReservedQuantity))
                 .ForMember(dest => dest.IsLowStock, opt => opt.MapFrom(src => (src.QuantityOnHand - src.ReservedQuantity) <= src.ReorderLevel));
+
+
+
+            // Đặt cụm này vào trong Constructor MapperConfigurationsProfile() của bạn
+            CreateMap<CreateTaskRequest, TaskItem>();
+            CreateMap<TaskItem, TaskResponse>()
+                .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.Status.ToString()))
+                .ForMember(dest => dest.AssignedToUserName, opt => opt.MapFrom(src => src.AssignedToUser.FirstName));
+            // Lưu ý: Đổi .FullName thành thuộc tính tên hiển thị tương ứng trong UserAccount của bạn (ví dụ Username/Email nếu không có FullName)
+
+            CreateMap<SubmitProgressReportRequest, ProgressReport>();
+            CreateMap<ProgressReport, ProgressReportResponse>()
+                .ForMember(dest => dest.TaskName, opt => opt.MapFrom(src => src.Task.TaskName))
+                .ForMember(dest => dest.EngineerName, opt => opt.MapFrom(src => src.Engineer.FirstName));
+            // Thay .FullName bằng trường hiển thị tên User trong dự án của bạn nếu có khác biệt
         }
+
     }
 }
