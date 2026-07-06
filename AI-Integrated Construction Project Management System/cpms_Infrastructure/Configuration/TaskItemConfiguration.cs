@@ -2,10 +2,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace cpms_Infrastructure.Configuration
 {
@@ -13,29 +9,37 @@ namespace cpms_Infrastructure.Configuration
     {
         public void Configure(EntityTypeBuilder<TaskItem> builder)
         {
-            builder.ToTable("Tasks");
+            // 🚀 SỬA: Đồng bộ tên bảng thành TaskItems khớp với DbSet trong AppDbContext
+            builder.ToTable("TaskItems");
             builder.HasKey(t => t.TaskId);
 
             builder.Property(t => t.PhaseName).IsRequired().HasMaxLength(100);
             builder.Property(t => t.TaskName).IsRequired().HasMaxLength(200);
 
-            // BỔ SUNG: Cấu hình kiểu dữ liệu tài chính cho AI phân tích
-            builder.Property(t => t.PlannedBudget).HasColumnType("decimal(18,2)");
-            builder.Property(t => t.ActualCost).HasColumnType("decimal(18,2)");
+            // Cấu hình kiểu dữ liệu tài chính cho AI phân tích (EVM)
+            builder.Property(t => t.PlannedBudget).HasColumnType("decimal(18,2)").HasDefaultValue(0.00);
+            builder.Property(t => t.ActualCost).HasColumnType("decimal(18,2)").HasDefaultValue(0.00);
+            builder.Property(t => t.ActualProgressPct).HasColumnType("decimal(5,2)").HasDefaultValue(0.00);
 
             builder.Property(t => t.Status)
                    .HasMaxLength(30)
-                   .HasConversion<string>();
+                   .HasConversion<string>(); // Lưu Enum dưới dạng String trong DB cho dễ đọc
 
             builder.Property(t => t.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
             builder.Property(t => t.IsDeleted).HasDefaultValue(false);
             builder.HasQueryFilter(t => !t.IsDeleted);
 
-            // Mối quan hệ 1-N: Project -> TaskItem
+            // 🚀 SỬA: Đổi từ p.Tasks sang p.TaskItems cho chuẩn hóa tên thuộc tính tập hợp trong Project.cs
             builder.HasOne(t => t.Project)
                    .WithMany(p => p.Tasks)
                    .HasForeignKey(t => t.ProjectId)
                    .OnDelete(DeleteBehavior.Cascade);
+
+            // 🚀 BỔ SUNG: Cấu hình khóa ngoại liên kết tới người được giao việc (AssignedToUser)
+            builder.HasOne(t => t.AssignedToUser)
+                   .WithMany() // Không cần tạo danh sách ngược ở UserAccount
+                   .HasForeignKey(t => t.AssignedToUserID)
+                   .OnDelete(DeleteBehavior.Restrict);
         }
     }
 }

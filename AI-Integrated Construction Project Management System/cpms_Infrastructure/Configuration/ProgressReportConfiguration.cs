@@ -2,10 +2,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace cpms_Infrastructure.Configuration
 {
@@ -15,13 +11,16 @@ namespace cpms_Infrastructure.Configuration
         {
             builder.ToTable("ProgressReports");
             builder.HasKey(pr => pr.ReportId);
+
             builder.Property(pr => pr.SitePhotoUrl).HasMaxLength(500);
+            builder.Property(pr => pr.ProgressIncrement).HasColumnType("decimal(5,2)").HasDefaultValue(0.00); // Thêm định dạng decimal cho % tiến độ
+            builder.Property(pr => pr.Notes).HasMaxLength(2000);
 
             builder.Property(pr => pr.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
             builder.Property(pr => pr.IsDeleted).HasDefaultValue(false);
             builder.HasQueryFilter(pr => !pr.IsDeleted);
 
-            // Mối quan hệ [2]: ProgressReport -> TaskItem (1-N)
+            // 🚀 SỬA: Đổi từ pr.Task sang pr.TaskItem cho trùng khớp với thực thể ProgressReport
             builder.HasOne(pr => pr.Task)
                    .WithMany(t => t.ProgressReports)
                    .HasForeignKey(pr => pr.TaskId)
