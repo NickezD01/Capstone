@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace cpms_Application.Request.Material
 {
-    public class CreateMaterialRequest
+    public class MaterialRequest
     {
         public string MaterialName { get; set; } = null!;
         public string Unit { get; set; } = null!;

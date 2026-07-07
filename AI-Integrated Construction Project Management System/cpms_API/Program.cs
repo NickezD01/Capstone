@@ -135,6 +135,7 @@ builder.Services.AddScoped<IMaterialService, MaterialService>();
 builder.Services.AddScoped<IWarehouseService, WarehouseService>();
 builder.Services.AddScoped<ITaskService, TaskService>();
 builder.Services.AddScoped<IProgressReportService, ProgressReportService>();
+builder.Services.AddScoped<IMaterialRequestService, MaterialRequestService>();
 
 
 // ======================================================

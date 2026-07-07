@@ -10,7 +10,7 @@ namespace cpms_Application.Interfaces
 {
     public interface IMaterialService
     {
-        Task<ApiResponse> CreateMaterialAsync(CreateMaterialRequest request);
+        Task<ApiResponse> CreateMaterialAsync(MaterialRequest request);
         Task<ApiResponse> GetAllMaterialsAsync();
         Task<ApiResponse> GetMaterialByIdAsync(int id);
         Task<ApiResponse> UpdateMaterialAsync(int id, UpdateMaterialRequest request);

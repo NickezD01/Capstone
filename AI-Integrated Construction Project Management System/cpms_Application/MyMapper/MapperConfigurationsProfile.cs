@@ -1,6 +1,7 @@
 ﻿using AutoMapper;
 using cpms_Application.Request.Category;
-using cpms_Application.Request.Material;
+using cpms_Application.Request.Material; // Chứa UpdateMaterialRequest, MaterialItemRequest
+using cpms_Application.Request.MaterialRequest;
 using cpms_Application.Request.ProgressReport;
 using cpms_Application.Request.Project;
 using cpms_Application.Request.PurchaseOrder;
@@ -10,7 +11,8 @@ using cpms_Application.Request.Tasks;
 using cpms_Application.Request.User;
 using cpms_Application.Request.Warehouse;
 using cpms_Application.Response.Category;
-using cpms_Application.Response.Inventory; // 🚀 Nạp thêm namespace của InventoryReportResponse
+using cpms_Application.Response.Inventory;
+using cpms_Application.Response.MaterialRequest;
 using cpms_Application.Response.ProgressReport;
 using cpms_Application.Response.Project;
 using cpms_Application.Response.Tasks;
@@ -48,11 +50,11 @@ namespace cpms_Application.MyMapper
             // ==========================================
             CreateMap<CreatePurchaseOrderRequest, PurchaseOrder>();
             CreateMap<OrderLineItemDto, OrderLineItem>();
-            CreateMap<CreateMaterialRequest, Material>();
-            // 1. Cần thiết cho hàm UpdateMaterialAsync (Map đè dữ liệu thay đổi vào thực thể gốc)
+
+            // 🚀 ĐỊNH DANH RÕ RÀNG: Tránh xung đột giữa DTO thêm vật tư và Thực thể Phiếu yêu cầu vật tư
+            CreateMap<cpms_Application.Request.Material.MaterialRequest, Material>();
             CreateMap<UpdateMaterialRequest, Material>();
 
-            // 2. Nếu bạn dùng AutoMapper cho hàm lấy toàn bộ kho (WarehouseFullResponse) thay vì .Select thủ công
             CreateMap<Warehouse, WarehouseResponse>()
                 .ForMember(dest => dest.ManagerName, opt => opt.MapFrom(src => src.Manager != null ? src.Manager.LastName : null));
 
@@ -65,12 +67,10 @@ namespace cpms_Application.MyMapper
             CreateMap<CreateCatalogRequest, SupplierCatalog>();
 
             // ==========================================
-            // WAREHOUSE & INVENTORY RECORD MAPPING (Cập nhật chuẩn ERD)
+            // WAREHOUSE & INVENTORY RECORD MAPPING
             // ==========================================
             CreateMap<CreateWarehouseRequest, Warehouse>();
 
-            // 🚀 Cấu hình ánh xạ từ thực thể InventoryRecord sang DTO báo cáo
-            // Tự động bóc tách thông tin liên kết từ Warehouse và Material, tính toán lượng hàng khả dụng
             CreateMap<InventoryRecord, InventoryReportResponse>()
                 .ForMember(dest => dest.WarehouseName, opt => opt.MapFrom(src => src.Warehouse.WarehouseName))
                 .ForMember(dest => dest.MaterialName, opt => opt.MapFrom(src => src.Material.MaterialName))
@@ -78,21 +78,34 @@ namespace cpms_Application.MyMapper
                 .ForMember(dest => dest.AvailableQuantity, opt => opt.MapFrom(src => src.QuantityOnHand - src.ReservedQuantity))
                 .ForMember(dest => dest.IsLowStock, opt => opt.MapFrom(src => (src.QuantityOnHand - src.ReservedQuantity) <= src.ReorderLevel));
 
-
-
-            // Đặt cụm này vào trong Constructor MapperConfigurationsProfile() của bạn
+            // ==========================================
+            // TASKS & PROGRESS REPORT MAPPING
+            // ==========================================
             CreateMap<CreateTaskRequest, TaskItem>();
             CreateMap<TaskItem, TaskResponse>()
                 .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.Status.ToString()))
-                .ForMember(dest => dest.AssignedToUserName, opt => opt.MapFrom(src => src.AssignedToUser.FirstName));
-            // Lưu ý: Đổi .FullName thành thuộc tính tên hiển thị tương ứng trong UserAccount của bạn (ví dụ Username/Email nếu không có FullName)
+                .ForMember(dest => dest.AssignedToUserName, opt => opt.MapFrom(src => $"{src.AssignedToUser.LastName} {src.AssignedToUser.FirstName}")); 
 
             CreateMap<SubmitProgressReportRequest, ProgressReport>();
             CreateMap<ProgressReport, ProgressReportResponse>()
                 .ForMember(dest => dest.TaskName, opt => opt.MapFrom(src => src.Task.TaskName))
-                .ForMember(dest => dest.EngineerName, opt => opt.MapFrom(src => src.Engineer.FirstName));
-            // Thay .FullName bằng trường hiển thị tên User trong dự án của bạn nếu có khác biệt
-        }
+                .ForMember(dest => dest.EngineerName, opt => opt.MapFrom(src => $"{src.Engineer.LastName} {src.Engineer.FirstName}")); 
 
+            // ========================================================
+            // MATERIAL REQUEST (PHIẾU YÊU CẦU VẬT TƯ) MAPPINGS
+            // ========================================================
+
+            // 1. Map từ từng dòng chi tiết trong Request body sang Entity DB
+            CreateMap<MaterialItemRequest, MaterialRequisition>();
+
+            // 2. Map từ Entity phiếu tổng sang Phiếu tổng Response DTO trả về cho Client
+            CreateMap<cpms_Domain.Models.MaterialRequest, MaterialRequestResponse>()
+                .ForMember(dest => dest.RequestedByName, opt => opt.MapFrom(src => $"{src.Requester.LastName} {src.Requester.FirstName}"))
+                .ForMember(dest => dest.Items, opt => opt.MapFrom(src => src.Requisitions));
+
+            // 3. Map từ Entity chi tiết dòng vật tư sang DTO dòng vật tư hiển thị kèm tên cụ thể
+            CreateMap<MaterialRequisition, MaterialRequisitionDetailResponse>()
+                .ForMember(dest => dest.MaterialName, opt => opt.MapFrom(src => src.Material.MaterialName));
+        }
     }
 }

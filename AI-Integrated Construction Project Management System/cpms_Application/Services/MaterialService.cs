@@ -22,7 +22,7 @@ namespace cpms_Application.Services
         }
 
         // 1. Tạo mới vật tư
-        public async Task<ApiResponse> CreateMaterialAsync(CreateMaterialRequest request)
+        public async Task<ApiResponse> CreateMaterialAsync(Request.Material.MaterialRequest request)
         {
             var response = new ApiResponse();
             try

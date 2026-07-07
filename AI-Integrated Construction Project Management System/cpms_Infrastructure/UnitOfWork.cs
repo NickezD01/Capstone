@@ -35,6 +35,10 @@ namespace cpms_Infrastructure
         public IInventoryRepository Inventories { get; }
 
 
+        public IMaterialRequestRepository MaterialRequests { get; }
+        public IMaterialRequisitionRepository MaterialRequisitions { get; }
+
+
         // =========================================
         // CONSTRUCTOR (Khởi tạo toàn bộ Repo bằng context)
         // =========================================
@@ -58,6 +62,9 @@ namespace cpms_Infrastructure
             Warehouses = new WarehouseRepository(context);
             Inventories = new InventoryRepository(context);
 
+ 
+            MaterialRequests = new MaterialRequestRepository(context);
+            MaterialRequisitions = new MaterialRequisitionRepository(context);
         }
 
         // =========================================
@@ -71,20 +78,19 @@ namespace cpms_Infrastructure
             }
             catch (Exception ex)
             {
-                // Giữ nguyên logic xử lý lỗi bọc chuỗi lỗi của bạn
                 throw new Exception(ex.Message);
             }
         }
 
         // =========================================
-        // TRANSACTION MANAGEMENT (Bổ sung cực quan trọng)
+        // TRANSACTION MANAGEMENT
         // =========================================
         public async Task BeginTransactionAsync() => await _context.Database.BeginTransactionAsync();
         public async Task CommitTransactionAsync() => await _context.Database.CommitTransactionAsync();
         public async Task RollbackTransactionAsync() => await _context.Database.RollbackTransactionAsync();
 
         // =========================================
-        // EXECUTE SCALAR (Giữ nguyên logic gốc của bạn)
+        // EXECUTE SCALAR
         // =========================================
         public async Task<T> ExecuteScalarAsync<T>(string sql)
         {
@@ -109,7 +115,7 @@ namespace cpms_Infrastructure
         }
 
         // =========================================
-        // EXECUTE RAW SQL (Giữ nguyên logic gốc của bạn)
+        // EXECUTE RAW SQL
         // =========================================
         public async Task ExecuteRawSqlAsync(string sql)
         {
@@ -133,7 +139,7 @@ namespace cpms_Infrastructure
         }
 
         // =========================================
-        // DISPOSE (Giải phóng bộ nhớ DbContext chuẩn chỉnh)
+        // DISPOSE
         // =========================================
         public void Dispose()
         {

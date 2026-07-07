@@ -19,7 +19,7 @@ namespace cpms_API.Controllers
 
             // 1. Tạo mới vật tư
             [HttpPost]
-            public async Task<IActionResult> Create([FromBody] CreateMaterialRequest request)
+            public async Task<IActionResult> Create([FromBody] MaterialRequest request)
                 => Ok(await _service.CreateMaterialAsync(request));
 
             // 2. Lấy toàn bộ danh sách vật tư
