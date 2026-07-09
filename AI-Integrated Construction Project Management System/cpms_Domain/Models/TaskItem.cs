@@ -32,6 +32,8 @@ namespace cpms_Domain.Models
     {
         PENDING,
         ACTIVE,
-        COMPLETED
+        IN_PROGRESS, // 🚀 BỔ SUNG: Khớp với chữ 'IN_PROGRESS' dưới Database của bạn
+        COMPLETED,
+        REJECTED
     }
 }
