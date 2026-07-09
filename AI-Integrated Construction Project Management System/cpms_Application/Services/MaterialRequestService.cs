@@ -2,6 +2,7 @@
 using cpms_Application.Interfaces;
 using cpms_Application.Request.MaterialRequest;
 using cpms_Application.Response;
+using cpms_Application.Response.MaterialRequest;
 using cpms_Domain.Models;
 using Microsoft.EntityFrameworkCore;
 using System;
@@ -54,7 +55,7 @@ namespace cpms_Application.Services
                 // 4. Lặp qua từng Item để kiểm tra tồn kho (Inventory Check)
                 foreach (var item in request.Items)
                 {
-                    // Lấy bản ghi kho của vật tư này (Lưu ý: Có thể lọc thêm theo WarehouseId nếu dự án chỉ định kho cụ thể)
+                    // Lấy bản ghi kho của vật tư này
                     var inventory = await _uow.Inventories.GetAsync(inv => inv.MaterialId == item.MaterialId);
 
                     if (inventory == null)
@@ -104,6 +105,7 @@ namespace cpms_Application.Services
                 return response.SetBadRequest("Lỗi xử lý yêu cầu vật tư: " + ex.Message);
             }
         }
+
         public async Task<ApiResponse> ApproveRequestAsync(int requestId)
         {
             var response = new ApiResponse();
@@ -201,6 +203,78 @@ namespace cpms_Application.Services
             {
                 await _uow.RollbackTransactionAsync();
                 return response.SetBadRequest("Lỗi trong quá trình từ chối phiếu: " + ex.Message);
+            }
+        }
+
+        public async Task<ApiResponse> GetRequestByIdAsync(int requestId)
+        {
+            var response = new ApiResponse();
+            try
+            {
+                // Sử dụng GetAsync và truyền filter tìm theo ID
+                var materialRequest = await _uow.MaterialRequests.GetAsync(
+                    filter: r => r.RequestId == requestId,
+                    include: query => query
+                        .Include(r => r.Requester)
+                        .Include(r => r.Requisitions)
+                            .ThenInclude((MaterialRequisition req) => req.Material)
+                );
+
+                if (materialRequest == null)
+                    return response.SetNotFound("Không tìm thấy phiếu yêu cầu vật tư này.");
+
+                var result = _mapper.Map<MaterialRequestResponse>(materialRequest);
+                return response.SetOk(result);
+            }
+            catch (Exception ex)
+            {
+                return response.SetBadRequest("Lỗi khi lấy chi tiết phiếu yêu cầu: " + ex.Message);
+            }
+        }
+
+        public async Task<ApiResponse> GetAllRequestsAsync()
+        {
+            var response = new ApiResponse();
+            try
+            {
+                // 🚀 FIX DỨT ĐIỂM: Truyền null vào tham số vị trí đầu tiên (filter) theo đúng Signature của Repository
+                var requests = await _uow.MaterialRequests.GetAllAsync(
+                    null, // 👈 filter = null nghĩa là lấy tất cả bản ghi
+                    include: (IQueryable<MaterialRequest> query) => query
+                        .Include(r => r.Requester)
+                        .Include(r => r.Requisitions)
+                            .ThenInclude(req => req.Material)
+                );
+
+                var result = _mapper.Map<IEnumerable<MaterialRequestResponse>>(requests);
+                return response.SetOk(result);
+            }
+            catch (Exception ex)
+            {
+                return response.SetBadRequest("Lỗi khi lấy danh sách phiếu yêu cầu: " + ex.Message);
+            }
+        }
+
+        public async Task<ApiResponse> GetRequestsByProjectAsync(int projectId)
+        {
+            var response = new ApiResponse();
+            try
+            {
+                // Hàm này đã truyền filter cụ thể nên không bị lỗi tham số
+                var requests = await _uow.MaterialRequests.GetAllAsync(
+                    filter: r => r.ProjectId == projectId,
+                    include: query => query
+                        .Include(r => r.Requester)
+                        .Include(r => r.Requisitions)
+                            .ThenInclude((MaterialRequisition req) => req.Material)
+                );
+
+                var result = _mapper.Map<IEnumerable<MaterialRequestResponse>>(requests);
+                return response.SetOk(result);
+            }
+            catch (Exception ex)
+            {
+                return response.SetBadRequest($"Lỗi khi lấy danh sách phiếu yêu cầu của dự án {projectId}: " + ex.Message);
             }
         }
     }

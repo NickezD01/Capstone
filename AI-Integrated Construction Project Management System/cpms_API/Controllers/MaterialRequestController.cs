@@ -45,5 +45,30 @@ namespace cpms_API.Controllers
             if (!response.IsSuccess) return BadRequest(response);
             return Ok(response);
         }
+        [HttpGet]
+        public async Task<IActionResult> GetAllRequests()
+        {
+            var response = await _materialRequestService.GetAllRequestsAsync();
+            if (!response.IsSuccess) return BadRequest(response);
+            return Ok(response);
+        }
+
+        // GET: api/materialrequest/{requestId}
+        [HttpGet("{requestId}")]
+        public async Task<IActionResult> GetRequestById(int requestId)
+        {
+            var response = await _materialRequestService.GetRequestByIdAsync(requestId);
+            if (!response.IsSuccess) return NotFound(response);
+            return Ok(response);
+        }
+
+        // GET: api/materialrequest/project/{projectId}
+        [HttpGet("project/{projectId}")]
+        public async Task<IActionResult> GetRequestsByProject(int projectId)
+        {
+            var response = await _materialRequestService.GetRequestsByProjectAsync(projectId);
+            if (!response.IsSuccess) return BadRequest(response);
+            return Ok(response);
+        }
     }
 }

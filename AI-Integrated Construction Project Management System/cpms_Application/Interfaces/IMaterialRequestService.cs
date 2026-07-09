@@ -14,5 +14,10 @@ namespace cpms_Application.Interfaces
 
         Task<ApiResponse> ApproveRequestAsync(int requestId);
         Task<ApiResponse> RejectRequestAsync(int requestId);
+
+
+        Task<ApiResponse> GetRequestByIdAsync(int requestId);
+        Task<ApiResponse> GetAllRequestsAsync();
+        Task<ApiResponse> GetRequestsByProjectAsync(int projectId);
     }
 }
