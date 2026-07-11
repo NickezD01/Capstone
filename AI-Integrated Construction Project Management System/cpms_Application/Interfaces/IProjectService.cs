@@ -1,5 +1,6 @@
 ﻿using cpms_Application.Request.Project;
 using cpms_Application.Response;
+using Microsoft.AspNetCore.Http;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -13,5 +14,7 @@ namespace cpms_Application.Interfaces
         Task<ApiResponse> CreateProjectAsync(CreateProjectRequest request);
         Task<ApiResponse> GetAllProjectsAsync();
         Task<ApiResponse> GetProjectByIdAsync(int id);
+
+        Task<ApiResponse> ImportProjectFromWordAsync(IFormFile file);
     }
 }

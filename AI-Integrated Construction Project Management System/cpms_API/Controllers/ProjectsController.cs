@@ -52,5 +52,19 @@ namespace cpms_API.Controllers
             }
             return Ok(response);
         }
+
+        // 🚀 CẬP NHẬT Ở ĐÂY: Xóa bỏ hoàn toàn [FromQuery] int pmUserId
+        [HttpPost("import-word")]
+        [Consumes("multipart/form-data")] // Ép kiểu Swagger/Frontend hiển thị nút chọn File
+        public async Task<IActionResult> ImportProjectFromWord(IFormFile file)
+        {
+            // Truyền duy nhất file vào Service, ID sẽ được tự bóc tách từ Token trong ngầm định
+            var response = await _projectService.ImportProjectFromWordAsync(file);
+            if (!response.IsSuccess)
+            {
+                return BadRequest(response);
+            }
+            return Ok(response);
+        }
     }
 }
