@@ -246,7 +246,6 @@ namespace cpms_Application.Services
             }
         }
 
-        // 🛠️ ĐÃ SỬA: Thêm ép kiểu bẻ cache EF Core (Nếu hàm GetAllAsync hỗ trợ AsNoTracking hoặc tùy biến trực tiếp)
         public async Task<ApiResponse> CalculateMRPForProjectAsync(int projectId)
         {
             var apiResponse = new ApiResponse();
@@ -256,9 +255,7 @@ namespace cpms_Application.Services
                 if (project == null)
                     return apiResponse.SetNotFound("Dự án không tồn tại.");
 
-                // 🛑 LƯU Ý QUAN TRỌNG: Lọc trực tiếp từ DB. 
-                // Nếu hàm GetAllAsync của bạn có viết nhận AsNoTracking() thì hãy bật nó lên.
-                // Ở đây, ta lấy danh sách trực tiếp đảm bảo điều kiện loại bỏ Task COMPLETED và tiến độ đã đạt 100%
+                // 1. Lấy định mức vật tư của các Task chưa hoàn thành (ActualProgressPct < 100)
                 var requirements = await _unitOfWork.TaskMaterialRequirements.GetAllAsync(
                     filter: r => r.TaskItem.ProjectId == projectId
                               && r.TaskItem.Status != cpms_Domain.Models.TaskStatus.COMPLETED
@@ -268,41 +265,76 @@ namespace cpms_Application.Services
                         .Include(r => r.TaskItem)
                 );
 
-                // Mẹo nhỏ: Nếu Generic Repository của bạn không dùng AsNoTracking, bạn có thể ép đọc lại dữ liệu mới nhất từ DB bằng cách chuyển thành List ngay.
                 var requirementsList = requirements.ToList();
 
                 if (!requirementsList.Any())
                     return apiResponse.SetOk(new List<MRPCalculationResponse>());
 
-                // Nhóm theo từng Material để tính Tổng Nhu Cầu Thô của các task thực sự CHƯA XONG
+                // 2. Gom nhóm nhu cầu thô dựa trên các thuộc tính của MaterialId để đảm bảo tính đồng bộ dữ liệu gốc
                 var grossRequirementsGroup = requirementsList
-                    .GroupBy(r => new { r.MaterialId, r.Material.MaterialName })
+                    .GroupBy(r => new
+                    {
+                        r.MaterialId,
+                        MaterialName = r.Material != null ? r.Material.MaterialName : "Vật tư không tên",
+                        Unit = r.Material != null ? r.Material.Unit : "Cái"
+                    })
                     .Select(g => new
                     {
                         g.Key.MaterialId,
                         g.Key.MaterialName,
+                        g.Key.Unit,
                         TotalGross = g.Sum(r => r.GrossQuantityRequired),
                         EarliestNeedDate = g.Min(r => r.TaskItem.BaselineStart)
                     }).ToList();
 
+                // 3. Lấy toàn bộ thông tin kho để tính toán tồn kho vật tư
                 var currentInventories = await _unitOfWork.Inventories.GetAllAsync(null);
+                var inventoriesList = currentInventories.ToList();
+
+                // 4. Lấy thông tin các Đơn mua hàng (PO) đang xử lý để tính lượng On-Order
+                var activePurchaseOrders = await _unitOfWork.PurchaseOrders.GetAllAsync(
+                    filter: po => po.Status == PurchaseOrderStatus.PENDING || po.Status == PurchaseOrderStatus.APPROVED,
+                    include: query => query.Include(po => po.OrderLineItems)
+                );
+                var activePoLines = activePurchaseOrders.SelectMany(po => po.OrderLineItems).ToList();
+
                 var mrpResultList = new List<MRPCalculationResponse>();
 
                 foreach (var gross in grossRequirementsGroup)
                 {
-                    decimal currentStock = currentInventories
+                    // Tính tổng số lượng thực tế hiện có trong các kho (QuantityOnHand)
+                    decimal currentStock = inventoriesList
                         .Where(i => i.MaterialId == gross.MaterialId)
                         .Sum(i => i.QuantityOnHand);
 
-                    decimal netRequired = gross.TotalGross - currentStock;
+                    // Tính tổng lượng đang được giữ chỗ (ReservedQuantity)
+                    decimal reserved = inventoriesList
+                        .Where(i => i.MaterialId == gross.MaterialId)
+                        .Sum(i => i.ReservedQuantity);
+
+                    // Lượng khả dụng thực tế trong kho có thể dùng ngay
+                    decimal available = currentStock - reserved;
+                    if (available < 0) available = 0;
+
+                    // Tính lượng đang được đặt hàng (OnOrderQuantity) từ các PO chưa giao bốc về kho
+                    decimal onOrder = activePoLines
+                        .Where(line => line.MaterialId == gross.MaterialId)
+                        .Sum(line => line.Quantity);
+
+                    // Công thức tính nhu cầu thực tế mở rộng: Net = Tổng thô - Khả dụng hiện tại - Đang đặt hàng trên đường về
+                    decimal netRequired = gross.TotalGross - available - onOrder;
                     if (netRequired < 0) netRequired = 0;
 
                     mrpResultList.Add(new MRPCalculationResponse
                     {
                         MaterialId = gross.MaterialId,
                         MaterialName = gross.MaterialName,
+                        Unit = gross.Unit, // Đã map chính xác dựa theo Material ID thông qua khối GroupBy phía trên
                         TotalGrossRequired = gross.TotalGross,
                         CurrentInventory = currentStock,
+                        ReservedQuantity = reserved,
+                        AvailableQuantity = available,
+                        OnOrderQuantity = onOrder,
                         NetQuantityRequired = netRequired,
                         EarliestStartDate = gross.EarliestNeedDate
                     });
