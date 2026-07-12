@@ -41,7 +41,21 @@ namespace cpms_Application.MyMapper
 
             // === PROJECTS ===
             CreateMap<CreateProjectRequest, Project>();
-            CreateMap<Project, ProjectResponse>();
+            CreateMap<Project, ProjectResponse>()
+    .ForMember(dest => dest.Status,
+        opt => opt.MapFrom(src => src.Status.ToString()))
+
+    .ForMember(dest => dest.PMName,
+        opt => opt.MapFrom(src =>
+            src.ProjectManager != null
+                ? $"{src.ProjectManager.LastName} {src.ProjectManager.FirstName}".Trim()
+                : string.Empty))
+
+    .ForMember(dest => dest.TotalTasks,
+        opt => opt.MapFrom(src => src.Tasks.Count))
+
+    .ForMember(dest => dest.TotalAIAlerts,
+        opt => opt.MapFrom(src => src.AIAlerts.Count));
 
             // === PURCHASE ORDERS (ĐÃ CẬP NHẬT CẤU TRÚC RESPONSE CHUẨN) ===
             CreateMap<CreatePurchaseOrderRequest, PurchaseOrder>();

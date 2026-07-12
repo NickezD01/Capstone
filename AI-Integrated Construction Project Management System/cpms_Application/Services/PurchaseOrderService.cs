@@ -75,31 +75,38 @@ namespace cpms_Application.Services
                 po.TotalAmount = currentOrderTotal;
 
                 // ================== LOGIC KIỂM TRA NGÂN SÁCH DỰ ÁN (BUDGET VALIDATION) ==================
-                // Chỉ thực hiện kiểm tra nếu Dự án thực sự có thiết lập ngân sách lớn hơn 0
+                // ================== KIỂM TRA NGÂN SÁCH DỰ ÁN ==================
                 if (projectExists.TotalProjectBudget > 0)
                 {
-                    // Lấy toàn bộ các đơn hàng hiện tại của dự án này (Bỏ qua các đơn bị REJECTED)
+                    // Chỉ tính các PO đang giữ ngân sách
                     var existingOrders = await _uow.PurchaseOrders.GetAllAsync(
-                        filter: p => p.ProjectId == request.ProjectId && p.Status != PurchaseOrderStatus.REJECTED
+                        filter: p =>
+                            p.ProjectId == request.ProjectId &&
+                            (p.Status == PurchaseOrderStatus.PENDING ||
+                             p.Status == PurchaseOrderStatus.APPROVED ||
+                             p.Status == PurchaseOrderStatus.DELIVERED)
                     );
 
-                    // Tổng số tiền đã chi tiêu (hoặc đang đợi duyệt) trước đó
-                    decimal totalSpentSoFar = existingOrders.Sum(p => p.TotalAmount);
+                    decimal usedBudget = existingOrders.Sum(p => p.TotalAmount);
 
-                    // Ngân sách còn lại khả dụng
-                    decimal availableBudget = projectExists.TotalProjectBudget - totalSpentSoFar;
+                    decimal remainingBudget = projectExists.TotalProjectBudget - usedBudget;
 
-                    // Nếu đơn hàng hiện tại làm vượt ngân sách -> Rollback và thông báo chặn
-                    if (currentOrderTotal > availableBudget)
+                    if (currentOrderTotal > remainingBudget)
                     {
                         await _uow.RollbackTransactionAsync();
-                        return response.SetBadRequest(
-                            $"Không thể tạo đơn hàng! Tổng tiền đơn này ({currentOrderTotal:N0} {projectExists.Currency}) " +
-                            $"vượt quá ngân sách còn lại của dự án. Ngân sách khả dụng hiện tại: {availableBudget:N0} {projectExists.Currency} " +
-                            $"(Ngân sách tổng: {projectExists.TotalProjectBudget:N0} - Đã dùng: {totalSpentSoFar:N0})."
-                        );
+
+                        return response.SetBadRequest(new
+                        {
+                            Message = "Không thể tạo Purchase Order",
+                            TotalBudget = projectExists.TotalProjectBudget,
+                            UsedBudget = usedBudget,
+                            RemainingBudget = remainingBudget,
+                            CurrentOrder = currentOrderTotal,
+                            Currency = projectExists.Currency
+                        });
                     }
                 }
+                // =============================================================
                 // Nếu TotalProjectBudget <= 0, hệ thống xem như dự án thả nổi chi phí và tự động bỏ qua khối check trên.
                 // ========================================================================================
 

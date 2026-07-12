@@ -10,6 +10,8 @@ namespace cpms_Application.Request.Project
     {
         public string ProjectName { get; set; } = null!;
         public string? Address { get; set; }
+        public decimal TotalProjectBudget { get; set; }
+
         public DateTime StartDate { get; set; }
 
         // 🚀 Bổ sung các trường bắt buộc dưới đây

@@ -36,16 +36,43 @@ namespace cpms_Application.Services
         public async Task<ApiResponse> CreateProjectAsync(CreateProjectRequest request)
         {
             var apiResponse = new ApiResponse();
+
             try
             {
+                // Kiểm tra PM có tồn tại không
+                var pm = await _unitOfWork.UserAccounts.GetByIdAsync(request.PMUserID);
+
+                if (pm == null)
+                {
+                    return apiResponse.SetNotFound("Project Manager không tồn tại.");
+                }
+
+                // Mapping Request -> Entity
                 var project = _mapper.Map<Project>(request);
                 project.Status = ProjectStatus.PLANNING;
 
+                // Lưu Project
                 await _unitOfWork.Projects.AddAsync(project);
                 await _unitOfWork.SaveChangeAsync();
 
-                var responseResult = _mapper.Map<ProjectResponse>(project);
-                return apiResponse.SetOk(responseResult);
+                // Lấy lại Project kèm Navigation Properties
+                var createdProject = (await _unitOfWork.Projects.GetAllAsync(
+                    filter: p => p.ProjectId == project.ProjectId,
+                    include: query => query
+                        .Include(p => p.ProjectManager)
+                        .Include(p => p.Tasks)
+                        .Include(p => p.AIAlerts)
+                )).FirstOrDefault();
+
+                if (createdProject == null)
+                {
+                    return apiResponse.SetNotFound("Không tìm thấy dự án vừa tạo.");
+                }
+
+                // Mapping sang Response
+                var response = _mapper.Map<ProjectResponse>(createdProject);
+
+                return apiResponse.SetOk(response);
             }
             catch (Exception ex)
             {
@@ -56,10 +83,19 @@ namespace cpms_Application.Services
         public async Task<ApiResponse> GetAllProjectsAsync()
         {
             var apiResponse = new ApiResponse();
+
             try
             {
-                var projects = await _unitOfWork.Projects.GetAllAsync(null);
+                var projects = await _unitOfWork.Projects.GetAllAsync(
+                    filter: null,
+                    include: query => query
+                        .Include(p => p.ProjectManager)
+                        .Include(p => p.Tasks)
+                        .Include(p => p.AIAlerts)
+                );
+
                 var response = _mapper.Map<List<ProjectResponse>>(projects);
+
                 return apiResponse.SetOk(response);
             }
             catch (Exception ex)
@@ -71,9 +107,16 @@ namespace cpms_Application.Services
         public async Task<ApiResponse> GetProjectByIdAsync(int id)
         {
             var apiResponse = new ApiResponse();
+
             try
             {
-                var project = await _unitOfWork.Projects.GetByIdAsync(id);
+                var project = (await _unitOfWork.Projects.GetAllAsync(
+                    filter: p => p.ProjectId == id,
+                    include: query => query
+                        .Include(p => p.ProjectManager)
+                        .Include(p => p.Tasks)
+                        .Include(p => p.AIAlerts)
+                )).FirstOrDefault();
 
                 if (project == null)
                 {
@@ -81,6 +124,7 @@ namespace cpms_Application.Services
                 }
 
                 var response = _mapper.Map<ProjectResponse>(project);
+
                 return apiResponse.SetOk(response);
             }
             catch (Exception ex)
