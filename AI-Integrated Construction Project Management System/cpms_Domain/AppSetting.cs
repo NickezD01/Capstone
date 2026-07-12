@@ -12,6 +12,7 @@ namespace cpms_Domain
         public Logging Logging { get; set; }
         public string AllowedHosts { get; set; }
         public SecretToken SecretToken { get; set; }
+        public TeamsGraph TeamsGraph { get; set; } = new TeamsGraph();
     }
     public class ConnectionStrings
     {
@@ -33,5 +34,13 @@ namespace cpms_Domain
     public class SecretToken
     {
         public string Value { get; set; }
+    }
+
+    public class TeamsGraph
+    {
+        public string? TenantId { get; set; }
+        public string? ClientId { get; set; }
+        public string? ClientSecret { get; set; }
+        public string? OrganizerUserId { get; set; }
     }
 }

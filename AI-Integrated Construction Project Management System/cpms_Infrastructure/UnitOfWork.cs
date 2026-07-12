@@ -33,6 +33,11 @@ namespace cpms_Infrastructure
         public ICategoryRepository Categories { get; }
         public IWarehouseRepository Warehouses { get; }
         public IInventoryRepository Inventories { get; }
+        public IChatConversationRepository ChatConversations { get; }
+        public IChatParticipantRepository ChatParticipants { get; }
+        public IChatMessageRepository ChatMessages { get; }
+        public IMeetingRepository Meetings { get; }
+        public IMeetingParticipantRepository MeetingParticipants { get; }
 
 
         public IMaterialRequestRepository MaterialRequests { get; }
@@ -61,6 +66,11 @@ namespace cpms_Infrastructure
             Categories = new CategoryRepository(context);
             Warehouses = new WarehouseRepository(context);
             Inventories = new InventoryRepository(context);
+            ChatConversations = new ChatConversationRepository(context);
+            ChatParticipants = new ChatParticipantRepository(context);
+            ChatMessages = new ChatMessageRepository(context);
+            Meetings = new MeetingRepository(context);
+            MeetingParticipants = new MeetingParticipantRepository(context);
 
  
             MaterialRequests = new MaterialRequestRepository(context);

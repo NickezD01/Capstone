@@ -116,6 +116,7 @@ builder.Services.AddSwaggerGen(options =>
 // CORE SERVICES INFRASTRUCTURE & MAPPING
 // ======================================================
 builder.Services.AddHttpContextAccessor();
+builder.Services.AddHttpClient<ITeamsMeetingClient, TeamsMeetingClient>();
 builder.Services.AddAutoMapper(typeof(MapperConfigurationsProfile).Assembly);
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
@@ -136,6 +137,8 @@ builder.Services.AddScoped<IWarehouseService, WarehouseService>();
 builder.Services.AddScoped<ITaskService, TaskService>();
 builder.Services.AddScoped<IProgressReportService, ProgressReportService>();
 builder.Services.AddScoped<IMaterialRequestService, MaterialRequestService>();
+builder.Services.AddScoped<IChatService, ChatService>();
+builder.Services.AddScoped<IMeetingService, MeetingService>();
 
 
 // ======================================================
