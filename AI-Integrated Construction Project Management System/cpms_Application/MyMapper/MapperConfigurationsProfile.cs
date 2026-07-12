@@ -18,6 +18,8 @@ using cpms_Application.Response.Project;
 using cpms_Application.Response.Tasks;
 using cpms_Application.Response.UserAccount;
 using cpms_Application.Response.Warehouse;
+using cpms_Application.Response.PurchaseOrder;      // Bổ sung namespace chứa PurchaseOrderResponse
+using cpms_Application.Response.OrderLineItem;     // Bổ sung namespace chứa OrderLineItemResponse
 using cpms_Domain.Models;
 using System;
 using System.Collections.Generic;
@@ -41,9 +43,25 @@ namespace cpms_Application.MyMapper
             CreateMap<CreateProjectRequest, Project>();
             CreateMap<Project, ProjectResponse>();
 
-            // === PURCHASE ORDERS ===
+            // === PURCHASE ORDERS (ĐÃ CẬP NHẬT CẤU TRÚC RESPONSE CHUẨN) ===
             CreateMap<CreatePurchaseOrderRequest, PurchaseOrder>();
             CreateMap<OrderLineItemDto, OrderLineItem>();
+
+            // Cấu hình map lồng cho Project & Supplier bên trong PO Detail
+            CreateMap<Project, ProjectDto>();
+            CreateMap<Supplier, SupplierDto>();
+
+            // Mappings cho PO Detail
+            CreateMap<PurchaseOrder, PurchaseOrderResponse>()
+                .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.Status.ToString()))
+                .ForMember(dest => dest.Currency, opt => opt.MapFrom(src => src.Project != null ? src.Project.Currency : "VND"))
+                .ForMember(dest => dest.Items, opt => opt.MapFrom(src => src.OrderLineItems));
+
+            // Mappings cho PO Item (Tính toán SubTotal và lấy thông tin vật tư)
+            CreateMap<OrderLineItem, OrderLineItemResponse>()
+                .ForMember(dest => dest.MaterialName, opt => opt.MapFrom(src => src.Material != null ? src.Material.MaterialName : string.Empty))
+                .ForMember(dest => dest.Unit, opt => opt.MapFrom(src => src.Material != null ? src.Material.Unit : string.Empty))
+                .ForMember(dest => dest.SubTotal, opt => opt.MapFrom(src => src.Quantity * src.UnitPrice));
 
             // === MATERIALS ===
             CreateMap<cpms_Application.Request.Material.MaterialRequest, Material>();
@@ -54,7 +72,7 @@ namespace cpms_Application.MyMapper
             CreateMap<Warehouse, WarehouseResponse>()
                 .ForMember(dest => dest.ManagerName, opt => opt.MapFrom(src => src.Manager != null ? src.Manager.LastName : null));
 
-            CreateMap<InventoryRecord, InventoryRecordDto>(); // Giữ lại 1 dòng, xóa dòng trùng lặp phía dưới
+            CreateMap<InventoryRecord, InventoryRecordDto>();
 
             CreateMap<InventoryRecord, InventoryReportResponse>()
                 .ForMember(dest => dest.WarehouseName, opt => opt.MapFrom(src => src.Warehouse.WarehouseName))
@@ -98,10 +116,9 @@ namespace cpms_Application.MyMapper
                 .ForMember(dest => dest.TaskName, opt => opt.MapFrom(src => src.Task != null ? src.Task.TaskName : null))
                 .ForMember(dest => dest.EngineerName, opt => opt.MapFrom(src => src.Engineer != null ? $"{src.Engineer.LastName} {src.Engineer.FirstName}".Trim() : string.Empty));
 
-            // === MATERIAL REQUESTS (ĐÃ KHỚP HOÀN HẢO) ===
+            // === MATERIAL REQUESTS ===
             CreateMap<MaterialItemRequest, MaterialRequisition>();
 
-            // Bổ sung map xuôi từ DTO tạo phiếu sang Entity nếu cần dùng sau này
             CreateMap<CreateMaterialRequest, cpms_Domain.Models.MaterialRequest>()
                 .ForMember(dest => dest.Requisitions, opt => opt.MapFrom(src => src.Items));
 

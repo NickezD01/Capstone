@@ -2,7 +2,9 @@
 using cpms_Application.Interfaces;
 using cpms_Application.Request.PurchaseOrder;
 using cpms_Application.Response;
+using cpms_Application.Response.PurchaseOrder;
 using cpms_Domain.Models;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -20,6 +22,19 @@ namespace cpms_Application.Services
             _uow = uow;
             _mapper = mapper;
             _claimService = claimService;
+        }
+
+        // Hàm hỗ trợ Eager Loading đầy đủ thông tin để phục vụ cấu trúc Response mới
+        private async Task<PurchaseOrder?> GetSavedPurchaseOrderWithDetailsAsync(int poId)
+        {
+            return await _uow.PurchaseOrders.GetAsync(
+                filter: p => p.PoId == poId,
+                include: query => query
+                    .Include(p => p.Project)
+                    .Include(p => p.Supplier)
+                    .Include(p => p.OrderLineItems)
+                        .ThenInclude(line => line.Material)
+            );
         }
 
         public async Task<ApiResponse> CreatePurchaseOrderAsync(CreatePurchaseOrderRequest request)
@@ -45,7 +60,11 @@ namespace cpms_Application.Services
                 foreach (var item in request.Items)
                 {
                     var materialExists = await _uow.Materials.GetByIdAsync(item.MaterialId);
-                    if (materialExists == null) return response.SetBadRequest($"MaterialId {item.MaterialId} không tồn tại.");
+                    if (materialExists == null)
+                    {
+                        await _uow.RollbackTransactionAsync();
+                        return response.SetBadRequest($"MaterialId {item.MaterialId} không tồn tại.");
+                    }
 
                     var lineItem = _mapper.Map<OrderLineItem>(item);
                     total += (lineItem.Quantity * lineItem.UnitPrice);
@@ -56,14 +75,14 @@ namespace cpms_Application.Services
 
                 await _uow.PurchaseOrders.AddAsync(po);
                 await _uow.SaveChangeAsync();
-
                 await _uow.CommitTransactionAsync();
-                return response.SetOk("Order created successfully with total amount: " + total);
+
+                var savedPo = await GetSavedPurchaseOrderWithDetailsAsync(po.PoId);
+                return response.SetOk(_mapper.Map<PurchaseOrderResponse>(savedPo));
             }
             catch (Exception ex)
             {
                 await _uow.RollbackTransactionAsync();
-
                 var errorMsg = ex.InnerException?.InnerException != null
                     ? ex.InnerException.InnerException.Message
                     : (ex.InnerException != null ? ex.InnerException.Message : ex.Message);
@@ -77,8 +96,15 @@ namespace cpms_Application.Services
             var response = new ApiResponse();
             try
             {
-                var pos = await _uow.PurchaseOrders.GetAllAsync(null);
-                return response.SetOk(pos);
+                var pos = await _uow.PurchaseOrders.GetAllAsync(
+                    filter: null,
+                    include: query => query
+                        .Include(p => p.Project)
+                        .Include(p => p.Supplier)
+                        .Include(p => p.OrderLineItems)
+                            .ThenInclude(line => line.Material)
+                );
+                return response.SetOk(_mapper.Map<List<PurchaseOrderResponse>>(pos));
             }
             catch (Exception ex)
             {
@@ -98,9 +124,11 @@ namespace cpms_Application.Services
                     return response.SetBadRequest("Only PENDING orders can be approved");
 
                 po.Status = PurchaseOrderStatus.APPROVED;
-
+                _uow.PurchaseOrders.Update(po);
                 await _uow.SaveChangeAsync();
-                return response.SetOk("Order approved successfully");
+
+                var updatedPo = await GetSavedPurchaseOrderWithDetailsAsync(poId);
+                return response.SetOk(_mapper.Map<PurchaseOrderResponse>(updatedPo));
             }
             catch (Exception ex)
             {
@@ -115,21 +143,17 @@ namespace cpms_Application.Services
             {
                 var purchaseOrder = await _uow.PurchaseOrders.GetAsync(po => po.PoId == poId);
                 if (purchaseOrder == null)
-                {
                     return response.SetNotFound($"Đơn mua hàng với ID = {poId} không tồn tại.");
-                }
 
                 if (purchaseOrder.Status != PurchaseOrderStatus.PENDING)
-                {
                     return response.SetBadRequest("Chỉ có thể từ chối đơn mua hàng đang ở trạng thái chờ duyệt (Pending).");
-                }
 
                 purchaseOrder.Status = PurchaseOrderStatus.REJECTED;
-
                 _uow.PurchaseOrders.Update(purchaseOrder);
                 await _uow.SaveChangeAsync();
 
-                return response.SetOk("Từ chối đơn mua hàng thành công.");
+                var updatedPo = await GetSavedPurchaseOrderWithDetailsAsync(poId);
+                return response.SetOk(_mapper.Map<PurchaseOrderResponse>(updatedPo));
             }
             catch (Exception ex)
             {
@@ -138,7 +162,6 @@ namespace cpms_Application.Services
             }
         }
 
-        // 🛠️ ĐÃ FIX: Chốt chặn an toàn tuyệt đối trạng thái APPROVED để chống Double-Import
         public async Task<ApiResponse> ImportToWarehouseAsync(int poId, int warehouseId)
         {
             var po = await _uow.PurchaseOrders.GetWithItemsAsync(poId);
@@ -146,7 +169,6 @@ namespace cpms_Application.Services
             if (po == null)
                 return new ApiResponse().SetNotFound("Đơn hàng không tồn tại!");
 
-            // Nếu đơn hàng đã DELIVERED từ trước, chặn ngay lập tức không cho cộng kho lần 2
             if (po.Status == PurchaseOrderStatus.DELIVERED)
                 return new ApiResponse().SetBadRequest("Đơn hàng này đã được nhập kho trước đó rồi!");
 
@@ -181,13 +203,15 @@ namespace cpms_Application.Services
                     }
                 }
 
-                // Chuyển sang DELIVERED để khóa biên bản nhập kho này lại
                 po.Status = PurchaseOrderStatus.DELIVERED;
+                po.DeliveryDate = DateTime.UtcNow;
+                _uow.PurchaseOrders.Update(po);
 
                 await _uow.SaveChangeAsync();
                 await _uow.CommitTransactionAsync();
 
-                return new ApiResponse().SetOk("Nhập kho thành công!");
+                var updatedPo = await GetSavedPurchaseOrderWithDetailsAsync(poId);
+                return new ApiResponse().SetOk(_mapper.Map<PurchaseOrderResponse>(updatedPo));
             }
             catch (Exception ex)
             {
