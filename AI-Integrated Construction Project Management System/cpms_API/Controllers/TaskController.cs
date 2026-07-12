@@ -41,5 +41,18 @@ namespace cpms_API.Controllers
             }
             return Ok(response);
         }
+
+        [HttpGet("project/{projectId}/material-requirements")]
+        public async Task<IActionResult> GetMaterialRequirements(int projectId)
+        {
+            // Lưu ý: Đảm bảo trong ITaskService đã khai báo hàm này 
+            // Hoặc nếu bạn đặt nó bên IProjectService thì gọi qua _projectService nhé.
+            var response = await _taskService.GetMaterialRequirementsByProjectIdAsync(projectId);
+            if (!response.IsSuccess)
+            {
+                return NotFound(response);
+            }
+            return Ok(response);
+        }
     }
 }

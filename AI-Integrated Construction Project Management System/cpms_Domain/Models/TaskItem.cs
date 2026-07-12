@@ -26,6 +26,7 @@ namespace cpms_Domain.Models
         // Navigation Properties
         public virtual Project Project { get; set; } = null!;
         public virtual ICollection<ProgressReport> ProgressReports { get; set; } = new List<ProgressReport>();
+        public virtual ICollection<TaskMaterialRequirement> MaterialRequirements { get; set; } = new List<TaskMaterialRequirement>();
     }
 
     public enum TaskStatus

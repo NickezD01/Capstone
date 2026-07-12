@@ -1,4 +1,5 @@
 ﻿using cpms_Application.Interfaces;
+using cpms_Application.Request.MaterialRequest;
 using cpms_Application.Request.Project;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -60,6 +61,36 @@ namespace cpms_API.Controllers
         {
             // Truyền duy nhất file vào Service, ID sẽ được tự bóc tách từ Token trong ngầm định
             var response = await _projectService.ImportProjectFromWordAsync(file);
+            if (!response.IsSuccess)
+            {
+                return BadRequest(response);
+            }
+            return Ok(response);
+        }
+        [HttpPost("tasks/{taskId}/materials")]
+        public async Task<IActionResult> AssignMaterialRequirementToTask(int taskId, [FromBody] CreateTaskMaterialRequirementRequest request)
+        {
+            var response = await _projectService.AssignMaterialRequirementToTaskAsync(taskId, request);
+            if (!response.IsSuccess)
+            {
+                return BadRequest(response);
+            }
+            return Ok(response);
+        }
+        [HttpGet("{projectId}/material-requirements")]
+        public async Task<IActionResult> GetMaterialRequirementsByProjectId(int projectId)
+        {
+            var response = await _projectService.GetMaterialRequirementsByProjectIdAsync(projectId);
+            if (!response.IsSuccess)
+            {
+                return NotFound(response);
+            }
+            return Ok(response);
+        }
+        [HttpGet("{projectId}/calculate-mrp")]
+        public async Task<IActionResult> CalculateMRPForProject(int projectId)
+        {
+            var response = await _projectService.CalculateMRPForProjectAsync(projectId);
             if (!response.IsSuccess)
             {
                 return BadRequest(response);

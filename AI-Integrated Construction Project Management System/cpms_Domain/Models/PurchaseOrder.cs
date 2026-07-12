@@ -30,6 +30,7 @@ namespace cpms_Domain.Models
     {
         PENDING,
         APPROVED,
+        REJECTED,
         DELIVERED
     }
 }

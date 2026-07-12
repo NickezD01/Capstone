@@ -12,5 +12,7 @@ namespace cpms_Application.Interfaces
     {
         Task<ApiResponse> CreateTaskAsync(CreateTaskRequest request);
         Task<ApiResponse> GetTasksByProjectAsync(int projectId);
+
+        Task<ApiResponse> GetMaterialRequirementsByProjectIdAsync(int projectId);
     }
 }

@@ -33,6 +33,7 @@ namespace cpms_Infrastructure
         public ICategoryRepository Categories { get; }
         public IWarehouseRepository Warehouses { get; }
         public IInventoryRepository Inventories { get; }
+        public ITaskMaterialRequirementRepository TaskMaterialRequirements { get; }
 
 
         public IMaterialRequestRepository MaterialRequests { get; }
@@ -65,6 +66,7 @@ namespace cpms_Infrastructure
  
             MaterialRequests = new MaterialRequestRepository(context);
             MaterialRequisitions = new MaterialRequisitionRepository(context);
+            TaskMaterialRequirements = new TaskMaterialRequirementRepository(context);
         }
 
         // =========================================

@@ -1,4 +1,5 @@
-﻿using cpms_Application.Request.Project;
+﻿using cpms_Application.Request.MaterialRequest;
+using cpms_Application.Request.Project;
 using cpms_Application.Response;
 using Microsoft.AspNetCore.Http;
 using System;
@@ -16,5 +17,10 @@ namespace cpms_Application.Interfaces
         Task<ApiResponse> GetProjectByIdAsync(int id);
 
         Task<ApiResponse> ImportProjectFromWordAsync(IFormFile file);
+
+        Task<ApiResponse> AssignMaterialRequirementToTaskAsync(int taskId, CreateTaskMaterialRequirementRequest request);
+
+        Task<ApiResponse> GetMaterialRequirementsByProjectIdAsync(int projectId);
+        Task<ApiResponse> CalculateMRPForProjectAsync(int projectId);
     }
 }

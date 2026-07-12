@@ -42,6 +42,7 @@ namespace cpms_Application
         IOrderLineItemRepository OrderLineItems { get; }
         IWarehouseRepository Warehouses { get; }
         IInventoryRepository Inventories { get; }
+        ITaskMaterialRequirementRepository TaskMaterialRequirements { get; }
 
         // ========================================================
         // CORE METHODS

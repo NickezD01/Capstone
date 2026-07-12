@@ -32,7 +32,7 @@ namespace cpms_Application.Services
                 var projectExists = await _uow.Projects.GetByIdAsync(request.ProjectId);
                 if (projectExists == null) return response.SetBadRequest($"ProjectId {request.ProjectId} không tồn tại.");
 
-                var supplierExists = await _uow.Suppliers.GetByIdAsync(request.SupplierId); // Giả định uow có Suppliers
+                var supplierExists = await _uow.Suppliers.GetByIdAsync(request.SupplierId);
                 if (supplierExists == null) return response.SetBadRequest($"SupplierId {request.SupplierId} không tồn tại.");
 
                 // 2. Map dữ liệu cơ bản
@@ -115,6 +115,40 @@ namespace cpms_Application.Services
             catch (Exception ex)
             {
                 return response.SetBadRequest(ex.Message);
+            }
+        }
+
+        public async Task<ApiResponse> RejectPurchaseOrderAsync(int poId)
+        {
+            var response = new ApiResponse();
+            try
+            {
+                // 1. Kiểm tra đơn mua hàng (Purchase Order) có tồn tại không
+                // 🚀 ĐÃ ĐỒNG BỘ: Sửa trường po.PurchaseOrderID thành p.PoId cho khớp với hàm Approve
+                var purchaseOrder = await _uow.PurchaseOrders.GetAsync(po => po.PoId == poId);
+                if (purchaseOrder == null)
+                {
+                    return response.SetNotFound($"Đơn mua hàng với ID = {poId} không tồn tại.");
+                }
+
+                // 2. Kiểm tra trạng thái: Chỉ cho phép từ chối đơn hàng đang ở trạng thái chờ duyệt (PENDING)
+                if (purchaseOrder.Status != PurchaseOrderStatus.PENDING)
+                {
+                    return response.SetBadRequest("Chỉ có thể từ chối đơn mua hàng đang ở trạng thái chờ duyệt (Pending).");
+                }
+
+                // 3. Cập nhật trạng thái sang REJECTED
+                purchaseOrder.Status = PurchaseOrderStatus.REJECTED;
+
+                _uow.PurchaseOrders.Update(purchaseOrder);
+                await _uow.SaveChangeAsync();
+
+                return response.SetOk("Từ chối đơn mua hàng thành công.");
+            }
+            catch (Exception ex)
+            {
+                var deepErrorMessage = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
+                return response.SetBadRequest("Lỗi khi từ chối đơn hàng: " + deepErrorMessage);
             }
         }
 

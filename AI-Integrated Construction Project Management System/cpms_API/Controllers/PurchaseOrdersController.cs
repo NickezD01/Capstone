@@ -2,12 +2,13 @@
 using cpms_Application.Request.PurchaseOrder;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Threading.Tasks;
 
 namespace cpms_API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize] // Yêu cầu đăng nhập để thực hiện mua sắm
+    [Authorize] // Yêu cầu đăng nhập để thực hiện các thao tác đơn hàng
     public class PurchaseOrdersController : ControllerBase
     {
         private readonly IPurchaseOrderService _poService;
@@ -17,11 +18,10 @@ namespace cpms_API.Controllers
             _poService = poService;
         }
 
-        // POST: api/purchaseorders
+        // POST: api/PurchaseOrders
         [HttpPost]
         public async Task<IActionResult> CreatePurchaseOrder([FromBody] CreatePurchaseOrderRequest request)
         {
-            // Kiểm tra tính hợp lệ của dữ liệu thông qua FluentValidation (đã cấu hình trong Program.cs)
             if (!ModelState.IsValid)
             {
                 return BadRequest(ModelState);
@@ -37,6 +37,7 @@ namespace cpms_API.Controllers
             return Ok(response);
         }
 
+        // GET: api/PurchaseOrders
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
@@ -44,17 +45,29 @@ namespace cpms_API.Controllers
             return Ok(result);
         }
 
+        // PUT: api/PurchaseOrders/{id}/approve
         [HttpPut("{id}/approve")]
         public async Task<IActionResult> Approve(int id)
         {
             var result = await _poService.ApprovePurchaseOrderAsync(id);
             return result.IsSuccess ? Ok(result) : BadRequest(result);
         }
+
+        // PUT: api/PurchaseOrders/{id}/reject
+        // 🚀 BỔ SUNG: Endpoint xử lý từ chối đơn mua hàng công trình
+        [HttpPut("{id}/reject")]
+        public async Task<IActionResult> Reject(int id)
+        {
+            var result = await _poService.RejectPurchaseOrderAsync(id);
+            return result.IsSuccess ? Ok(result) : BadRequest(result);
+        }
+
+        // POST: api/PurchaseOrders/{poId}/import?warehouseId=1
         [HttpPost("{poId}/import")]
         public async Task<IActionResult> Import(int poId, [FromQuery] int warehouseId)
         {
             var result = await _poService.ImportToWarehouseAsync(poId, warehouseId);
-            return Ok(result);
+            return result.IsSuccess ? Ok(result) : BadRequest(result);
         }
     }
 }

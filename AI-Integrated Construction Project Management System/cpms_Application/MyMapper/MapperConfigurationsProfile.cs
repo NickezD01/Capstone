@@ -81,15 +81,37 @@ namespace cpms_Application.MyMapper
             // ==========================================
             // TASKS & PROGRESS REPORT MAPPING
             // ==========================================
-            CreateMap<CreateTaskRequest, TaskItem>();
+            // 🚀 ĐÃ SỬA CÚ PHÁP & BỔ SUNG KHÓA AN TOÀN: Bỏ qua toàn bộ các quan hệ để tránh lỗi Inner Exception khi SaveChanges
+            CreateMap<CreateTaskRequest, TaskItem>()
+                .ForMember(dest => dest.TaskId, opt => opt.Ignore())
+                .ForMember(dest => dest.Status, opt => opt.Ignore())
+                .ForMember(dest => dest.ActualCost, opt => opt.Ignore())
+                .ForMember(dest => dest.ActualProgressPct, opt => opt.Ignore())
+                .ForMember(dest => dest.Project, opt => opt.Ignore())
+                .ForMember(dest => dest.AssignedToUser, opt => opt.Ignore())
+                .ForMember(dest => dest.MaterialRequirements, opt => opt.Ignore())
+                .ForMember(dest => dest.ProgressReports, opt => opt.Ignore());
+
             CreateMap<TaskItem, TaskResponse>()
                 .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.Status.ToString()))
-                .ForMember(dest => dest.AssignedToUserName, opt => opt.MapFrom(src => $"{src.AssignedToUser.LastName} {src.AssignedToUser.FirstName}")); 
+                .ForMember(dest => dest.AssignedToUserName, opt => opt.MapFrom(src => src.AssignedToUser != null ? $"{src.AssignedToUser.LastName} {src.AssignedToUser.FirstName}".Trim() : string.Empty))
+                // 🚀 BỔ SUNG: Tự động ánh xạ danh sách định mức của Task sang DTO đầu ra
+                .ForMember(dest => dest.MaterialRequirements, opt => opt.MapFrom(src => src.MaterialRequirements));
+
+            // 🚀 BỔ SUNG: Định nghĩa chi tiết cách bóc tách dữ liệu từ Entity sang Response phẳng cho Front-end
+            CreateMap<TaskMaterialRequirement, TaskMaterialResponse>()
+                // Bốc tên vật tư từ thực thể Material liên kết sang
+                .ForMember(dest => dest.MaterialName, opt => opt.MapFrom(src => src.Material != null ? src.Material.MaterialName : null))
+                // Bốc đơn vị tính (Bao, Tấn, Khối...) từ thực thể Material liên kết sang
+                .ForMember(dest => dest.Unit, opt => opt.MapFrom(src => src.Material != null ? src.Material.Unit : null))
+                // Thêm dòng này để Front-end hiển thị được tên của Task chứa định mức vật tư đó
+                .ForMember(dest => dest.TaskName, opt => opt.MapFrom(src => src.TaskItem != null ? src.TaskItem.TaskName : null));
 
             CreateMap<SubmitProgressReportRequest, ProgressReport>();
+
             CreateMap<ProgressReport, ProgressReportResponse>()
-                .ForMember(dest => dest.TaskName, opt => opt.MapFrom(src => src.Task.TaskName))
-                .ForMember(dest => dest.EngineerName, opt => opt.MapFrom(src => $"{src.Engineer.LastName} {src.Engineer.FirstName}")); 
+                .ForMember(dest => dest.TaskName, opt => opt.MapFrom(src => src.Task != null ? src.Task.TaskName : null))
+                .ForMember(dest => dest.EngineerName, opt => opt.MapFrom(src => src.Engineer != null ? $"{src.Engineer.LastName} {src.Engineer.FirstName}".Trim() : string.Empty));
 
             // ========================================================
             // MATERIAL REQUEST (PHIẾU YÊU CẦU VẬT TƯ) MAPPINGS
@@ -100,12 +122,12 @@ namespace cpms_Application.MyMapper
 
             // 2. Map từ Entity phiếu tổng sang Phiếu tổng Response DTO trả về cho Client
             CreateMap<cpms_Domain.Models.MaterialRequest, MaterialRequestResponse>()
-                .ForMember(dest => dest.RequestedByName, opt => opt.MapFrom(src => $"{src.Requester.LastName} {src.Requester.FirstName}"))
+                .ForMember(dest => dest.RequestedByName, opt => opt.MapFrom(src => src.Requester != null ? $"{src.Requester.LastName} {src.Requester.FirstName}".Trim() : string.Empty))
                 .ForMember(dest => dest.Items, opt => opt.MapFrom(src => src.Requisitions));
 
             // 3. Map từ Entity chi tiết dòng vật tư sang DTO dòng vật tư hiển thị kèm tên cụ thể
             CreateMap<MaterialRequisition, MaterialRequisitionDetailResponse>()
-                .ForMember(dest => dest.MaterialName, opt => opt.MapFrom(src => src.Material.MaterialName));
+                .ForMember(dest => dest.MaterialName, opt => opt.MapFrom(src => src.Material != null ? src.Material.MaterialName : null));
         }
     }
 }

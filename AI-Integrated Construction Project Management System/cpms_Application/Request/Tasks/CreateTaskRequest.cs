@@ -15,5 +15,11 @@ namespace cpms_Application.Request.Tasks
         public decimal PlannedBudget { get; set; } // PV
         public DateTime BaselineStart { get; set; }
         public DateTime BaselineEnd { get; set; }
+        public List<TaskMaterialRequest> Materials { get; set; } = new List<TaskMaterialRequest>();
+    }
+    public class TaskMaterialRequest
+    {
+        public int MaterialId { get; set; }
+        public decimal GrossQuantityRequired { get; set; }
     }
 }
