@@ -15,6 +15,8 @@ namespace cpms_Application.Interfaces
         Task<ApiResponse> CreateProjectAsync(CreateProjectRequest request);
         Task<ApiResponse> GetAllProjectsAsync();
         Task<ApiResponse> GetProjectByIdAsync(int id);
+        Task<ApiResponse> AdjustProjectBudgetAsync(AdjustBudgetRequest request);
+        Task<ApiResponse> GetBudgetHistoriesByProjectIdAsync(int projectId);
 
         Task<ApiResponse> ImportProjectFromWordAsync(IFormFile file);
 

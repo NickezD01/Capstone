@@ -44,7 +44,8 @@ namespace cpms_Application.Services
                 await _unitOfWork.Projects.AddAsync(project);
                 await _unitOfWork.SaveChangeAsync();
 
-                return apiResponse.SetOk("Project created successfully");
+                var responseResult = _mapper.Map<ProjectResponse>(project);
+                return apiResponse.SetOk(responseResult);
             }
             catch (Exception ex)
             {
@@ -91,17 +92,23 @@ namespace cpms_Application.Services
         public async Task<ApiResponse> ImportProjectFromWordAsync(IFormFile file)
         {
             var apiResponse = new ApiResponse();
+
+            if (file == null || file.Length == 0)
+                return apiResponse.SetBadRequest("Vui lòng tải lên một file Word (.docx) hợp lệ.");
+
+            // Áp dụng Giao dịch (Transaction) để bảo vệ dữ liệu khi bóc tách file
+            await _unitOfWork.BeginTransactionAsync();
             try
             {
-                if (file == null || file.Length == 0)
-                    return apiResponse.SetBadRequest("Vui lòng tải lên một file Word (.docx) hợp lệ.");
-
                 var currentUser = _claimService.GetUserClaim();
                 int pmUserId = currentUser.Id;
 
                 var pmAccount = await _unitOfWork.UserAccounts.GetAsync(u => u.Id == pmUserId);
                 if (pmAccount == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync();
                     return apiResponse.SetNotFound("Tài khoản quản lý dự án (PMUserID) không tồn tại hoặc không hợp lệ.");
+                }
 
                 string projectName = "";
                 string address = "";
@@ -148,7 +155,10 @@ namespace cpms_Application.Services
                 }
 
                 if (string.IsNullOrWhiteSpace(projectName))
+                {
+                    await _unitOfWork.RollbackTransactionAsync();
                     return apiResponse.SetBadRequest("File văn bản sai cấu trúc hoặc trống. Không tìm thấy dòng chứa tiêu đề 'Tên dự án:'.");
+                }
 
                 var project = new Project
                 {
@@ -166,16 +176,19 @@ namespace cpms_Application.Services
                 await _unitOfWork.Projects.AddAsync(project);
                 await _unitOfWork.SaveChangeAsync();
 
-                var resultResponse = _mapper.Map<ProjectResponse>(project);
+                await _unitOfWork.CommitTransactionAsync();
 
+                var resultResponse = _mapper.Map<ProjectResponse>(project);
                 return apiResponse.SetOk(resultResponse);
             }
             catch (ArgumentNullException ex)
             {
+                await _unitOfWork.RollbackTransactionAsync();
                 return apiResponse.SetBadRequest(ex.Message);
             }
             catch (Exception ex)
             {
+                await _unitOfWork.RollbackTransactionAsync();
                 return apiResponse.SetBadRequest("Đã xảy ra lỗi bất ngờ khi bóc tách file Word: " + ex.Message);
             }
         }
@@ -185,6 +198,12 @@ namespace cpms_Application.Services
             var apiResponse = new ApiResponse();
             try
             {
+                // KIỂM TRA ĐIỀU KIỆN BIÊN: Chặn các giá trị số lượng bất hợp pháp (<= 0) từ phía Client
+                if (request.GrossQuantityRequired <= 0)
+                {
+                    return apiResponse.SetBadRequest("Số lượng định mức vật tư yêu cầu phải lớn hơn 0.");
+                }
+
                 var taskItem = await _unitOfWork.TaskItems.GetByIdAsync(taskId);
                 if (taskItem == null)
                     return apiResponse.SetNotFound($"Không tìm thấy đầu việc (Task) với ID = {taskId}");
@@ -203,17 +222,19 @@ namespace cpms_Application.Services
                 }
                 else
                 {
-                    var newRequirement = new TaskMaterialRequirement
+                    existingRequirement = new TaskMaterialRequirement
                     {
                         TaskId = taskId,
                         MaterialId = request.MaterialId,
                         GrossQuantityRequired = request.GrossQuantityRequired
                     };
-                    await _unitOfWork.TaskMaterialRequirements.AddAsync(newRequirement);
+                    await _unitOfWork.TaskMaterialRequirements.AddAsync(existingRequirement);
                 }
 
                 await _unitOfWork.SaveChangeAsync();
-                return apiResponse.SetOk("Gán định mức vật tư cho đầu việc thành công.");
+
+                var responseResult = _mapper.Map<TaskMaterialResponse>(existingRequirement);
+                return apiResponse.SetOk(responseResult);
             }
             catch (Exception ex)
             {
@@ -255,7 +276,6 @@ namespace cpms_Application.Services
                 if (project == null)
                     return apiResponse.SetNotFound("Dự án không tồn tại.");
 
-                // 1. Lấy định mức vật tư của các Task chưa hoàn thành (ActualProgressPct < 100)
                 var requirements = await _unitOfWork.TaskMaterialRequirements.GetAllAsync(
                     filter: r => r.TaskItem.ProjectId == projectId
                               && r.TaskItem.Status != cpms_Domain.Models.TaskStatus.COMPLETED
@@ -270,7 +290,6 @@ namespace cpms_Application.Services
                 if (!requirementsList.Any())
                     return apiResponse.SetOk(new List<MRPCalculationResponse>());
 
-                // 2. Gom nhóm nhu cầu thô dựa trên các thuộc tính của MaterialId để đảm bảo tính đồng bộ dữ liệu gốc
                 var grossRequirementsGroup = requirementsList
                     .GroupBy(r => new
                     {
@@ -287,13 +306,19 @@ namespace cpms_Application.Services
                         EarliestNeedDate = g.Min(r => r.TaskItem.BaselineStart)
                     }).ToList();
 
-                // 3. Lấy toàn bộ thông tin kho để tính toán tồn kho vật tư
-                var currentInventories = await _unitOfWork.Inventories.GetAllAsync(null);
+                // LẤY DANH SÁCH ID VẬT TƯ ĐỂ TRUY VẤN TRÚNG ĐÍCH
+                var requiredMaterialIds = grossRequirementsGroup.Select(g => g.MaterialId).Distinct().ToList();
+
+                // TỐI ƯU HÓA TRUY VẤN: Chỉ lấy tồn kho của các Vật tư có trong danh sách yêu cầu
+                var currentInventories = await _unitOfWork.Inventories.GetAllAsync(
+                    filter: i => requiredMaterialIds.Contains(i.MaterialId)
+                );
                 var inventoriesList = currentInventories.ToList();
 
-                // 4. Lấy thông tin các Đơn mua hàng (PO) đang xử lý để tính lượng On-Order
+                // TỐI ƯU HÓA TRUY VẤN: Chỉ lọc lấy Purchase Orders chứa các vật tư cần tính toán
                 var activePurchaseOrders = await _unitOfWork.PurchaseOrders.GetAllAsync(
-                    filter: po => po.Status == PurchaseOrderStatus.PENDING || po.Status == PurchaseOrderStatus.APPROVED,
+                    filter: po => (po.Status == PurchaseOrderStatus.PENDING || po.Status == PurchaseOrderStatus.APPROVED)
+                               && po.OrderLineItems.Any(line => requiredMaterialIds.Contains(line.MaterialId)),
                     include: query => query.Include(po => po.OrderLineItems)
                 );
                 var activePoLines = activePurchaseOrders.SelectMany(po => po.OrderLineItems).ToList();
@@ -302,26 +327,22 @@ namespace cpms_Application.Services
 
                 foreach (var gross in grossRequirementsGroup)
                 {
-                    // Tính tổng số lượng thực tế hiện có trong các kho (QuantityOnHand)
+                    // Lọc dữ liệu trên danh sách đã được thu nhỏ trong bộ nhớ RAM
                     decimal currentStock = inventoriesList
                         .Where(i => i.MaterialId == gross.MaterialId)
                         .Sum(i => i.QuantityOnHand);
 
-                    // Tính tổng lượng đang được giữ chỗ (ReservedQuantity)
                     decimal reserved = inventoriesList
                         .Where(i => i.MaterialId == gross.MaterialId)
                         .Sum(i => i.ReservedQuantity);
 
-                    // Lượng khả dụng thực tế trong kho có thể dùng ngay
                     decimal available = currentStock - reserved;
                     if (available < 0) available = 0;
 
-                    // Tính lượng đang được đặt hàng (OnOrderQuantity) từ các PO chưa giao bốc về kho
                     decimal onOrder = activePoLines
                         .Where(line => line.MaterialId == gross.MaterialId)
                         .Sum(line => line.Quantity);
 
-                    // Công thức tính nhu cầu thực tế mở rộng: Net = Tổng thô - Khả dụng hiện tại - Đang đặt hàng trên đường về
                     decimal netRequired = gross.TotalGross - available - onOrder;
                     if (netRequired < 0) netRequired = 0;
 
@@ -329,7 +350,7 @@ namespace cpms_Application.Services
                     {
                         MaterialId = gross.MaterialId,
                         MaterialName = gross.MaterialName,
-                        Unit = gross.Unit, // Đã map chính xác dựa theo Material ID thông qua khối GroupBy phía trên
+                        Unit = gross.Unit,
                         TotalGrossRequired = gross.TotalGross,
                         CurrentInventory = currentStock,
                         ReservedQuantity = reserved,
@@ -345,6 +366,71 @@ namespace cpms_Application.Services
             catch (Exception ex)
             {
                 return apiResponse.SetBadRequest("Lỗi trong quá trình tính toán MRP: " + ex.Message);
+            }
+        }
+        public async Task<ApiResponse> AdjustProjectBudgetAsync(AdjustBudgetRequest request)
+        {
+            var apiResponse = new ApiResponse();
+            try
+            {
+                var project = await _unitOfWork.Projects.GetByIdAsync(request.ProjectId);
+                if (project == null)
+                    return apiResponse.SetNotFound("Không tìm thấy dự án.");
+
+                decimal oldBudget = project.TotalProjectBudget;
+
+                // Cập nhật ngân sách
+                project.TotalProjectBudget += request.Amount;
+
+                var history = new ProjectBudgetHistory
+                {
+                    ProjectId = request.ProjectId,
+                    AmountChanged = request.Amount,
+                    PreviousBudget = oldBudget,
+                    NewBudget = project.TotalProjectBudget,
+                    Reason = request.Reason,
+                    UpdatedByUserId = _claimService.GetUserClaim().Id,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                await _unitOfWork.ProjectBudgetHistories.AddAsync(history);
+
+                _unitOfWork.Projects.Update(project);
+
+                await _unitOfWork.SaveChangeAsync();
+
+                // Mapping sang Response
+                var response = _mapper.Map<ProjectBudgetHistoryResponse>(history);
+
+                // Vì History không có Currency nên gán từ Project
+                response.Currency = project.Currency;
+
+                return apiResponse.SetOk(response);
+            }
+            catch (Exception ex)
+            {
+                return apiResponse.SetBadRequest("Lỗi: " + ex.Message);
+            }
+        }
+
+        public async Task<ApiResponse> GetBudgetHistoriesByProjectIdAsync(int projectId)
+        {
+            var apiResponse = new ApiResponse();
+            try
+            {
+                // 1. Lấy dữ liệu từ Database
+                var histories = await _unitOfWork.ProjectBudgetHistories.GetAllAsync(h => h.ProjectId == projectId);
+
+                var result = _mapper.Map<List<ProjectBudgetHistoryResponse>>(
+                    histories.OrderByDescending(h => h.CreatedAt).ToList()
+                );
+
+                // 3. Trả về kết quả
+                return apiResponse.SetOk(result);
+            }
+            catch (Exception ex)
+            {
+                return apiResponse.SetBadRequest("Lỗi lấy lịch sử ngân sách: " + ex.Message);
             }
         }
     }

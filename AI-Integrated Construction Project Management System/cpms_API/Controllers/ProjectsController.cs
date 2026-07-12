@@ -8,7 +8,7 @@ namespace cpms_API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize] // Bảo mật các endpoint này
+    [Authorize]
     public class ProjectsController : ControllerBase
     {
         private readonly IProjectService _projectService;
@@ -27,7 +27,7 @@ namespace cpms_API.Controllers
             {
                 return BadRequest(response);
             }
-            return Ok(response);
+            return Ok(response); // Hiện tại sẽ trả về JSON Object đầy đủ của dự án vừa tạo
         }
 
         // GET: api/projects
@@ -54,12 +54,10 @@ namespace cpms_API.Controllers
             return Ok(response);
         }
 
-        // 🚀 CẬP NHẬT Ở ĐÂY: Xóa bỏ hoàn toàn [FromQuery] int pmUserId
         [HttpPost("import-word")]
-        [Consumes("multipart/form-data")] // Ép kiểu Swagger/Frontend hiển thị nút chọn File
+        [Consumes("multipart/form-data")]
         public async Task<IActionResult> ImportProjectFromWord(IFormFile file)
         {
-            // Truyền duy nhất file vào Service, ID sẽ được tự bóc tách từ Token trong ngầm định
             var response = await _projectService.ImportProjectFromWordAsync(file);
             if (!response.IsSuccess)
             {
@@ -67,6 +65,8 @@ namespace cpms_API.Controllers
             }
             return Ok(response);
         }
+
+        // POST: api/projects/tasks/{taskId}/materials
         [HttpPost("tasks/{taskId}/materials")]
         public async Task<IActionResult> AssignMaterialRequirementToTask(int taskId, [FromBody] CreateTaskMaterialRequirementRequest request)
         {
@@ -75,8 +75,10 @@ namespace cpms_API.Controllers
             {
                 return BadRequest(response);
             }
-            return Ok(response);
+            return Ok(response); // Hiện tại sẽ trả về dữ liệu định mức chi tiết thay vì chuỗi message thành công
         }
+
+        // GET: api/projects/{projectId}/material-requirements
         [HttpGet("{projectId}/material-requirements")]
         public async Task<IActionResult> GetMaterialRequirementsByProjectId(int projectId)
         {
@@ -87,6 +89,8 @@ namespace cpms_API.Controllers
             }
             return Ok(response);
         }
+
+        // GET: api/projects/{projectId}/calculate-mrp
         [HttpGet("{projectId}/calculate-mrp")]
         public async Task<IActionResult> CalculateMRPForProject(int projectId)
         {
@@ -94,6 +98,28 @@ namespace cpms_API.Controllers
             if (!response.IsSuccess)
             {
                 return BadRequest(response);
+            }
+            return Ok(response);
+        }
+        [HttpPost("adjust-budget")]
+        public async Task<IActionResult> AdjustProjectBudget([FromBody] AdjustBudgetRequest request)
+        {
+            var response = await _projectService.AdjustProjectBudgetAsync(request);
+            if (!response.IsSuccess)
+            {
+                return BadRequest(response);
+            }
+            return Ok(response);
+        }
+
+        // GET: api/projects/{projectId}/budget-histories
+        [HttpGet("{projectId}/budget-histories")]
+        public async Task<IActionResult> GetBudgetHistories(int projectId)
+        {
+            var response = await _projectService.GetBudgetHistoriesByProjectIdAsync(projectId);
+            if (!response.IsSuccess)
+            {
+                return NotFound(response);
             }
             return Ok(response);
         }

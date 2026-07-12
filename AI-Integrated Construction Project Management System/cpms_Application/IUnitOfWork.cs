@@ -34,6 +34,7 @@ namespace cpms_Application
         ICategoryRepository Categories { get; }
         IMaterialRequestRepository MaterialRequests { get; }
         IMaterialRequisitionRepository MaterialRequisitions { get; }
+        IProjectBudgetHistoryRepository ProjectBudgetHistories { get; }
 
         // ========================================================
         // PURCHASING & ORDERS

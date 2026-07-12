@@ -7,6 +7,7 @@ using cpms_Domain.Models;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 
 namespace cpms_Application.Services
@@ -55,7 +56,7 @@ namespace cpms_Application.Services
                 po.OrderDate = DateTime.UtcNow;
                 po.Status = PurchaseOrderStatus.PENDING;
 
-                decimal total = 0;
+                decimal currentOrderTotal = 0;
 
                 foreach (var item in request.Items)
                 {
@@ -67,11 +68,40 @@ namespace cpms_Application.Services
                     }
 
                     var lineItem = _mapper.Map<OrderLineItem>(item);
-                    total += (lineItem.Quantity * lineItem.UnitPrice);
+                    currentOrderTotal += (lineItem.Quantity * lineItem.UnitPrice);
                     po.OrderLineItems.Add(lineItem);
                 }
 
-                po.TotalAmount = total;
+                po.TotalAmount = currentOrderTotal;
+
+                // ================== LOGIC KIỂM TRA NGÂN SÁCH DỰ ÁN (BUDGET VALIDATION) ==================
+                // Chỉ thực hiện kiểm tra nếu Dự án thực sự có thiết lập ngân sách lớn hơn 0
+                if (projectExists.TotalProjectBudget > 0)
+                {
+                    // Lấy toàn bộ các đơn hàng hiện tại của dự án này (Bỏ qua các đơn bị REJECTED)
+                    var existingOrders = await _uow.PurchaseOrders.GetAllAsync(
+                        filter: p => p.ProjectId == request.ProjectId && p.Status != PurchaseOrderStatus.REJECTED
+                    );
+
+                    // Tổng số tiền đã chi tiêu (hoặc đang đợi duyệt) trước đó
+                    decimal totalSpentSoFar = existingOrders.Sum(p => p.TotalAmount);
+
+                    // Ngân sách còn lại khả dụng
+                    decimal availableBudget = projectExists.TotalProjectBudget - totalSpentSoFar;
+
+                    // Nếu đơn hàng hiện tại làm vượt ngân sách -> Rollback và thông báo chặn
+                    if (currentOrderTotal > availableBudget)
+                    {
+                        await _uow.RollbackTransactionAsync();
+                        return response.SetBadRequest(
+                            $"Không thể tạo đơn hàng! Tổng tiền đơn này ({currentOrderTotal:N0} {projectExists.Currency}) " +
+                            $"vượt quá ngân sách còn lại của dự án. Ngân sách khả dụng hiện tại: {availableBudget:N0} {projectExists.Currency} " +
+                            $"(Ngân sách tổng: {projectExists.TotalProjectBudget:N0} - Đã dùng: {totalSpentSoFar:N0})."
+                        );
+                    }
+                }
+                // Nếu TotalProjectBudget <= 0, hệ thống xem như dự án thả nổi chi phí và tự động bỏ qua khối check trên.
+                // ========================================================================================
 
                 await _uow.PurchaseOrders.AddAsync(po);
                 await _uow.SaveChangeAsync();
@@ -164,16 +194,21 @@ namespace cpms_Application.Services
 
         public async Task<ApiResponse> ImportToWarehouseAsync(int poId, int warehouseId)
         {
-            var po = await _uow.PurchaseOrders.GetWithItemsAsync(poId);
+            var apiResponse = new ApiResponse();
+
+            var po = await GetSavedPurchaseOrderWithDetailsAsync(poId);
 
             if (po == null)
-                return new ApiResponse().SetNotFound("Đơn hàng không tồn tại!");
+                return apiResponse.SetNotFound("Đơn hàng không tồn tại!");
 
             if (po.Status == PurchaseOrderStatus.DELIVERED)
-                return new ApiResponse().SetBadRequest("Đơn hàng này đã được nhập kho trước đó rồi!");
+                return apiResponse.SetBadRequest("Đơn hàng này đã được nhập kho trước đó rồi!");
 
             if (po.Status != PurchaseOrderStatus.APPROVED)
-                return new ApiResponse().SetBadRequest("Chỉ đơn hàng đã được phê duyệt (Approved) mới có thể nhập kho!");
+                return apiResponse.SetBadRequest("Chỉ đơn hàng đã được phê duyệt (Approved) mới có thể nhập kho!");
+
+            if (po.OrderLineItems == null || !po.OrderLineItems.Any())
+                return apiResponse.SetBadRequest("Đơn mua hàng không chứa danh mục vật tư nào để tiến hành nhập kho.");
 
             await _uow.BeginTransactionAsync();
             try
@@ -211,12 +246,12 @@ namespace cpms_Application.Services
                 await _uow.CommitTransactionAsync();
 
                 var updatedPo = await GetSavedPurchaseOrderWithDetailsAsync(poId);
-                return new ApiResponse().SetOk(_mapper.Map<PurchaseOrderResponse>(updatedPo));
+                return apiResponse.SetOk(_mapper.Map<PurchaseOrderResponse>(updatedPo));
             }
             catch (Exception ex)
             {
                 await _uow.RollbackTransactionAsync();
-                return new ApiResponse().SetBadRequest("Lỗi hệ thống khi nhập kho: " + ex.Message);
+                return apiResponse.SetBadRequest("Lỗi hệ thống khi nhập kho: " + ex.Message);
             }
         }
     }

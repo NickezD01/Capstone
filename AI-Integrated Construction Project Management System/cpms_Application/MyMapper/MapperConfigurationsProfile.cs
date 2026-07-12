@@ -133,6 +133,12 @@ namespace cpms_Application.MyMapper
             CreateMap<MaterialRequisition, MaterialRequisitionDetailResponse>()
                 .ForMember(dest => dest.MaterialName, opt => opt.MapFrom(src => src.Material != null ? src.Material.MaterialName : null))
                 .ForMember(dest => dest.Unit, opt => opt.MapFrom(src => src.Material != null ? src.Material.Unit : null));
+
+
+
+            CreateMap<ProjectBudgetHistory, ProjectBudgetHistoryResponse>()
+    .ForMember(dest => dest.Currency,
+        opt => opt.Ignore());
         }
     }
 }
