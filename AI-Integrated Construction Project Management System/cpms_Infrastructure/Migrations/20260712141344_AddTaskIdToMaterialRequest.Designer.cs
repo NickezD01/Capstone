@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using cpms_Infrastructure;
 
@@ -11,9 +12,11 @@ using cpms_Infrastructure;
 namespace cpms_Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260712141344_AddTaskIdToMaterialRequest")]
+    partial class AddTaskIdToMaterialRequest
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -347,8 +350,6 @@ namespace cpms_Infrastructure.Migrations
                     b.HasIndex("ProjectId");
 
                     b.HasIndex("RequestedBy");
-
-                    b.HasIndex("TaskId");
 
                     b.ToTable("MaterialsRequests", (string)null);
                 });
@@ -1190,16 +1191,9 @@ namespace cpms_Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("cpms_Domain.Models.TaskItem", "TaskItem")
-                        .WithMany()
-                        .HasForeignKey("TaskId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.Navigation("Project");
 
                     b.Navigation("Requester");
-
-                    b.Navigation("TaskItem");
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.MaterialRequisition", b =>

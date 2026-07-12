@@ -31,58 +31,55 @@ namespace cpms_Application.Services
             var response = new ApiResponse();
             try
             {
-                // 1. Lấy thông tin người tạo yêu cầu từ ClaimService
                 var currentUser = _claimService.GetUserClaim();
 
                 if (request.Items == null || request.Items.Count == 0)
                     return response.SetBadRequest("Danh sách vật tư yêu cầu không được để trống.");
 
-                // 2. Kích hoạt Transaction để đảm bảo an toàn dữ liệu khi kiểm tra và trừ kho hàng loạt
                 await _uow.BeginTransactionAsync();
 
-                // 3. Khởi tạo Master Record (MaterialRequest)
                 var materialRequest = new MaterialRequest
                 {
                     ProjectId = request.ProjectId,
+                    TaskId = request.TaskId,
                     RequestedBy = currentUser.Id,
                     RequestDate = DateTime.UtcNow,
                     Status = "PENDING"
                 };
 
                 await _uow.MaterialRequests.AddAsync(materialRequest);
-                await _uow.SaveChangeAsync(); // Lưu trước để sinh ra RequestId cho các Detail Items
+                await _uow.SaveChangeAsync();
 
-                // 4. Lặp qua từng Item để kiểm tra tồn kho (Inventory Check)
+                var requestedMaterialIds = request.Items.Select(item => item.MaterialId).Distinct().ToList();
+                var allInventories = await _uow.Inventories.GetAllAsync(inv => requestedMaterialIds.Contains(inv.MaterialId));
+                var allMaterials = await _uow.Materials.GetAllAsync(m => requestedMaterialIds.Contains(m.MaterialId));
+
                 foreach (var item in request.Items)
                 {
-                    // Lấy bản ghi kho của vật tư này
-                    var inventory = await _uow.Inventories.GetAsync(inv => inv.MaterialId == item.MaterialId);
+                    var inventory = allInventories.FirstOrDefault(inv => inv.MaterialId == item.MaterialId);
 
                     if (inventory == null)
                     {
-                        var material = await _uow.Materials.GetAsync(m => m.MaterialId == item.MaterialId);
+                        var material = allMaterials.FirstOrDefault(m => m.MaterialId == item.MaterialId);
                         string matName = material?.MaterialName ?? $"ID {item.MaterialId}";
                         await _uow.RollbackTransactionAsync();
                         return response.SetBadRequest($"Vật tư [{matName}] không tồn tại trong bất kỳ kho nào.");
                     }
 
-                    // Tính số lượng khả dụng thực tế: Available = Thật có - Đã giữ chỗ trước đó
                     decimal availableQty = inventory.QuantityOnHand - inventory.ReservedQuantity;
 
                     if (availableQty < item.Quantity)
                     {
-                        var material = await _uow.Materials.GetAsync(m => m.MaterialId == item.MaterialId);
+                        var material = allMaterials.FirstOrDefault(m => m.MaterialId == item.MaterialId);
                         string matName = material?.MaterialName ?? $"ID {item.MaterialId}";
                         await _uow.RollbackTransactionAsync();
                         return response.SetBadRequest($"Kho không đủ hàng cho [{matName}]. Cần: {item.Quantity}, Khả dụng trong kho: {availableQty}");
                     }
 
-                    // 5. LOGIC GIỮ HÀNG (Mẹo ERD): Tăng số lượng Reserved để giữ chỗ tạm thời cho phiếu PENDING này
                     inventory.ReservedQuantity += item.Quantity;
                     inventory.UpdatedAt = DateTime.UtcNow;
                     _uow.Inventories.Update(inventory);
 
-                    // 6. Tạo dòng chi tiết Detail Record (MaterialRequisition)
                     var requisition = new MaterialRequisition
                     {
                         RequestId = materialRequest.RequestId,
@@ -93,11 +90,20 @@ namespace cpms_Application.Services
                     await _uow.MaterialRequisitions.AddAsync(requisition);
                 }
 
-                // 7. Lưu tổng thể và Commit toàn bộ tiến trình
                 await _uow.SaveChangeAsync();
                 await _uow.CommitTransactionAsync();
 
-                return response.SetOk("Tạo yêu cầu vật tư thành công, hệ thống đã tạm giữ số lượng trong kho!");
+                // Nạp đầy đủ thông tin quan hệ sau khi lưu thành công
+                var savedRequest = await _uow.MaterialRequests.GetAsync(
+                    filter: r => r.RequestId == materialRequest.RequestId,
+                    include: query => query
+                        .Include(r => r.Requester)
+                        .Include(r => r.Requisitions)
+                            .ThenInclude(req => req.Material)
+                );
+
+                var result = _mapper.Map<MaterialRequestResponse>(savedRequest);
+                return response.SetOk(result);
             }
             catch (Exception ex)
             {
@@ -106,15 +112,104 @@ namespace cpms_Application.Services
             }
         }
 
+        public async Task<ApiResponse> CreateRequestByTaskIdAsync(int taskId)
+        {
+            var response = new ApiResponse();
+            try
+            {
+                var currentUser = _claimService.GetUserClaim();
+
+                var taskItem = await _uow.TaskItems.GetAsync(
+                    filter: t => t.TaskId == taskId,
+                    include: query => query
+                        .Include(t => t.MaterialRequirements)
+                            .ThenInclude(r => r.Material)
+                );
+
+                if (taskItem == null)
+                    return response.SetNotFound($"Không tìm thấy đầu việc (Task) với ID = {taskId}");
+
+                if (taskItem.MaterialRequirements == null || !taskItem.MaterialRequirements.Any())
+                    return response.SetBadRequest($"Đầu việc [{taskItem.TaskName}] này chưa được cấu hình danh mục định mức vật tư để xin cấp.");
+
+                await _uow.BeginTransactionAsync();
+
+                var materialRequest = new MaterialRequest
+                {
+                    ProjectId = taskItem.ProjectId,
+                    TaskId = taskItem.TaskId,
+                    RequestedBy = currentUser.Id,
+                    RequestDate = DateTime.UtcNow,
+                    Status = "PENDING"
+                };
+
+                await _uow.MaterialRequests.AddAsync(materialRequest);
+                await _uow.SaveChangeAsync();
+
+                var requestedMaterialIds = taskItem.MaterialRequirements.Select(r => r.MaterialId).Distinct().ToList();
+                var allInventories = await _uow.Inventories.GetAllAsync(inv => requestedMaterialIds.Contains(inv.MaterialId));
+
+                foreach (var requirement in taskItem.MaterialRequirements)
+                {
+                    var inventory = allInventories.FirstOrDefault(inv => inv.MaterialId == requirement.MaterialId);
+
+                    if (inventory == null)
+                    {
+                        await _uow.RollbackTransactionAsync();
+                        return response.SetBadRequest($"Vật tư [{requirement.Material?.MaterialName ?? $"ID {requirement.MaterialId}"}] chưa được thiết lập trong kho.");
+                    }
+
+                    decimal availableQty = inventory.QuantityOnHand - inventory.ReservedQuantity;
+
+                    if (availableQty < requirement.GrossQuantityRequired)
+                    {
+                        await _uow.RollbackTransactionAsync();
+                        return response.SetBadRequest($"Kho không đủ hàng cho [{requirement.Material?.MaterialName}]. Định mức cần: {requirement.GrossQuantityRequired}, Khả dụng thực tế: {availableQty}");
+                    }
+
+                    inventory.ReservedQuantity += requirement.GrossQuantityRequired;
+                    inventory.UpdatedAt = DateTime.UtcNow;
+                    _uow.Inventories.Update(inventory);
+
+                    var requisition = new MaterialRequisition
+                    {
+                        RequestId = materialRequest.RequestId,
+                        MaterialId = requirement.MaterialId,
+                        Quantity = requirement.GrossQuantityRequired,
+                        NeededByDate = taskItem.BaselineStart
+                    };
+                    await _uow.MaterialRequisitions.AddAsync(requisition);
+                }
+
+                await _uow.SaveChangeAsync();
+                await _uow.CommitTransactionAsync();
+
+                // Nạp đầy đủ thông tin quan hệ sau khi bốc định mức thành công
+                var savedRequest = await _uow.MaterialRequests.GetAsync(
+                    filter: r => r.RequestId == materialRequest.RequestId,
+                    include: query => query
+                        .Include(r => r.Requester)
+                        .Include(r => r.Requisitions)
+                            .ThenInclude(req => req.Material)
+                );
+
+                var result = _mapper.Map<MaterialRequestResponse>(savedRequest);
+                return response.SetOk(result);
+            }
+            catch (Exception ex)
+            {
+                await _uow.RollbackTransactionAsync();
+                return response.SetBadRequest("Lỗi trong quá trình xử lý tạo yêu cầu từ TaskId: " + ex.Message);
+            }
+        }
+
         public async Task<ApiResponse> ApproveRequestAsync(int requestId)
         {
             var response = new ApiResponse();
             try
             {
-                // 1. Kích hoạt Transaction để đảm bảo an toàn dữ liệu kho
                 await _uow.BeginTransactionAsync();
 
-                // 2. Lấy thông tin phiếu yêu cầu kèm danh sách vật tư chi tiết bên dưới
                 var materialRequest = await _uow.MaterialRequests.GetAsync(
                     filter: r => r.RequestId == requestId,
                     include: query => query.Include(r => r.Requisitions)
@@ -126,26 +221,22 @@ namespace cpms_Application.Services
                 if (materialRequest.Status != "PENDING")
                     return response.SetBadRequest($"Phiếu này đã được xử lý trước đó (Trạng thái hiện tại: {materialRequest.Status}).");
 
-                // 3. Chuyển trạng thái phiếu sang APPROVED
                 materialRequest.Status = "APPROVED";
                 _uow.MaterialRequests.Update(materialRequest);
 
-                // 4. Duyệt qua từng món vật tư để trừ kho thực tế và hạ lượng giữ chỗ (Reserved)
                 foreach (var item in materialRequest.Requisitions)
                 {
                     var inventory = await _uow.Inventories.GetAsync(inv => inv.MaterialId == item.MaterialId);
                     if (inventory != null)
                     {
-                        // 🚀 LOGIC KHO CHUẨN:
-                        inventory.QuantityOnHand -= item.Quantity;    // Hàng thực tế đã xuất đi
-                        inventory.ReservedQuantity -= item.Quantity;  // Trả lại lượng giữ chỗ tạm thời
+                        inventory.QuantityOnHand -= item.Quantity;
+                        inventory.ReservedQuantity -= item.Quantity;
                         inventory.UpdatedAt = DateTime.UtcNow;
 
                         _uow.Inventories.Update(inventory);
                     }
                 }
 
-                // 5. Lưu tất cả thay đổi và xác nhận Transaction thành công
                 await _uow.SaveChangeAsync();
                 await _uow.CommitTransactionAsync();
 
@@ -176,17 +267,14 @@ namespace cpms_Application.Services
                 if (materialRequest.Status != "PENDING")
                     return response.SetBadRequest($"Không thể hủy phiếu đã xử lý (Trạng thái hiện tại: {materialRequest.Status}).");
 
-                // 3. Chuyển trạng thái phiếu sang REJECTED
                 materialRequest.Status = "REJECTED";
                 _uow.MaterialRequests.Update(materialRequest);
 
-                // 4. Nhả số lượng đã giữ chỗ (Reserved) trong kho ra cho người khác xài
                 foreach (var item in materialRequest.Requisitions)
                 {
                     var inventory = await _uow.Inventories.GetAsync(inv => inv.MaterialId == item.MaterialId);
                     if (inventory != null)
                     {
-                        // 🚀 NHẢ HÀNG GIỮ CHỖ: QuantityOnHand giữ nguyên, chỉ hạ ReservedQuantity
                         inventory.ReservedQuantity -= item.Quantity;
                         inventory.UpdatedAt = DateTime.UtcNow;
 
@@ -211,7 +299,6 @@ namespace cpms_Application.Services
             var response = new ApiResponse();
             try
             {
-                // Sử dụng GetAsync và truyền filter tìm theo ID
                 var materialRequest = await _uow.MaterialRequests.GetAsync(
                     filter: r => r.RequestId == requestId,
                     include: query => query
@@ -237,9 +324,8 @@ namespace cpms_Application.Services
             var response = new ApiResponse();
             try
             {
-                // 🚀 FIX DỨT ĐIỂM: Truyền null vào tham số vị trí đầu tiên (filter) theo đúng Signature của Repository
                 var requests = await _uow.MaterialRequests.GetAllAsync(
-                    null, // 👈 filter = null nghĩa là lấy tất cả bản ghi
+                    null,
                     include: (IQueryable<MaterialRequest> query) => query
                         .Include(r => r.Requester)
                         .Include(r => r.Requisitions)
@@ -260,7 +346,6 @@ namespace cpms_Application.Services
             var response = new ApiResponse();
             try
             {
-                // Hàm này đã truyền filter cụ thể nên không bị lỗi tham số
                 var requests = await _uow.MaterialRequests.GetAllAsync(
                     filter: r => r.ProjectId == projectId,
                     include: query => query

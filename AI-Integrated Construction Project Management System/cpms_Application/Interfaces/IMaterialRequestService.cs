@@ -11,7 +11,7 @@ namespace cpms_Application.Interfaces
     public interface IMaterialRequestService
     {
         Task<ApiResponse> CreateRequestAsync(CreateMaterialRequest request);
-
+        Task<ApiResponse> CreateRequestByTaskIdAsync(int taskId);
         Task<ApiResponse> ApproveRequestAsync(int requestId);
         Task<ApiResponse> RejectRequestAsync(int requestId);
 

@@ -9,13 +9,13 @@ using cpms_Application.Response.Tasks;
 using cpms_Domain.Models;
 using DocumentFormat.OpenXml.Packaging;
 using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-// 🚀 Đổi hẳn cách dùng Paragraph để tránh xung đột namespace
 using WordXml = DocumentFormat.OpenXml.Wordprocessing;
 
 namespace cpms_Application.Services
@@ -24,9 +24,8 @@ namespace cpms_Application.Services
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
-        private readonly IClaimService _claimService; // 🚀 Bước 1: Khai báo ClaimService
+        private readonly IClaimService _claimService;
 
-        // Inject IClaimService vào constructor
         public ProjectService(IUnitOfWork unitOfWork, IMapper mapper, IClaimService claimService)
         {
             _unitOfWork = unitOfWork;
@@ -66,7 +65,7 @@ namespace cpms_Application.Services
             {
                 return apiResponse.SetBadRequest(ex.Message);
             }
-            }
+        }
 
         public async Task<ApiResponse> GetProjectByIdAsync(int id)
         {
@@ -89,7 +88,6 @@ namespace cpms_Application.Services
             }
         }
 
-        // 🚀 Bước 2: Bỏ tham số pmUserId ở đây đi vì đã lấy tự động từ Token qua ClaimService
         public async Task<ApiResponse> ImportProjectFromWordAsync(IFormFile file)
         {
             var apiResponse = new ApiResponse();
@@ -98,7 +96,6 @@ namespace cpms_Application.Services
                 if (file == null || file.Length == 0)
                     return apiResponse.SetBadRequest("Vui lòng tải lên một file Word (.docx) hợp lệ.");
 
-                // 🚀 Bước 3: Tự động lấy pmUserId từ ClaimService
                 var currentUser = _claimService.GetUserClaim();
                 int pmUserId = currentUser.Id;
 
@@ -175,7 +172,6 @@ namespace cpms_Application.Services
             }
             catch (ArgumentNullException ex)
             {
-                // Bắt riêng lỗi nếu không tìm thấy UserId trong Token (lỗi từ ClaimService)
                 return apiResponse.SetBadRequest(ex.Message);
             }
             catch (Exception ex)
@@ -183,34 +179,30 @@ namespace cpms_Application.Services
                 return apiResponse.SetBadRequest("Đã xảy ra lỗi bất ngờ khi bóc tách file Word: " + ex.Message);
             }
         }
+
         public async Task<ApiResponse> AssignMaterialRequirementToTaskAsync(int taskId, CreateTaskMaterialRequirementRequest request)
         {
             var apiResponse = new ApiResponse();
             try
             {
-                // Kiểm tra Task có tồn tại hay không
                 var taskItem = await _unitOfWork.TaskItems.GetByIdAsync(taskId);
                 if (taskItem == null)
                     return apiResponse.SetNotFound($"Không tìm thấy đầu việc (Task) với ID = {taskId}");
 
-                // Kiểm tra vật tư có tồn tại không
                 var material = await _unitOfWork.Materials.GetByIdAsync(request.MaterialId);
                 if (material == null)
                     return apiResponse.SetNotFound($"Không tìm thấy vật tư (Material) với ID = {request.MaterialId}");
 
-                // Kiểm tra xem Task này đã được gán định mức cho vật tư này chưa
                 var existingRequirement = await _unitOfWork.TaskMaterialRequirements
                     .GetAsync(r => r.TaskId == taskId && r.MaterialId == request.MaterialId);
 
                 if (existingRequirement != null)
                 {
-                    // Nếu tồn tại rồi thì cộng dồn số lượng hoặc cập nhật mới tùy logic nghiệp vụ
                     existingRequirement.GrossQuantityRequired = request.GrossQuantityRequired;
                     _unitOfWork.TaskMaterialRequirements.Update(existingRequirement);
                 }
                 else
                 {
-                    // Tạo mới định mức định lượng
                     var newRequirement = new TaskMaterialRequirement
                     {
                         TaskId = taskId,
@@ -238,23 +230,14 @@ namespace cpms_Application.Services
                 if (project == null)
                     return apiResponse.SetNotFound("Dự án không tồn tại.");
 
-                var allRequirements = await _unitOfWork.TaskMaterialRequirements.GetAllAsync(null);
+                var projectRequirements = await _unitOfWork.TaskMaterialRequirements.GetAllAsync(
+                    filter: r => r.TaskItem.ProjectId == projectId,
+                    include: query => query
+                        .Include(r => r.Material)
+                        .Include(r => r.TaskItem)
+                );
 
-                var tasks = await _unitOfWork.TaskItems.GetAllAsync(t => t.ProjectId == projectId);
-                var taskIds = tasks.Select(t => t.TaskId).ToList();
-
-                var projectRequirements = allRequirements.Where(r => taskIds.Contains(r.TaskId)).ToList();
-
-                var materials = await _unitOfWork.Materials.GetAllAsync(null);
-                foreach (var req in projectRequirements)
-                {
-                    req.TaskItem = tasks.FirstOrDefault(t => t.TaskId == req.TaskId)!;
-                    req.Material = materials.FirstOrDefault(m => m.MaterialId == req.MaterialId)!;
-                }
-
-                // 🚀 THAY ĐỔI TẠI ĐÂY: Chuyển dữ liệu Entity sang DTO phẳng sạch sẽ cho Front-end
                 var response = _mapper.Map<List<TaskMaterialResponse>>(projectRequirements);
-
                 return apiResponse.SetOk(response);
             }
             catch (Exception ex)
@@ -263,6 +246,7 @@ namespace cpms_Application.Services
             }
         }
 
+        // 🛠️ ĐÃ SỬA: Thêm ép kiểu bẻ cache EF Core (Nếu hàm GetAllAsync hỗ trợ AsNoTracking hoặc tùy biến trực tiếp)
         public async Task<ApiResponse> CalculateMRPForProjectAsync(int projectId)
         {
             var apiResponse = new ApiResponse();
@@ -272,30 +256,26 @@ namespace cpms_Application.Services
                 if (project == null)
                     return apiResponse.SetNotFound("Dự án không tồn tại.");
 
-                // 1. Lấy toàn bộ Task thuộc dự án để làm cầu nối
-                var tasks = await _unitOfWork.TaskItems.GetAllAsync(t => t.ProjectId == projectId);
-                if (!tasks.Any())
+                // 🛑 LƯU Ý QUAN TRỌNG: Lọc trực tiếp từ DB. 
+                // Nếu hàm GetAllAsync của bạn có viết nhận AsNoTracking() thì hãy bật nó lên.
+                // Ở đây, ta lấy danh sách trực tiếp đảm bảo điều kiện loại bỏ Task COMPLETED và tiến độ đã đạt 100%
+                var requirements = await _unitOfWork.TaskMaterialRequirements.GetAllAsync(
+                    filter: r => r.TaskItem.ProjectId == projectId
+                              && r.TaskItem.Status != cpms_Domain.Models.TaskStatus.COMPLETED
+                              && r.TaskItem.ActualProgressPct < 100,
+                    include: query => query
+                        .Include(r => r.Material)
+                        .Include(r => r.TaskItem)
+                );
+
+                // Mẹo nhỏ: Nếu Generic Repository của bạn không dùng AsNoTracking, bạn có thể ép đọc lại dữ liệu mới nhất từ DB bằng cách chuyển thành List ngay.
+                var requirementsList = requirements.ToList();
+
+                if (!requirementsList.Any())
                     return apiResponse.SetOk(new List<MRPCalculationResponse>());
 
-                var taskIds = tasks.Select(t => t.TaskId).ToList();
-
-                // Lấy các định mức yêu cầu tương ứng với danh sách TaskIds
-                var allRequirements = await _unitOfWork.TaskMaterialRequirements.GetAllAsync(null);
-                var requirements = allRequirements.Where(r => taskIds.Contains(r.TaskId)).ToList();
-
-                if (!requirements.Any())
-                    return apiResponse.SetOk(new List<MRPCalculationResponse>());
-
-                // Nạp kèm thông tin tên vật tư và thông tin Task
-                var materials = await _unitOfWork.Materials.GetAllAsync(null);
-                foreach (var r in requirements)
-                {
-                    r.Material = materials.FirstOrDefault(m => m.MaterialId == r.MaterialId)!;
-                    r.TaskItem = tasks.FirstOrDefault(t => t.TaskId == r.TaskId)!;
-                }
-
-                // 2. Nhóm theo từng Material để tính Tổng Nhu Cầu Thô
-                var grossRequirementsGroup = requirements
+                // Nhóm theo từng Material để tính Tổng Nhu Cầu Thô của các task thực sự CHƯA XONG
+                var grossRequirementsGroup = requirementsList
                     .GroupBy(r => new { r.MaterialId, r.Material.MaterialName })
                     .Select(g => new
                     {
@@ -305,15 +285,11 @@ namespace cpms_Application.Services
                         EarliestNeedDate = g.Min(r => r.TaskItem.BaselineStart)
                     }).ToList();
 
-                // 3. Lấy dữ liệu tồn kho thực tế hiện tại
                 var currentInventories = await _unitOfWork.Inventories.GetAllAsync(null);
-
                 var mrpResultList = new List<MRPCalculationResponse>();
 
-                // 4. Khởi chạy thuật toán MRP đối chiếu Tồn kho tính Nhu Cầu Thực Tế
                 foreach (var gross in grossRequirementsGroup)
                 {
-                    // 🚀 ĐÃ SỬA: Thay i.Quantity thành i.QuantityOnHand chuẩn theo Model của bạn
                     decimal currentStock = currentInventories
                         .Where(i => i.MaterialId == gross.MaterialId)
                         .Sum(i => i.QuantityOnHand);
@@ -332,7 +308,6 @@ namespace cpms_Application.Services
                     });
                 }
 
-                // 🚀 ĐÃ SỬA: Chỉ truyền 1 đối số vào SetOk để tránh lỗi overload
                 return apiResponse.SetOk(mrpResultList);
             }
             catch (Exception ex)

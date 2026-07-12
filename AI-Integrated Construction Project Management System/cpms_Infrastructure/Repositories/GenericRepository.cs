@@ -25,38 +25,36 @@ namespace cpms_Infrastructure.Repositories
         }
 
         public async Task<int> CountAsync() => await _db.CountAsync();
+
+        // 🛠️ ĐÃ FIX: Thêm .AsNoTracking() để bẻ cache khi lấy danh sách có kèm Include
         public async Task<List<T>> GetAllAsync(System.Linq.Expressions.Expression<Func<T, bool>>? filter,
                                                Func<IQueryable<T>, IIncludableQueryable<T, object>>? include = null,
                                                int pageIndex = 1,
                                                int pageSize = 5)
         {
-            IQueryable<T> query = _db;
-
+            // Ép EF Core đọc trực tiếp từ Database mới nhất, không lấy từ bộ nhớ đệm Tracking
+            IQueryable<T> query = _db.AsNoTracking();
 
             if (filter != null)
             {
                 query = query.Where(filter);
             }
 
-            //query.IgnoreQueryFilters();
-
             if (include != null)
             {
                 query = include(query);
             }
-            return await query
-                //.Skip((pageIndex - 1) * pageSize)
-                //.Take(pageSize)
-                .ToListAsync();
+            return await query.ToListAsync();
         }
 
+        // 🛠️ ĐÃ FIX: Thêm .AsNoTracking() để bẻ cache khi lấy danh sách chỉ có Filter
         public async Task<List<T>> GetAllAsync(System.Linq.Expressions.Expression<Func<T, bool>>? filter)
         {
             if (filter != null)
             {
-                return await _db.Where(filter).ToListAsync();
+                return await _db.AsNoTracking().Where(filter).ToListAsync();
             }
-            return await _db.ToListAsync();
+            return await _db.AsNoTracking().ToListAsync();
         }
 
         public async Task<T> GetAsync(System.Linq.Expressions.Expression<Func<T, bool>> filter)
@@ -69,14 +67,12 @@ namespace cpms_Infrastructure.Repositories
 
         public async Task<T> GetAsync(System.Linq.Expressions.Expression<Func<T, bool>> filter, Func<IQueryable<T>, IIncludableQueryable<T, object>>? include = null)
         {
-
             IQueryable<T> query = _db;
             if (include != null)
             {
                 query = include(query);
             }
             return await query.FirstOrDefaultAsync(filter);
-
         }
 
         public async Task RemoveByIdAsync(object id)
@@ -100,16 +96,15 @@ namespace cpms_Infrastructure.Repositories
         {
             _db.Remove(entity);
         }
+
         public async Task<T?> GetByIdAsync(object id)
         {
-            // Sử dụng FindAsync của EF Core để lấy entity theo khóa chính
             return await _db.FindAsync(id);
         }
+
         public void Update(T entity)
         {
-            // Đánh dấu thực thể là đã thay đổi để EF theo dõi
             _db.Update(entity);
         }
-
     }
 }

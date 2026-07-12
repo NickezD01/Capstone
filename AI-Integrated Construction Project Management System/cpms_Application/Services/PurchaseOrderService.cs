@@ -28,14 +28,12 @@ namespace cpms_Application.Services
             await _uow.BeginTransactionAsync();
             try
             {
-                // 1. Kiểm tra nhanh xem Project và Supplier truyền lên có tồn tại thật không
                 var projectExists = await _uow.Projects.GetByIdAsync(request.ProjectId);
                 if (projectExists == null) return response.SetBadRequest($"ProjectId {request.ProjectId} không tồn tại.");
 
                 var supplierExists = await _uow.Suppliers.GetByIdAsync(request.SupplierId);
                 if (supplierExists == null) return response.SetBadRequest($"SupplierId {request.SupplierId} không tồn tại.");
 
-                // 2. Map dữ liệu cơ bản
                 var po = _mapper.Map<PurchaseOrder>(request);
                 var userClaim = _claimService.GetUserClaim();
                 po.UserAccountId = userClaim.Id;
@@ -44,25 +42,18 @@ namespace cpms_Application.Services
 
                 decimal total = 0;
 
-                // 3. Duyệt danh sách items và add TRỰC TIẾP vào Navigation Property của po
                 foreach (var item in request.Items)
                 {
-                    // Kiểm tra vật tư có tồn tại không
                     var materialExists = await _uow.Materials.GetByIdAsync(item.MaterialId);
                     if (materialExists == null) return response.SetBadRequest($"MaterialId {item.MaterialId} không tồn tại.");
 
                     var lineItem = _mapper.Map<OrderLineItem>(item);
-
-                    // Tính tổng tiền
                     total += (lineItem.Quantity * lineItem.UnitPrice);
-
-                    // Nạp vào list con của po (EF Core sẽ tự động map PoId khi lưu)
                     po.OrderLineItems.Add(lineItem);
                 }
 
                 po.TotalAmount = total;
 
-                // 4. Lưu 1 lần duy nhất cho cả đơn hàng và chi tiết đơn hàng
                 await _uow.PurchaseOrders.AddAsync(po);
                 await _uow.SaveChangeAsync();
 
@@ -73,7 +64,6 @@ namespace cpms_Application.Services
             {
                 await _uow.RollbackTransactionAsync();
 
-                // 🚀 ĐÀO SÂU XUỐNG 3 TẦNG ĐỂ LẤY LỖI GỐC TỪ SQL SERVER/POSTGRES
                 var errorMsg = ex.InnerException?.InnerException != null
                     ? ex.InnerException.InnerException.Message
                     : (ex.InnerException != null ? ex.InnerException.Message : ex.Message);
@@ -123,21 +113,17 @@ namespace cpms_Application.Services
             var response = new ApiResponse();
             try
             {
-                // 1. Kiểm tra đơn mua hàng (Purchase Order) có tồn tại không
-                // 🚀 ĐÃ ĐỒNG BỘ: Sửa trường po.PurchaseOrderID thành p.PoId cho khớp với hàm Approve
                 var purchaseOrder = await _uow.PurchaseOrders.GetAsync(po => po.PoId == poId);
                 if (purchaseOrder == null)
                 {
                     return response.SetNotFound($"Đơn mua hàng với ID = {poId} không tồn tại.");
                 }
 
-                // 2. Kiểm tra trạng thái: Chỉ cho phép từ chối đơn hàng đang ở trạng thái chờ duyệt (PENDING)
                 if (purchaseOrder.Status != PurchaseOrderStatus.PENDING)
                 {
                     return response.SetBadRequest("Chỉ có thể từ chối đơn mua hàng đang ở trạng thái chờ duyệt (Pending).");
                 }
 
-                // 3. Cập nhật trạng thái sang REJECTED
                 purchaseOrder.Status = PurchaseOrderStatus.REJECTED;
 
                 _uow.PurchaseOrders.Update(purchaseOrder);
@@ -152,47 +138,52 @@ namespace cpms_Application.Services
             }
         }
 
+        // 🛠️ ĐÃ FIX: Chốt chặn an toàn tuyệt đối trạng thái APPROVED để chống Double-Import
         public async Task<ApiResponse> ImportToWarehouseAsync(int poId, int warehouseId)
         {
             var po = await _uow.PurchaseOrders.GetWithItemsAsync(poId);
 
-            if (po == null || po.Status != PurchaseOrderStatus.APPROVED)
-                return new ApiResponse().SetBadRequest("Đơn hàng không tồn tại hoặc chưa được phê duyệt!");
+            if (po == null)
+                return new ApiResponse().SetNotFound("Đơn hàng không tồn tại!");
+
+            // Nếu đơn hàng đã DELIVERED từ trước, chặn ngay lập tức không cho cộng kho lần 2
+            if (po.Status == PurchaseOrderStatus.DELIVERED)
+                return new ApiResponse().SetBadRequest("Đơn hàng này đã được nhập kho trước đó rồi!");
+
+            if (po.Status != PurchaseOrderStatus.APPROVED)
+                return new ApiResponse().SetBadRequest("Chỉ đơn hàng đã được phê duyệt (Approved) mới có thể nhập kho!");
 
             await _uow.BeginTransactionAsync();
             try
             {
                 foreach (var item in po.OrderLineItems)
                 {
-                    // 🚀 ĐỒNG BỘ ERD: Tìm bản ghi tồn kho qua InventoryRecords repo
                     var inventory = await _uow.Inventories.GetAsync(x =>
                         x.WarehouseId == warehouseId && x.MaterialId == item.MaterialId);
 
                     if (inventory == null)
                     {
-                        // 🚀 ĐỒNG BỘ ERD: Nếu chưa có vật tư này trong kho, tạo mới bản ghi InventoryRecord
                         await _uow.Inventories.AddAsync(new InventoryRecord
                         {
                             WarehouseId = warehouseId,
                             MaterialId = item.MaterialId,
-                            QuantityOnHand = item.Quantity,     // Gán số lượng nhập vào thực tế
-                            ReservedQuantity = 0,               // Đơn hàng mới nhập kho chưa bị dự án nào giữ chỗ
-                            ReorderLevel = 10,                   // Định mức mặc định cảnh báo sắp hết hàng
+                            QuantityOnHand = item.Quantity,
+                            ReservedQuantity = 0,
+                            ReorderLevel = 10,
                             UpdatedAt = DateTime.UtcNow
                         });
                     }
                     else
                     {
-                        // 🚀 ĐỒNG BỘ ERD: Cộng dồn số lượng thực tế (QuantityOnHand) và cập nhật thời gian
                         inventory.QuantityOnHand += item.Quantity;
                         inventory.UpdatedAt = DateTime.UtcNow;
-
-                        // Gọi hàm Update để thông báo EF Core theo dõi thay đổi thực thể
                         _uow.Inventories.Update(inventory);
                     }
                 }
 
+                // Chuyển sang DELIVERED để khóa biên bản nhập kho này lại
                 po.Status = PurchaseOrderStatus.DELIVERED;
+
                 await _uow.SaveChangeAsync();
                 await _uow.CommitTransactionAsync();
 

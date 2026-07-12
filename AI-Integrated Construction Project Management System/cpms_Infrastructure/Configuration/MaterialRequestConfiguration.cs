@@ -34,6 +34,12 @@ namespace cpms_Infrastructure.Configuration
                    .WithMany() // Ở UserAccount không cần tạo list ngược lại
                    .HasForeignKey(mr => mr.RequestedBy)
                    .OnDelete(DeleteBehavior.Restrict);
+
+            // 🚀 THÊM MỚI QUAN HỆ 1-N: TaskItem - MaterialRequest
+            builder.HasOne(mr => mr.TaskItem)
+                   .WithMany() // Nếu bên lớp TaskItem bạn không khai báo list `ICollection<MaterialRequest>`, hãy để trống WithMany()
+                   .HasForeignKey(mr => mr.TaskId)
+                   .OnDelete(DeleteBehavior.Restrict); // Tránh CASCADE DELETE mất dấu vết chứng từ yêu cầu vật tư
         }
     }
 }

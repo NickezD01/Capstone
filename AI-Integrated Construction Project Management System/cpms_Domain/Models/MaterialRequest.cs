@@ -10,6 +10,7 @@ namespace cpms_Domain.Models
     {
         public int RequestId { get; set; } // Map với RequestID (PK)
         public int ProjectId { get; set; } // Khóa ngoại trỏ về Projects
+        public int? TaskId { get; set; }
         public int RequestedBy { get; set; } // Khóa ngoại trỏ về Users (Người tạo yêu cầu)
         public DateTime RequestDate { get; set; }
         public string Status { get; set; } = "PENDING";
@@ -19,6 +20,7 @@ namespace cpms_Domain.Models
         public virtual UserAccount Requester { get; set; } = null!;
 
         // Một phiếu yêu cầu tổng sẽ có nhiều dòng vật tư chi tiết bên dưới
+        public virtual TaskItem? TaskItem { get; set; }
         public virtual ICollection<MaterialRequisition> Requisitions { get; set; } = new List<MaterialRequisition>();
     }
 }

@@ -10,6 +10,7 @@ namespace cpms_Application.Response.MaterialRequest
     {
         public int RequestId { get; set; }
         public int ProjectId { get; set; }
+        public int? TaskId { get; set; }
         public int RequestedBy { get; set; }
         public string RequestedByName { get; set; } = null!;
         public DateTime RequestDate { get; set; }
@@ -22,6 +23,7 @@ namespace cpms_Application.Response.MaterialRequest
         public int ItemId { get; set; }
         public int MaterialId { get; set; }
         public string MaterialName { get; set; } = null!;
+        public string? Unit { get; set; }
         public decimal Quantity { get; set; }
         public DateTime NeededByDate { get; set; }
     }

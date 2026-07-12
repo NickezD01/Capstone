@@ -9,7 +9,7 @@ namespace cpms_Application.Request.MaterialRequest
     public class CreateMaterialRequest
     {
         public int ProjectId { get; set; }
-        // Thông tin chi tiết các vật tư cần yêu cầu
+        public int? TaskId { get; set; }
         public List<MaterialItemRequest> Items { get; set; } = new List<MaterialItemRequest>();
     }
 

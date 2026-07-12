@@ -19,7 +19,7 @@ namespace cpms_API.Controllers
             _materialRequestService = materialRequestService;
         }
 
-        // POST: api/materialrequest (Tạo phiếu + Giữ kho tạm)
+        // POST: api/materialrequest (Tạo phiếu thủ công/phát sinh + Giữ kho tạm)
         [HttpPost]
         public async Task<IActionResult> CreateMaterialRequest([FromBody] CreateMaterialRequest request)
         {
@@ -28,7 +28,16 @@ namespace cpms_API.Controllers
             return Ok(response);
         }
 
-        // 🚀 BỔ SUNG: PUT: api/materialrequest/{requestId}/approve
+        // POST: api/materialrequest/task/{taskId} (Tự động bốc định mức từ TaskId)
+        [HttpPost("task/{taskId}")]
+        public async Task<IActionResult> CreateRequestFromTask(int taskId)
+        {
+            var response = await _materialRequestService.CreateRequestByTaskIdAsync(taskId);
+            if (!response.IsSuccess) return BadRequest(response);
+            return Ok(response);
+        }
+
+        // PUT: api/materialrequest/{requestId}/approve
         [HttpPut("{requestId}/approve")]
         public async Task<IActionResult> ApproveRequest(int requestId)
         {
@@ -37,7 +46,7 @@ namespace cpms_API.Controllers
             return Ok(response);
         }
 
-        // 🚀 BỔ SUNG: PUT: api/materialrequest/{requestId}/reject
+        // PUT: api/materialrequest/{requestId}/reject
         [HttpPut("{requestId}/reject")]
         public async Task<IActionResult> RejectRequest(int requestId)
         {
@@ -45,6 +54,8 @@ namespace cpms_API.Controllers
             if (!response.IsSuccess) return BadRequest(response);
             return Ok(response);
         }
+
+        // GET: api/materialrequest (Lấy toàn bộ phiếu)
         [HttpGet]
         public async Task<IActionResult> GetAllRequests()
         {
@@ -53,16 +64,16 @@ namespace cpms_API.Controllers
             return Ok(response);
         }
 
-        // GET: api/materialrequest/{requestId}
+        // GET: api/materialrequest/{requestId} (Lấy chi tiết phiếu)
         [HttpGet("{requestId}")]
         public async Task<IActionResult> GetRequestById(int requestId)
         {
             var response = await _materialRequestService.GetRequestByIdAsync(requestId);
-            if (!response.IsSuccess) return NotFound(response);
+            if (!response.IsSuccess) return BadRequest(response);
             return Ok(response);
         }
 
-        // GET: api/materialrequest/project/{projectId}
+        // GET: api/materialrequest/project/{projectId} (Lấy phiếu theo Project)
         [HttpGet("project/{projectId}")]
         public async Task<IActionResult> GetRequestsByProject(int projectId)
         {
