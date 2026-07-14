@@ -16,6 +16,10 @@ namespace cpms_Infrastructure.Configuration
             builder.ToTable("SupplierCatalogs");
             builder.HasKey(sc => sc.CatalogId);
             builder.Property(sc => sc.UnitPrice).HasColumnType("decimal(18,2)");
+            builder.Property(sc => sc.MinimumOrderQuantity).HasColumnType("decimal(18,4)").HasDefaultValue(0);
+            builder.Property(sc => sc.SupplierSku).HasMaxLength(100);
+            builder.Property(sc => sc.IsAvailable).HasDefaultValue(true);
+            builder.HasIndex(sc => new { sc.SupplierId, sc.VariantId }).IsUnique().HasFilter("[IsDeleted] = 0");
 
 
             // Mối quan hệ [4]: SupplierCatalog -> Supplier (1-N)
@@ -24,11 +28,10 @@ namespace cpms_Infrastructure.Configuration
                    .HasForeignKey(sc => sc.SupplierId)
                    .OnDelete(DeleteBehavior.Cascade);
 
-            // Mối quan hệ [5]: SupplierCatalog -> Material (1-N)
-            builder.HasOne(sc => sc.Material)
-                   .WithMany(m => m.SupplierCatalogs)
-                   .HasForeignKey(sc => sc.MaterialId)
-                   .OnDelete(DeleteBehavior.Cascade);
+            builder.HasOne(sc => sc.Variant)
+                   .WithMany(v => v.SupplierCatalogs)
+                   .HasForeignKey(sc => sc.VariantId)
+                   .OnDelete(DeleteBehavior.Restrict);
         }
     }
 }

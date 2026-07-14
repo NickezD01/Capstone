@@ -18,6 +18,8 @@ namespace cpms_Infrastructure.Configuration
 
             builder.Property(mr => mr.Status).HasMaxLength(50).HasDefaultValue("PENDING");
             builder.Property(mr => mr.RequestDate).HasDefaultValueSql("GETUTCDATE()");
+            builder.Property(mr => mr.RequestNote).HasMaxLength(1000);
+            builder.Property(mr => mr.DecisionNote).HasMaxLength(1000);
 
             builder.Property(mr => mr.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
             builder.Property(mr => mr.IsDeleted).HasDefaultValue(false);
@@ -40,6 +42,16 @@ namespace cpms_Infrastructure.Configuration
                    .WithMany() // Nếu bên lớp TaskItem bạn không khai báo list `ICollection<MaterialRequest>`, hãy để trống WithMany()
                    .HasForeignKey(mr => mr.TaskId)
                    .OnDelete(DeleteBehavior.Restrict); // Tránh CASCADE DELETE mất dấu vết chứng từ yêu cầu vật tư
+
+            builder.HasOne(mr => mr.Warehouse)
+                   .WithMany()
+                   .HasForeignKey(mr => mr.WarehouseId)
+                   .OnDelete(DeleteBehavior.Restrict);
+
+            builder.HasOne(mr => mr.Approver)
+                   .WithMany()
+                   .HasForeignKey(mr => mr.ApprovedByUserId)
+                   .OnDelete(DeleteBehavior.Restrict);
         }
     }
 }

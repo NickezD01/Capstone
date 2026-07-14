@@ -8,6 +8,7 @@ namespace cpms_Application.Request.MaterialRequest
 {
     public class CreateTaskMaterialRequirementRequest
     {
+        public int VariantId { get; set; }
         public int MaterialId { get; set; }
         public decimal GrossQuantityRequired { get; set; }
     }

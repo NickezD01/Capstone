@@ -27,9 +27,9 @@ namespace cpms_Infrastructure.Configuration
                    .OnDelete(DeleteBehavior.Restrict);
 
             // Mối quan hệ [3]: ProgressReport -> UserAccount (1-N)
-            builder.HasOne(pr => pr.Engineer)
+            builder.HasOne(pr => pr.Reporter)
                    .WithMany(u => u.ProgressReports)
-                   .HasForeignKey(pr => pr.EngineerId)
+                   .HasForeignKey(pr => pr.ReportedByUserId)
                    .OnDelete(DeleteBehavior.Restrict);
         }
     }

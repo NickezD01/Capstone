@@ -1,7 +1,7 @@
-﻿using cpms_Application.CustomExceptions;
+using cpms_Application.CustomExceptions;
 using cpms_Application.Response;
+using Microsoft.Data.SqlClient;
 using Microsoft.EntityFrameworkCore;
-using Newtonsoft.Json;
 using System.Net;
 
 namespace cpms_API.Middleware
@@ -23,106 +23,48 @@ namespace cpms_API.Middleware
             {
                 await _next(context);
             }
-
+            catch (DbUpdateConcurrencyException ex)
+            {
+                await WriteAsync(context, HttpStatusCode.Conflict, "The record changed while it was being updated. Reload and retry.", ex);
+            }
+            catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 2601 or 2627 })
+            {
+                await WriteAsync(context, HttpStatusCode.Conflict, "A record with the same unique key already exists.", ex);
+            }
+            catch (DbUpdateException ex) when (ex.InnerException is SqlException { Number: 547 })
+            {
+                await WriteAsync(context, HttpStatusCode.BadRequest, "The operation violates a database relationship or quantity constraint.", ex);
+            }
             catch (DbUpdateException ex)
             {
-                // Check if the exception message indicates a foreign key violation
-                if (ex.InnerException.Message.Contains("23503: insert or update on table") &&
-                    ex.InnerException.Message.Contains("violates foreign key constraint"))
-                {
-                    // Handle the foreign key violation error
-                    context.Response.StatusCode = StatusCodes.Status400BadRequest;
-                    context.Response.ContentType = "application/json";
-                    ApiResponse apiResponse = new ApiResponse().SetApiResponse(
-                        statusCode: HttpStatusCode.BadRequest,
-                        isSuccess: false,
-                        message: "Foreign key constraint violation: " + ex.Message + "\n The entity id you inserted with may be not in db "
-                        );
-
-                    await context.Response.WriteAsync(JsonConvert.SerializeObject(apiResponse));
-                    _logger.LogError("Foreign key constraint violation: " + ex.Message);
-                }
-                else if (ex.InnerException.Message.Contains("23505") &&
-                    ex.InnerException.Message.Contains("already exists"))
-                {
-                    // Handle the foreign key violation error
-                    context.Response.StatusCode = StatusCodes.Status400BadRequest;
-                    context.Response.ContentType = "application/json";
-                    ApiResponse apiResponse = new ApiResponse().SetApiResponse(
-                        statusCode: HttpStatusCode.BadRequest,
-                        isSuccess: false,
-                        message: "Foreign key constraint violation: " + ex.Message + "\n The entity id you inserted with already exists in database "
-                        );
-
-                    await context.Response.WriteAsync(JsonConvert.SerializeObject(apiResponse));
-                    _logger.LogError("duplicate key value violates unique constraint: " + ex.Message + ex.InnerException.Message);
-                }
-                else if (ex.InnerException.Message.Contains("23503") &&
-                    ex.InnerException.Message.Contains("still referenced"))
-                {
-                    // Handle the foreign key violation error
-                    context.Response.StatusCode = StatusCodes.Status400BadRequest;
-                    context.Response.ContentType = "application/json";
-                    ApiResponse apiResponse = new ApiResponse().SetApiResponse(
-                        statusCode: HttpStatusCode.BadRequest,
-                        isSuccess: false,
-                        message: ex.InnerException.Message
-                        );
-
-                    await context.Response.WriteAsync(JsonConvert.SerializeObject(apiResponse));
-                    _logger.LogError("duplicate key value violates unique constraint: " + ex.Message + ex.InnerException.Message);
-                }
-                else
-                {
-                    // Handle other PostgreSQL exceptions as needed
-                    context.Response.StatusCode = StatusCodes.Status500InternalServerError;
-                    await context.Response.WriteAsync("Database error: " + ex.Message);
-                    _logger.LogError("Database error: " + ex.Message);
-                }
+                await WriteAsync(context, HttpStatusCode.InternalServerError, "A database error occurred.", ex);
             }
             catch (NotFoundException ex)
             {
-                ApiResponse apiResponse = new ApiResponse().SetApiResponse(
-                       statusCode: HttpStatusCode.NotFound,
-                       isSuccess: false,
-                       message: $"message: {ex.Message}  detail:  {ex.InnerException?.Message}"
-                       );
-
-                await context.Response.WriteAsync(JsonConvert.SerializeObject(apiResponse));
-                _logger.LogError("NotFound error: " + ex.Message);
+                await WriteAsync(context, HttpStatusCode.NotFound, ex.Message, ex);
             }
             catch (NotMatchException ex)
             {
-                ApiResponse apiResponse = new ApiResponse().SetApiResponse(
-                       statusCode: HttpStatusCode.Conflict,
-                       isSuccess: false,
-                       message: $"message: {ex.Message}  detail:  {ex.InnerException?.Message}"
-                       );
-
-                await context.Response.WriteAsync(JsonConvert.SerializeObject(apiResponse));
-                _logger.LogError("NotMatch error: " + ex.Message);
+                await WriteAsync(context, HttpStatusCode.Conflict, ex.Message, ex);
             }
             catch (ConflictExceptions ex)
             {
-                ApiResponse apiResponse = new ApiResponse().SetApiResponse(
-                       statusCode: HttpStatusCode.NotFound,
-                       isSuccess: false,
-                       message: $"message: {ex.Message}  detail:  {ex.InnerException?.Message}"
-                       );
-
-                await context.Response.WriteAsync(JsonConvert.SerializeObject(apiResponse));
-                _logger.LogError("Conflict error: " + ex.Message);
+                await WriteAsync(context, HttpStatusCode.Conflict, ex.Message, ex);
             }
             catch (Exception ex)
             {
-                ApiResponse apiResponse = new ApiResponse().SetApiResponse(
-                       statusCode: HttpStatusCode.BadRequest,
-                       isSuccess: false,
-                       message: $"message: {ex.Message}  detail:  {ex.InnerException?.Message}"
-                       );
-
-                await context.Response.WriteAsync(JsonConvert.SerializeObject(apiResponse));
+                await WriteAsync(context, HttpStatusCode.InternalServerError, "An unexpected server error occurred.", ex);
             }
+        }
+
+        private async Task WriteAsync(HttpContext context, HttpStatusCode status, string message, Exception exception)
+        {
+            _logger.LogError(exception, "Request failed with status {StatusCode}", (int)status);
+            if (context.Response.HasStarted) throw exception;
+            context.Response.Clear();
+            context.Response.StatusCode = (int)status;
+            context.Response.ContentType = "application/json";
+            await context.Response.WriteAsJsonAsync(new ApiResponse().SetApiResponse(status, false, message));
         }
     }
 }

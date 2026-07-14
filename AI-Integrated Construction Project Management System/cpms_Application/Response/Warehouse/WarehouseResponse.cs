@@ -26,9 +26,10 @@ namespace cpms_Application.Response.Warehouse
     public class InventoryRecordDto
     {
         public int InventoryId { get; set; }
-        public int MaterialId { get; set; }
+        public int VariantId { get; set; }
         public decimal QuantityOnHand { get; set; }
         public decimal ReservedQuantity { get; set; }
+        public decimal OnOrderQuantity { get; set; }
         public decimal ReorderLevel { get; set; }
         public DateTime UpdatedAt { get; set; }
     }

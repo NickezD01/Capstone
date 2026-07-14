@@ -1,14 +1,12 @@
-﻿using AutoMapper;
+using AutoMapper;
 using cpms_Application.Interfaces;
 using cpms_Application.Request.PurchaseOrder;
+using cpms_Application.Request.Warehouse;
 using cpms_Application.Response;
 using cpms_Application.Response.PurchaseOrder;
 using cpms_Domain.Models;
+using cpms_Domain;
 using Microsoft.EntityFrameworkCore;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 
 namespace cpms_Application.Services
 {
@@ -25,241 +23,211 @@ namespace cpms_Application.Services
             _claimService = claimService;
         }
 
-        // Hàm hỗ trợ Eager Loading đầy đủ thông tin để phục vụ cấu trúc Response mới
-        private async Task<PurchaseOrder?> GetSavedPurchaseOrderWithDetailsAsync(int poId)
-        {
-            return await _uow.PurchaseOrders.GetAsync(
-                filter: p => p.PoId == poId,
-                include: query => query
-                    .Include(p => p.Project)
-                    .Include(p => p.Supplier)
-                    .Include(p => p.OrderLineItems)
-                        .ThenInclude(line => line.Material)
-            );
-        }
+        private async Task<PurchaseOrder?> GetDetailsAsync(int poId) => await _uow.PurchaseOrders.GetAsync(p => p.PoId == poId,
+            q => q.Include(p => p.Project).Include(p => p.Supplier).Include(p => p.Warehouse)
+                  .Include(p => p.OrderLineItems).ThenInclude(l => l.Variant).ThenInclude(v => v.Material));
 
         public async Task<ApiResponse> CreatePurchaseOrderAsync(CreatePurchaseOrderRequest request)
         {
-            var response = new ApiResponse();
-            await _uow.BeginTransactionAsync();
-            try
+            var user = _claimService.GetUserClaim();
+            if (!IsWarehouseManager(user)) return Forbidden("Only warehouse managers may create purchase orders.");
+            if (request.Items == null || request.Items.Count == 0) return new ApiResponse().SetBadRequest(message: "At least one order item is required.");
+            var project = await _uow.Projects.GetByIdAsync(request.ProjectId);
+            if (project == null || await _uow.Suppliers.GetByIdAsync(request.SupplierId) == null || await _uow.Warehouses.GetByIdAsync(request.WarehouseId) == null)
+                return new ApiResponse().SetBadRequest(message: "Project, supplier, or warehouse does not exist.");
+
+            var resolved = new List<(OrderLineItemDto Item, int VariantId)>();
+            foreach (var item in request.Items)
             {
-                var projectExists = await _uow.Projects.GetByIdAsync(request.ProjectId);
-                if (projectExists == null) return response.SetBadRequest($"ProjectId {request.ProjectId} không tồn tại.");
-
-                var supplierExists = await _uow.Suppliers.GetByIdAsync(request.SupplierId);
-                if (supplierExists == null) return response.SetBadRequest($"SupplierId {request.SupplierId} không tồn tại.");
-
-                var po = _mapper.Map<PurchaseOrder>(request);
-                var userClaim = _claimService.GetUserClaim();
-                po.UserAccountId = userClaim.Id;
-                po.OrderDate = DateTime.UtcNow;
-                po.Status = PurchaseOrderStatus.PENDING;
-
-                decimal currentOrderTotal = 0;
-
-                foreach (var item in request.Items)
+                if (item.Quantity <= 0 || item.UnitPrice < 0) return new ApiResponse().SetBadRequest(message: "Order quantities must be positive and prices cannot be negative.");
+                var variant = item.VariantId != 0 ? await _uow.MaterialVariants.GetByIdAsync(item.VariantId)
+                    : await _uow.MaterialVariants.GetAsync(v => v.MaterialId == item.MaterialId && v.IsActive);
+                if (variant == null) return new ApiResponse().SetBadRequest(message: "Material variant not found.");
+                var catalog = await _uow.SupplierCatalogs.GetAsync(c => c.SupplierId == request.SupplierId && c.VariantId == variant.VariantId && c.IsAvailable);
+                if (catalog == null) return new ApiResponse().SetBadRequest(message: $"Variant {variant.VariantId} is not available from the selected supplier.");
+                if (item.Quantity < catalog.MinimumOrderQuantity)
+                    return new ApiResponse().SetBadRequest(message: $"Variant {variant.VariantId} is below the supplier minimum order quantity.");
+                if (item.RequestItemId.HasValue)
                 {
-                    var materialExists = await _uow.Materials.GetByIdAsync(item.MaterialId);
-                    if (materialExists == null)
-                    {
-                        await _uow.RollbackTransactionAsync();
-                        return response.SetBadRequest($"MaterialId {item.MaterialId} không tồn tại.");
-                    }
-
-                    var lineItem = _mapper.Map<OrderLineItem>(item);
-                    currentOrderTotal += (lineItem.Quantity * lineItem.UnitPrice);
-                    po.OrderLineItems.Add(lineItem);
+                    var requestItem = await _uow.MaterialRequisitions.GetByIdAsync(item.RequestItemId.Value);
+                    if (requestItem == null || requestItem.VariantId != variant.VariantId)
+                        return new ApiResponse().SetBadRequest(message: "RequestItemId does not match the ordered variant.");
                 }
-
-                po.TotalAmount = currentOrderTotal;
-
-                // ================== LOGIC KIỂM TRA NGÂN SÁCH DỰ ÁN (BUDGET VALIDATION) ==================
-                // ================== KIỂM TRA NGÂN SÁCH DỰ ÁN ==================
-                if (projectExists.TotalProjectBudget > 0)
-                {
-                    // Chỉ tính các PO đang giữ ngân sách
-                    var existingOrders = await _uow.PurchaseOrders.GetAllAsync(
-                        filter: p =>
-                            p.ProjectId == request.ProjectId &&
-                            (p.Status == PurchaseOrderStatus.PENDING ||
-                             p.Status == PurchaseOrderStatus.APPROVED ||
-                             p.Status == PurchaseOrderStatus.DELIVERED)
-                    );
-
-                    decimal usedBudget = existingOrders.Sum(p => p.TotalAmount);
-
-                    decimal remainingBudget = projectExists.TotalProjectBudget - usedBudget;
-
-                    if (currentOrderTotal > remainingBudget)
-                    {
-                        await _uow.RollbackTransactionAsync();
-
-                        return response.SetBadRequest(new
-                        {
-                            Message = "Không thể tạo Purchase Order",
-                            TotalBudget = projectExists.TotalProjectBudget,
-                            UsedBudget = usedBudget,
-                            RemainingBudget = remainingBudget,
-                            CurrentOrder = currentOrderTotal,
-                            Currency = projectExists.Currency
-                        });
-                    }
-                }
-                // =============================================================
-                // Nếu TotalProjectBudget <= 0, hệ thống xem như dự án thả nổi chi phí và tự động bỏ qua khối check trên.
-                // ========================================================================================
-
-                await _uow.PurchaseOrders.AddAsync(po);
-                await _uow.SaveChangeAsync();
-                await _uow.CommitTransactionAsync();
-
-                var savedPo = await GetSavedPurchaseOrderWithDetailsAsync(po.PoId);
-                return response.SetOk(_mapper.Map<PurchaseOrderResponse>(savedPo));
+                resolved.Add((item, variant.VariantId));
             }
-            catch (Exception ex)
+
+            var total = resolved.Sum(x => x.Item.Quantity * x.Item.UnitPrice);
+            if (project.TotalProjectBudget > 0)
             {
-                await _uow.RollbackTransactionAsync();
-                var errorMsg = ex.InnerException?.InnerException != null
-                    ? ex.InnerException.InnerException.Message
-                    : (ex.InnerException != null ? ex.InnerException.Message : ex.Message);
-
-                return response.SetBadRequest("Error saving order: " + errorMsg);
+                var committed = await _uow.PurchaseOrders.GetAllAsync(p => p.ProjectId == request.ProjectId && p.Status != PurchaseOrderStatus.REJECTED);
+                if (committed.Sum(p => p.TotalAmount) + total > project.TotalProjectBudget)
+                    return new ApiResponse().SetConflict(message: "Purchase order exceeds the remaining project budget.");
             }
+
+            var po = new PurchaseOrder
+            {
+                ProjectId = request.ProjectId,
+                SupplierId = request.SupplierId,
+                WarehouseId = request.WarehouseId,
+                UserAccountId = user.Id,
+                TotalAmount = total,
+                OrderDate = DateTime.UtcNow,
+                ExpectedDeliveryDate = request.ExpectedDeliveryDate,
+                Note = request.Note,
+                Status = PurchaseOrderStatus.PENDING
+            };
+            foreach (var entry in resolved)
+                po.OrderLineItems.Add(new OrderLineItem
+                {
+                    VariantId = entry.VariantId,
+                    RequestItemId = entry.Item.RequestItemId,
+                    Quantity = entry.Item.Quantity,
+                    UnitPrice = entry.Item.UnitPrice
+                });
+            await _uow.PurchaseOrders.AddAsync(po);
+            await _uow.SaveChangeAsync();
+            return new ApiResponse().SetOk(_mapper.Map<PurchaseOrderResponse>(await GetDetailsAsync(po.PoId)));
         }
 
         public async Task<ApiResponse> GetAllPurchaseOrdersAsync()
         {
-            var response = new ApiResponse();
-            try
-            {
-                var pos = await _uow.PurchaseOrders.GetAllAsync(
-                    filter: null,
-                    include: query => query
-                        .Include(p => p.Project)
-                        .Include(p => p.Supplier)
-                        .Include(p => p.OrderLineItems)
-                            .ThenInclude(line => line.Material)
-                );
-                return response.SetOk(_mapper.Map<List<PurchaseOrderResponse>>(pos));
-            }
-            catch (Exception ex)
-            {
-                return response.SetBadRequest(ex.Message);
-            }
+            var pos = await _uow.PurchaseOrders.GetAllAsync(null,
+                q => q.Include(p => p.Project).Include(p => p.Supplier).Include(p => p.Warehouse)
+                      .Include(p => p.OrderLineItems).ThenInclude(l => l.Variant).ThenInclude(v => v.Material));
+            return new ApiResponse().SetOk(_mapper.Map<List<PurchaseOrderResponse>>(pos));
         }
 
         public async Task<ApiResponse> ApprovePurchaseOrderAsync(int poId)
         {
-            var response = new ApiResponse();
+            var user = _claimService.GetUserClaim();
+            if (!IsWarehouseManager(user)) return Forbidden("Only warehouse managers may approve purchase orders.");
+            await _uow.BeginTransactionAsync();
             try
             {
-                var po = await _uow.PurchaseOrders.GetAsync(p => p.PoId == poId);
-                if (po == null) return response.SetNotFound("Order not found");
+                var po = await _uow.PurchaseOrders.GetAsync(p => p.PoId == poId, q => q.Include(p => p.OrderLineItems));
+                if (po == null) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetNotFound(message: "Purchase order not found."); }
+                if (po.Status != PurchaseOrderStatus.PENDING) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "Only pending purchase orders can be approved."); }
 
-                if (po.Status != PurchaseOrderStatus.PENDING)
-                    return response.SetBadRequest("Only PENDING orders can be approved");
-
+                foreach (var line in po.OrderLineItems)
+                {
+                    var inventory = await _uow.Inventories.GetAsync(i => i.WarehouseId == po.WarehouseId && i.VariantId == line.VariantId);
+                    if (inventory == null)
+                    {
+                        inventory = new InventoryRecord { WarehouseId = po.WarehouseId, VariantId = line.VariantId, UpdatedAt = DateTime.UtcNow };
+                        await _uow.Inventories.AddAsync(inventory);
+                    }
+                    inventory.OnOrderQuantity += line.Quantity - line.ReceivedQuantity;
+                    inventory.UpdatedAt = DateTime.UtcNow;
+                }
                 po.Status = PurchaseOrderStatus.APPROVED;
-                _uow.PurchaseOrders.Update(po);
+                po.ApprovedByUserId = user.Id;
+                po.ApprovedAt = DateTime.UtcNow;
                 await _uow.SaveChangeAsync();
-
-                var updatedPo = await GetSavedPurchaseOrderWithDetailsAsync(poId);
-                return response.SetOk(_mapper.Map<PurchaseOrderResponse>(updatedPo));
+                await _uow.CommitTransactionAsync();
+                return new ApiResponse().SetOk(_mapper.Map<PurchaseOrderResponse>(await GetDetailsAsync(poId)));
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                await _uow.RollbackTransactionAsync();
+                return new ApiResponse().SetConflict(message: "Inventory changed while approving the purchase order. Reload and retry.");
             }
             catch (Exception ex)
             {
-                return response.SetBadRequest(ex.Message);
+                await _uow.RollbackTransactionAsync();
+                return new ApiResponse().SetBadRequest(message: "Unable to approve purchase order: " + ex.Message);
             }
         }
 
         public async Task<ApiResponse> RejectPurchaseOrderAsync(int poId)
         {
-            var response = new ApiResponse();
+            var user = _claimService.GetUserClaim();
+            if (!IsWarehouseManager(user)) return Forbidden("Only warehouse managers may reject purchase orders.");
+            var po = await _uow.PurchaseOrders.GetByIdAsync(poId);
+            if (po == null) return new ApiResponse().SetNotFound(message: "Purchase order not found.");
+            if (po.Status != PurchaseOrderStatus.PENDING) return new ApiResponse().SetConflict(message: "Only pending purchase orders can be rejected.");
+            po.Status = PurchaseOrderStatus.REJECTED;
+            await _uow.SaveChangeAsync();
+            return new ApiResponse().SetOk(_mapper.Map<PurchaseOrderResponse>(await GetDetailsAsync(poId)));
+        }
+
+        public async Task<ApiResponse> ReceivePurchaseOrderAsync(int poId, ReceivePurchaseOrderRequest request)
+        {
+            var user = _claimService.GetUserClaim();
+            if (!IsWarehouseManager(user)) return Forbidden("Only warehouse managers may receive purchase orders.");
+            if (request.Items == null || request.Items.Count == 0 || request.Items.Any(i => i.Quantity <= 0))
+                return new ApiResponse().SetBadRequest(message: "At least one positive receipt quantity is required.");
+            await _uow.BeginTransactionAsync();
             try
             {
-                var purchaseOrder = await _uow.PurchaseOrders.GetAsync(po => po.PoId == poId);
-                if (purchaseOrder == null)
-                    return response.SetNotFound($"Đơn mua hàng với ID = {poId} không tồn tại.");
+                var po = await _uow.PurchaseOrders.GetAsync(p => p.PoId == poId, q => q.Include(p => p.OrderLineItems));
+                if (po == null) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetNotFound(message: "Purchase order not found."); }
+                if (po.Status != PurchaseOrderStatus.APPROVED) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "Only approved purchase orders can be received."); }
+                if (request.Items.Select(i => i.LineItemId).Distinct().Count() != request.Items.Count)
+                { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetBadRequest(message: "Receipt contains duplicate line items."); }
 
-                if (purchaseOrder.Status != PurchaseOrderStatus.PENDING)
-                    return response.SetBadRequest("Chỉ có thể từ chối đơn mua hàng đang ở trạng thái chờ duyệt (Pending).");
-
-                purchaseOrder.Status = PurchaseOrderStatus.REJECTED;
-                _uow.PurchaseOrders.Update(purchaseOrder);
+                foreach (var receipt in request.Items)
+                {
+                    var line = po.OrderLineItems.SingleOrDefault(l => l.LineItemId == receipt.LineItemId);
+                    if (line == null || !InventoryQuantityRules.CanReceive(line.Quantity, line.ReceivedQuantity, receipt.Quantity))
+                    { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetBadRequest(message: "Receipt quantity exceeds an order line's remaining quantity."); }
+                    var inventory = await _uow.Inventories.GetAsync(i => i.WarehouseId == po.WarehouseId && i.VariantId == line.VariantId);
+                    if (inventory == null)
+                    {
+                        inventory = new InventoryRecord { WarehouseId = po.WarehouseId, VariantId = line.VariantId, UpdatedAt = DateTime.UtcNow };
+                        await _uow.Inventories.AddAsync(inventory);
+                        await _uow.SaveChangeAsync();
+                    }
+                    var before = inventory.QuantityOnHand;
+                    inventory.QuantityOnHand += receipt.Quantity;
+                    inventory.OnOrderQuantity = Math.Max(0, inventory.OnOrderQuantity - receipt.Quantity);
+                    inventory.UpdatedAt = DateTime.UtcNow;
+                    line.ReceivedQuantity += receipt.Quantity;
+                    await _uow.InventoryTransactions.AddAsync(new InventoryTransaction
+                    {
+                        InventoryId = inventory.InventoryId,
+                        WarehouseId = po.WarehouseId,
+                        VariantId = line.VariantId,
+                        TransactionType = InventoryTransactionTypes.Receipt,
+                        Quantity = receipt.Quantity,
+                        QuantityBefore = before,
+                        QuantityAfter = inventory.QuantityOnHand,
+                        ReferenceId = poId,
+                        ReferenceType = "PURCHASE_ORDER",
+                        Note = request.Note,
+                        PerformedByUserId = user.Id,
+                        TransactionDate = DateTime.UtcNow
+                    });
+                }
+                if (po.OrderLineItems.All(l => l.ReceivedQuantity == l.Quantity)) po.Status = PurchaseOrderStatus.DELIVERED;
                 await _uow.SaveChangeAsync();
-
-                var updatedPo = await GetSavedPurchaseOrderWithDetailsAsync(poId);
-                return response.SetOk(_mapper.Map<PurchaseOrderResponse>(updatedPo));
+                await _uow.CommitTransactionAsync();
+                return new ApiResponse().SetOk(_mapper.Map<PurchaseOrderResponse>(await GetDetailsAsync(poId)));
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                await _uow.RollbackTransactionAsync();
+                return new ApiResponse().SetConflict(message: "Inventory changed while receiving the purchase order. Reload and retry.");
             }
             catch (Exception ex)
             {
-                var deepErrorMessage = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
-                return response.SetBadRequest("Lỗi khi từ chối đơn hàng: " + deepErrorMessage);
+                await _uow.RollbackTransactionAsync();
+                return new ApiResponse().SetBadRequest(message: "Unable to receive purchase order: " + ex.Message);
             }
         }
 
         public async Task<ApiResponse> ImportToWarehouseAsync(int poId, int warehouseId)
         {
-            var apiResponse = new ApiResponse();
-
-            var po = await GetSavedPurchaseOrderWithDetailsAsync(poId);
-
-            if (po == null)
-                return apiResponse.SetNotFound("Đơn hàng không tồn tại!");
-
-            if (po.Status == PurchaseOrderStatus.DELIVERED)
-                return apiResponse.SetBadRequest("Đơn hàng này đã được nhập kho trước đó rồi!");
-
-            if (po.Status != PurchaseOrderStatus.APPROVED)
-                return apiResponse.SetBadRequest("Chỉ đơn hàng đã được phê duyệt (Approved) mới có thể nhập kho!");
-
-            if (po.OrderLineItems == null || !po.OrderLineItems.Any())
-                return apiResponse.SetBadRequest("Đơn mua hàng không chứa danh mục vật tư nào để tiến hành nhập kho.");
-
-            await _uow.BeginTransactionAsync();
-            try
+            var po = await GetDetailsAsync(poId);
+            if (po == null) return new ApiResponse().SetNotFound(message: "Purchase order not found.");
+            if (po.WarehouseId != warehouseId) return new ApiResponse().SetBadRequest(message: "The purchase order is allocated to a different warehouse.");
+            return await ReceivePurchaseOrderAsync(poId, new ReceivePurchaseOrderRequest
             {
-                foreach (var item in po.OrderLineItems)
-                {
-                    var inventory = await _uow.Inventories.GetAsync(x =>
-                        x.WarehouseId == warehouseId && x.MaterialId == item.MaterialId);
-
-                    if (inventory == null)
-                    {
-                        await _uow.Inventories.AddAsync(new InventoryRecord
-                        {
-                            WarehouseId = warehouseId,
-                            MaterialId = item.MaterialId,
-                            QuantityOnHand = item.Quantity,
-                            ReservedQuantity = 0,
-                            ReorderLevel = 10,
-                            UpdatedAt = DateTime.UtcNow
-                        });
-                    }
-                    else
-                    {
-                        inventory.QuantityOnHand += item.Quantity;
-                        inventory.UpdatedAt = DateTime.UtcNow;
-                        _uow.Inventories.Update(inventory);
-                    }
-                }
-
-                po.Status = PurchaseOrderStatus.DELIVERED;
-                po.DeliveryDate = DateTime.UtcNow;
-                _uow.PurchaseOrders.Update(po);
-
-                await _uow.SaveChangeAsync();
-                await _uow.CommitTransactionAsync();
-
-                var updatedPo = await GetSavedPurchaseOrderWithDetailsAsync(poId);
-                return apiResponse.SetOk(_mapper.Map<PurchaseOrderResponse>(updatedPo));
-            }
-            catch (Exception ex)
-            {
-                await _uow.RollbackTransactionAsync();
-                return apiResponse.SetBadRequest("Lỗi hệ thống khi nhập kho: " + ex.Message);
-            }
+                Items = po.OrderLineItems.Where(l => l.Quantity > l.ReceivedQuantity)
+                    .Select(l => new ReceivePurchaseOrderItemRequest { LineItemId = l.LineItemId, Quantity = l.Quantity - l.ReceivedQuantity }).ToList()
+            });
         }
+
+        private static bool IsWarehouseManager(ClaimDTO claim) => string.Equals(claim.Role, Role.WAREHOUSE_MANAGER.ToString(), StringComparison.OrdinalIgnoreCase);
+        private static ApiResponse Forbidden(string message) => new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, message);
     }
 }

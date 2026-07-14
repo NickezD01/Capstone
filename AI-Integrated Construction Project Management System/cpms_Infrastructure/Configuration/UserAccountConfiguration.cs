@@ -33,8 +33,8 @@ namespace cpms_Infrastructure.Configuration
                    .OnDelete(DeleteBehavior.Restrict); // Tránh xóa User nếu PO còn tồn tại
 
             builder.HasMany(u => u.ProgressReports)
-                   .WithOne(pr => pr.Engineer)
-                   .HasForeignKey(pr => pr.EngineerId)
+                   .WithOne(pr => pr.Reporter)
+                   .HasForeignKey(pr => pr.ReportedByUserId)
                    .OnDelete(DeleteBehavior.Restrict);
 
             builder.Property(u => u.CreatedDate).HasDefaultValueSql("GETUTCDATE()");

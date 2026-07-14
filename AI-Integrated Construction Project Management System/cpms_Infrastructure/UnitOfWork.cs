@@ -23,6 +23,7 @@ namespace cpms_Infrastructure
         public ITaskItemRepository TaskItems { get; }
         public IProgressReportRepository ProgressReports { get; }
         public IMaterialRepository Materials { get; }
+        public IGenericRepository<cpms_Domain.Models.MaterialVariant> MaterialVariants { get; }
         public ISupplierRepository Suppliers { get; }
         public ISupplierCatalogRepository SupplierCatalogs { get; }
         public ISupplierMetricRepository SupplierMetrics { get; }
@@ -33,6 +34,8 @@ namespace cpms_Infrastructure
         public ICategoryRepository Categories { get; }
         public IWarehouseRepository Warehouses { get; }
         public IInventoryRepository Inventories { get; }
+        public IGenericRepository<cpms_Domain.Models.InventoryReservation> InventoryReservations { get; }
+        public IGenericRepository<cpms_Domain.Models.InventoryTransaction> InventoryTransactions { get; }
         public ITaskMaterialRequirementRepository TaskMaterialRequirements { get; }
         public IProjectBudgetHistoryRepository ProjectBudgetHistories { get; }
 
@@ -53,6 +56,7 @@ namespace cpms_Infrastructure
             TaskItems = new TaskItemRepository(context);
             ProgressReports = new ProgressReportRepository(context);
             Materials = new MaterialRepository(context);
+            MaterialVariants = new GenericRepository<cpms_Domain.Models.MaterialVariant>(context);
             Suppliers = new SupplierRepository(context);
             SupplierCatalogs = new SupplierCatalogRepository(context);
             SupplierMetrics = new SupplierMetricRepository(context);
@@ -63,6 +67,8 @@ namespace cpms_Infrastructure
             Categories = new CategoryRepository(context);
             Warehouses = new WarehouseRepository(context);
             Inventories = new InventoryRepository(context);
+            InventoryReservations = new GenericRepository<cpms_Domain.Models.InventoryReservation>(context);
+            InventoryTransactions = new GenericRepository<cpms_Domain.Models.InventoryTransaction>(context);
 
  
             MaterialRequests = new MaterialRequestRepository(context);
@@ -76,14 +82,7 @@ namespace cpms_Infrastructure
         // =========================================
         public async Task SaveChangeAsync()
         {
-            try
-            {
-                await _context.SaveChangesAsync();
-            }
-            catch (Exception ex)
-            {
-                throw new Exception(ex.Message);
-            }
+            await _context.SaveChangesAsync();
         }
 
         // =========================================

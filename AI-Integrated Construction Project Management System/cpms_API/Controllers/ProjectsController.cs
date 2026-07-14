@@ -20,6 +20,7 @@ namespace cpms_API.Controllers
 
         // POST: api/projects
         [HttpPost]
+        [Authorize(Roles = "PM")]
         public async Task<IActionResult> CreateProject([FromBody] CreateProjectRequest request)
         {
             var response = await _projectService.CreateProjectAsync(request);
@@ -55,6 +56,7 @@ namespace cpms_API.Controllers
         }
 
         [HttpPost("import-word")]
+        [Authorize(Roles = "PM")]
         [Consumes("multipart/form-data")]
         public async Task<IActionResult> ImportProjectFromWord(IFormFile file)
         {
@@ -68,6 +70,7 @@ namespace cpms_API.Controllers
 
         // POST: api/projects/tasks/{taskId}/materials
         [HttpPost("tasks/{taskId}/materials")]
+        [Authorize(Roles = "PM")]
         public async Task<IActionResult> AssignMaterialRequirementToTask(int taskId, [FromBody] CreateTaskMaterialRequirementRequest request)
         {
             var response = await _projectService.AssignMaterialRequirementToTaskAsync(taskId, request);
@@ -102,6 +105,7 @@ namespace cpms_API.Controllers
             return Ok(response);
         }
         [HttpPost("adjust-budget")]
+        [Authorize(Roles = "ADMIN")]
         public async Task<IActionResult> AdjustProjectBudget([FromBody] AdjustBudgetRequest request)
         {
             var response = await _projectService.AdjustProjectBudgetAsync(request);

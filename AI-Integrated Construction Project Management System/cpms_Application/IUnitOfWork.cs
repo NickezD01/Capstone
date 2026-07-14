@@ -28,6 +28,7 @@ namespace cpms_Application
         // MATERIAL & SUPPLIERS
         // ========================================================
         IMaterialRepository Materials { get; }
+        IGenericRepository<MaterialVariant> MaterialVariants { get; }
         ISupplierRepository Suppliers { get; }
         ISupplierCatalogRepository SupplierCatalogs { get; }
         ISupplierMetricRepository SupplierMetrics { get; }
@@ -43,6 +44,8 @@ namespace cpms_Application
         IOrderLineItemRepository OrderLineItems { get; }
         IWarehouseRepository Warehouses { get; }
         IInventoryRepository Inventories { get; }
+        IGenericRepository<InventoryReservation> InventoryReservations { get; }
+        IGenericRepository<InventoryTransaction> InventoryTransactions { get; }
         ITaskMaterialRequirementRepository TaskMaterialRequirements { get; }
 
         // ========================================================

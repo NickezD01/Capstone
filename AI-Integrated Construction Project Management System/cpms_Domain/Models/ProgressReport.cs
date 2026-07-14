@@ -10,14 +10,14 @@ namespace cpms_Domain.Models
     {
         public int ReportId { get; set; }
         public int TaskId { get; set; }
-        public int EngineerId { get; set; }
+        public int ReportedByUserId { get; set; }
         public DateTime ReportDate { get; set; }
-        public int ProgressIncrement { get; set; }
+        public decimal ProgressIncrement { get; set; }
         public string? Notes { get; set; }
         public string? SitePhotoUrl { get; set; }
 
         // Navigation
         public virtual TaskItem Task { get; set; } = null!;
-        public virtual UserAccount Engineer { get; set; } = null!;
+        public virtual UserAccount Reporter { get; set; } = null!;
     }
 }

@@ -39,6 +39,9 @@ namespace cpms_Application.Services
 
             try
             {
+                var currentUser = _claimService.GetUserClaim();
+                if (!string.Equals(currentUser.Role, Role.PM.ToString(), StringComparison.OrdinalIgnoreCase) || request.PMUserID != currentUser.Id)
+                    return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "A project manager may only create a project assigned to their own account.");
                 // Kiểm tra PM có tồn tại không
                 var pm = await _unitOfWork.UserAccounts.GetByIdAsync(request.PMUserID);
 
@@ -251,13 +254,19 @@ namespace cpms_Application.Services
                 var taskItem = await _unitOfWork.TaskItems.GetByIdAsync(taskId);
                 if (taskItem == null)
                     return apiResponse.SetNotFound($"Không tìm thấy đầu việc (Task) với ID = {taskId}");
+                var project = await _unitOfWork.Projects.GetByIdAsync(taskItem.ProjectId);
+                var currentUser = _claimService.GetUserClaim();
+                if (project == null || !string.Equals(currentUser.Role, Role.PM.ToString(), StringComparison.OrdinalIgnoreCase) || project.PMUserID != currentUser.Id)
+                    return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You may only edit planned materials for a project you manage.");
 
-                var material = await _unitOfWork.Materials.GetByIdAsync(request.MaterialId);
-                if (material == null)
-                    return apiResponse.SetNotFound($"Không tìm thấy vật tư (Material) với ID = {request.MaterialId}");
+                var variant = request.VariantId != 0
+                    ? await _unitOfWork.MaterialVariants.GetByIdAsync(request.VariantId)
+                    : await _unitOfWork.MaterialVariants.GetAsync(v => v.MaterialId == request.MaterialId && v.IsActive);
+                if (variant == null)
+                    return apiResponse.SetNotFound(message: "Material variant not found.");
 
                 var existingRequirement = await _unitOfWork.TaskMaterialRequirements
-                    .GetAsync(r => r.TaskId == taskId && r.MaterialId == request.MaterialId);
+                    .GetAsync(r => r.TaskId == taskId && r.VariantId == variant.VariantId);
 
                 if (existingRequirement != null)
                 {
@@ -269,7 +278,7 @@ namespace cpms_Application.Services
                     existingRequirement = new TaskMaterialRequirement
                     {
                         TaskId = taskId,
-                        MaterialId = request.MaterialId,
+                        VariantId = variant.VariantId,
                         GrossQuantityRequired = request.GrossQuantityRequired
                     };
                     await _unitOfWork.TaskMaterialRequirements.AddAsync(existingRequirement);
@@ -298,7 +307,8 @@ namespace cpms_Application.Services
                 var projectRequirements = await _unitOfWork.TaskMaterialRequirements.GetAllAsync(
                     filter: r => r.TaskItem.ProjectId == projectId,
                     include: query => query
-                        .Include(r => r.Material)
+                        .Include(r => r.Variant)
+                            .ThenInclude(v => v.Material)
                         .Include(r => r.TaskItem)
                 );
 
@@ -325,7 +335,8 @@ namespace cpms_Application.Services
                               && r.TaskItem.Status != cpms_Domain.Models.TaskStatus.COMPLETED
                               && r.TaskItem.ActualProgressPct < 100,
                     include: query => query
-                        .Include(r => r.Material)
+                        .Include(r => r.Variant)
+                            .ThenInclude(v => v.Material)
                         .Include(r => r.TaskItem)
                 );
 
@@ -337,35 +348,31 @@ namespace cpms_Application.Services
                 var grossRequirementsGroup = requirementsList
                     .GroupBy(r => new
                     {
-                        r.MaterialId,
-                        MaterialName = r.Material != null ? r.Material.MaterialName : "Vật tư không tên",
-                        Unit = r.Material != null ? r.Material.Unit : "Cái"
+                        r.VariantId,
+                        r.Variant.MaterialId,
+                        MaterialName = r.Variant.Material.MaterialName,
+                        VariantName = r.Variant.VariantName,
+                        Unit = r.Variant.Unit
                     })
                     .Select(g => new
                     {
+                        g.Key.VariantId,
                         g.Key.MaterialId,
                         g.Key.MaterialName,
+                        g.Key.VariantName,
                         g.Key.Unit,
                         TotalGross = g.Sum(r => r.GrossQuantityRequired),
                         EarliestNeedDate = g.Min(r => r.TaskItem.BaselineStart)
                     }).ToList();
 
                 // LẤY DANH SÁCH ID VẬT TƯ ĐỂ TRUY VẤN TRÚNG ĐÍCH
-                var requiredMaterialIds = grossRequirementsGroup.Select(g => g.MaterialId).Distinct().ToList();
+                var requiredVariantIds = grossRequirementsGroup.Select(g => g.VariantId).Distinct().ToList();
 
                 // TỐI ƯU HÓA TRUY VẤN: Chỉ lấy tồn kho của các Vật tư có trong danh sách yêu cầu
                 var currentInventories = await _unitOfWork.Inventories.GetAllAsync(
-                    filter: i => requiredMaterialIds.Contains(i.MaterialId)
+                    filter: i => requiredVariantIds.Contains(i.VariantId)
                 );
                 var inventoriesList = currentInventories.ToList();
-
-                // TỐI ƯU HÓA TRUY VẤN: Chỉ lọc lấy Purchase Orders chứa các vật tư cần tính toán
-                var activePurchaseOrders = await _unitOfWork.PurchaseOrders.GetAllAsync(
-                    filter: po => (po.Status == PurchaseOrderStatus.PENDING || po.Status == PurchaseOrderStatus.APPROVED)
-                               && po.OrderLineItems.Any(line => requiredMaterialIds.Contains(line.MaterialId)),
-                    include: query => query.Include(po => po.OrderLineItems)
-                );
-                var activePoLines = activePurchaseOrders.SelectMany(po => po.OrderLineItems).ToList();
 
                 var mrpResultList = new List<MRPCalculationResponse>();
 
@@ -373,27 +380,29 @@ namespace cpms_Application.Services
                 {
                     // Lọc dữ liệu trên danh sách đã được thu nhỏ trong bộ nhớ RAM
                     decimal currentStock = inventoriesList
-                        .Where(i => i.MaterialId == gross.MaterialId)
+                        .Where(i => i.VariantId == gross.VariantId)
                         .Sum(i => i.QuantityOnHand);
 
                     decimal reserved = inventoriesList
-                        .Where(i => i.MaterialId == gross.MaterialId)
+                        .Where(i => i.VariantId == gross.VariantId)
                         .Sum(i => i.ReservedQuantity);
 
                     decimal available = currentStock - reserved;
                     if (available < 0) available = 0;
 
-                    decimal onOrder = activePoLines
-                        .Where(line => line.MaterialId == gross.MaterialId)
-                        .Sum(line => line.Quantity);
+                    decimal onOrder = inventoriesList
+                        .Where(i => i.VariantId == gross.VariantId)
+                        .Sum(i => i.OnOrderQuantity);
 
                     decimal netRequired = gross.TotalGross - available - onOrder;
                     if (netRequired < 0) netRequired = 0;
 
                     mrpResultList.Add(new MRPCalculationResponse
                     {
+                        VariantId = gross.VariantId,
                         MaterialId = gross.MaterialId,
                         MaterialName = gross.MaterialName,
+                        VariantName = gross.VariantName,
                         Unit = gross.Unit,
                         TotalGrossRequired = gross.TotalGross,
                         CurrentInventory = currentStock,

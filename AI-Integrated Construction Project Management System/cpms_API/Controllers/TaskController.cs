@@ -20,6 +20,7 @@ namespace cpms_API.Controllers
 
         // POST: api/task
         [HttpPost]
+        [Authorize(Roles = "PM")]
         public async Task<IActionResult> CreateTask([FromBody] CreateTaskRequest request)
         {
             var response = await _taskService.CreateTaskAsync(request);

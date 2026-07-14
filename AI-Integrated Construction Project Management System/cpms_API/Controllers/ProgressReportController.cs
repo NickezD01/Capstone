@@ -20,6 +20,7 @@ namespace cpms_API.Controllers
 
         // POST: api/progressreport
         [HttpPost]
+        [Authorize(Roles = "PM")]
         public async Task<IActionResult> SubmitProgressReport([FromBody] SubmitProgressReportRequest request)
         {
             var response = await _progressReportService.SubmitReportAsync(request);

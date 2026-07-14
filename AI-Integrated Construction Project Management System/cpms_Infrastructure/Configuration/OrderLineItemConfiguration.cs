@@ -16,6 +16,13 @@ namespace cpms_Infrastructure.Configuration
             builder.ToTable("OrderLineItems");
             builder.HasKey(oli => oli.LineItemId);
             builder.Property(oli => oli.UnitPrice).HasColumnType("decimal(18,2)");
+            builder.Property(oli => oli.Quantity).HasColumnType("decimal(18,4)");
+            builder.Property(oli => oli.ReceivedQuantity).HasColumnType("decimal(18,4)").HasDefaultValue(0);
+            builder.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_OrderLineItems_Quantity", "[Quantity] > 0");
+                t.HasCheckConstraint("CK_OrderLineItems_ReceivedQuantity", "[ReceivedQuantity] >= 0 AND [ReceivedQuantity] <= [Quantity]");
+            });
 
             builder.Property(oli => oli.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
             builder.Property(oli => oli.IsDeleted).HasDefaultValue(false);
@@ -27,10 +34,14 @@ namespace cpms_Infrastructure.Configuration
                    .HasForeignKey(oli => oli.PoId)
                    .OnDelete(DeleteBehavior.Cascade);
 
-            // Mối quan hệ [11]: OrderLineItem -> Material (1-N)
-            builder.HasOne(oli => oli.Material)
-                   .WithMany(m => m.OrderLineItems)
-                   .HasForeignKey(oli => oli.MaterialId)
+            builder.HasOne(oli => oli.Variant)
+                   .WithMany(v => v.OrderLineItems)
+                   .HasForeignKey(oli => oli.VariantId)
+                   .OnDelete(DeleteBehavior.Restrict);
+
+            builder.HasOne(oli => oli.RequestItem)
+                   .WithMany(ri => ri.OrderLineItems)
+                   .HasForeignKey(oli => oli.RequestItemId)
                    .OnDelete(DeleteBehavior.Restrict);
         }
     }

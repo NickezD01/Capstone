@@ -18,6 +18,13 @@ namespace cpms_Application.Response.PurchaseOrder
         public string Status { get; set; } = null!;
         public string Currency { get; set; } = "VND"; // Lấy từ Project hoặc mặc định
         public decimal TotalAmount { get; set; }
+        public int WarehouseId { get; set; }
+        public string WarehouseName { get; set; } = null!;
+        public DateTime OrderDate { get; set; }
+        public DateTime? ExpectedDeliveryDate { get; set; }
+        public int? ApprovedByUserId { get; set; }
+        public DateTime? ApprovedAt { get; set; }
+        public string? Note { get; set; }
 
         public List<OrderLineItemResponse> Items { get; set; } = new();
     }

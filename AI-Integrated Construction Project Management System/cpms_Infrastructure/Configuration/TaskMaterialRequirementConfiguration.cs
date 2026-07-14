@@ -18,7 +18,7 @@ namespace cpms_Infrastructure.Configuration
 
             // Cấu hình số lượng định mức (Độ chính xác cao)
             builder.Property(tmr => tmr.GrossQuantityRequired)
-                   .HasColumnType("decimal(18,2)")
+                   .HasColumnType("decimal(18,4)")
                    .HasDefaultValue(0.00);
 
             builder.Property(tmr => tmr.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
@@ -31,11 +31,14 @@ namespace cpms_Infrastructure.Configuration
                    .HasForeignKey(tmr => tmr.TaskId)
                    .OnDelete(DeleteBehavior.Cascade);
 
-            // Cấu hình mối quan hệ với Material
-            builder.HasOne(tmr => tmr.Material)
-                   .WithMany() // Nếu bảng Material không cần tạo ICollection ngược lại
-                   .HasForeignKey(tmr => tmr.MaterialId)
+            builder.HasOne(tmr => tmr.Variant)
+                   .WithMany(v => v.TaskMaterialRequirements)
+                   .HasForeignKey(tmr => tmr.VariantId)
                    .OnDelete(DeleteBehavior.Restrict);
+
+            builder.HasIndex(tmr => new { tmr.TaskId, tmr.VariantId })
+                   .IsUnique()
+                   .HasFilter("[IsDeleted] = 0");
         }
     }
 }

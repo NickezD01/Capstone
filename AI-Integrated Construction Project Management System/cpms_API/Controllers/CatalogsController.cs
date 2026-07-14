@@ -1,11 +1,13 @@
 ﻿using cpms_Application.Interfaces;
 using cpms_Application.Request.SupplierCatalog;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 
 namespace cpms_API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize(Roles = "ADMIN")]
     public class CatalogsController : ControllerBase
     {
         private readonly ICatalogService _catalogService;

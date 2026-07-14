@@ -3,4 +3,5 @@
   <Project Path="cpms_Application/cpms_Application.csproj" Id="8b366e7f-b205-4de7-a155-e30e65c4fe59" />
   <Project Path="cpms_Domain/cpms_Domain.csproj" Id="7edcd599-beca-4b20-886e-ea97b5338017" />
   <Project Path="cpms_Infrastructure/cpms_Infrastructure.csproj" Id="549462fe-8ce8-4ec1-955c-6613d3d79c44" />
+  <Project Path="cpms_Tests/cpms_Tests.csproj" />
 </Solution>

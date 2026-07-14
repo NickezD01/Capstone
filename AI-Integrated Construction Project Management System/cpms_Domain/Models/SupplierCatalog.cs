@@ -10,12 +10,15 @@ namespace cpms_Domain.Models
     {
         public int CatalogId { get; set; }
         public int SupplierId { get; set; }
-        public int MaterialId { get; set; }
+        public int VariantId { get; set; }
+        public string? SupplierSku { get; set; }
         public decimal UnitPrice { get; set; }
+        public decimal MinimumOrderQuantity { get; set; }
         public int LeadTimeDays { get; set; }
+        public bool IsAvailable { get; set; } = true;
 
         // Navigation
         public virtual Supplier Supplier { get; set; } = null!;
-        public virtual Material Material { get; set; } = null!;
+        public virtual MaterialVariant Variant { get; set; } = null!;
     }
 }

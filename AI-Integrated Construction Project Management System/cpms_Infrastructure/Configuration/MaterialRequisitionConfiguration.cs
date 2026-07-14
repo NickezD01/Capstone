@@ -17,7 +17,16 @@ namespace cpms_Infrastructure.Configuration
             builder.HasKey(mreq => mreq.ItemId);
 
             builder.Property(mreq => mreq.Quantity).HasColumnType("decimal(18,4)").HasDefaultValue(0);
+            builder.Property(mreq => mreq.ApprovedQuantity).HasColumnType("decimal(18,4)").HasDefaultValue(0);
+            builder.Property(mreq => mreq.IssuedQuantity).HasColumnType("decimal(18,4)").HasDefaultValue(0);
             builder.Property(mreq => mreq.NeededByDate).IsRequired();
+            builder.Property(mreq => mreq.Note).HasMaxLength(1000);
+            builder.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_MaterialsRequisitions_Quantity", "[Quantity] > 0");
+                t.HasCheckConstraint("CK_MaterialsRequisitions_ApprovedQuantity", "[ApprovedQuantity] >= 0 AND [ApprovedQuantity] <= [Quantity]");
+                t.HasCheckConstraint("CK_MaterialsRequisitions_IssuedQuantity", "[IssuedQuantity] >= 0 AND [IssuedQuantity] <= [ApprovedQuantity]");
+            });
 
             builder.Property(mreq => mreq.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
             builder.Property(mreq => mreq.IsDeleted).HasDefaultValue(false);
@@ -29,10 +38,9 @@ namespace cpms_Infrastructure.Configuration
                    .HasForeignKey(mreq => mreq.RequestId)
                    .OnDelete(DeleteBehavior.Cascade);
 
-            // Quan hệ 1-N: Material - MaterialRequisition
-            builder.HasOne(mreq => mreq.Material)
-                   .WithMany(m => m.MaterialRequisitions)
-                   .HasForeignKey(mreq => mreq.MaterialId)
+            builder.HasOne(mreq => mreq.Variant)
+                   .WithMany(v => v.MaterialRequisitions)
+                   .HasForeignKey(mreq => mreq.VariantId)
                    .OnDelete(DeleteBehavior.Restrict);
         }
     }

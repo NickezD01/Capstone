@@ -34,7 +34,7 @@ if (configuration != null)
 builder.Services.AddControllers();
 builder.Services.Configure<ApiBehaviorOptions>(options =>
 {
-    options.SuppressModelStateInvalidFilter = true;
+    options.SuppressModelStateInvalidFilter = false;
 });
 
 // Kích hoạt tính năng tự động validate đầu vào của FluentValidation trên Controller

@@ -46,6 +46,15 @@ namespace cpms_Application.Response
             return this;
         }
 
+        public ApiResponse SetConflict(object result = null, string message = null)
+        {
+            IsSuccess = false;
+            StatusCode = HttpStatusCode.Conflict;
+            ErrorMessage = message;
+            Result = result;
+            return this;
+        }
+
         public ApiResponse SetApiResponse(HttpStatusCode statusCode, bool isSuccess, string message = null, object result = null)
         {
             IsSuccess = isSuccess;

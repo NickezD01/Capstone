@@ -19,28 +19,43 @@ namespace cpms_Application.Services
     {
         private readonly IUnitOfWork _uow;
         private readonly IMapper _mapper;
+        private readonly IClaimService _claimService;
 
-        public TaskService(IUnitOfWork uow, IMapper mapper)
+        public TaskService(IUnitOfWork uow, IMapper mapper, IClaimService claimService)
         {
             _uow = uow;
             _mapper = mapper;
+            _claimService = claimService;
         }
 
         public async Task<ApiResponse> CreateTaskAsync(CreateTaskRequest request)
         {
             var response = new ApiResponse();
+            await _uow.BeginTransactionAsync();
             try
             {
                 // 1. Kiểm tra xem dự án (Project) có tồn tại thực tế hay không
                 // Thay thế GetAsync bằng hàm tìm kiếm theo ID tương ứng trong cấu trúc của bạn (ví dụ: GetByIdAsync hoặc GetAsync)
                 var project = await _uow.Projects.GetAsync(p => p.ProjectId == request.ProjectId);
                 if (project == null)
+                {
+                    await _uow.RollbackTransactionAsync();
                     return response.SetNotFound($"Dự án với ID = {request.ProjectId} không tồn tại trong hệ thống.");
+                }
+                var currentUser = _claimService.GetUserClaim();
+                if (!string.Equals(currentUser.Role, Role.PM.ToString(), StringComparison.OrdinalIgnoreCase) || project.PMUserID != currentUser.Id)
+                {
+                    await _uow.RollbackTransactionAsync();
+                    return response.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You may only create tasks for a project you manage.");
+                }
 
                 // 2. Kiểm tra nhân sự được giao việc có tồn tại hay không
                 var user = await _uow.UserAccounts.GetAsync(u => u.Id == request.AssignedToUserID);
                 if (user == null)
+                {
+                    await _uow.RollbackTransactionAsync();
                     return response.SetNotFound($"Nhân sự được giao việc với ID = {request.AssignedToUserID} không tồn tại.");
+                }
 
                 // 3. Map dữ liệu cơ bản và cấu hình mặc định cho Task mới
                 var taskItem = _mapper.Map<TaskItem>(request);
@@ -57,22 +72,22 @@ namespace cpms_Application.Services
                 if (request.Materials != null && request.Materials.Any())
                 {
                     // Tối ưu hóa: Thu thập toàn bộ MaterialId cần kiểm tra để truy vấn DB một lần duy nhất
-                    var requestedMaterialIds = request.Materials.Select(m => m.MaterialId).Distinct().ToList();
-                    var existingMaterials = await _uow.Materials.GetAllAsync(m => requestedMaterialIds.Contains(m.MaterialId));
-
                     foreach (var matRequest in request.Materials)
                     {
-                        // Kiểm tra xem vật tư có thực sự hợp lệ không
-                        if (!existingMaterials.Any(m => m.MaterialId == matRequest.MaterialId))
+                        var variant = matRequest.VariantId != 0
+                            ? await _uow.MaterialVariants.GetByIdAsync(matRequest.VariantId)
+                            : await _uow.MaterialVariants.GetAsync(v => v.MaterialId == matRequest.MaterialId && v.IsActive);
+                        if (variant == null)
                         {
-                            return response.SetBadRequest($"Mã định mức lỗi: Vật tư với ID = {matRequest.MaterialId} không tồn tại.");
+                            await _uow.RollbackTransactionAsync();
+                            return response.SetBadRequest(message: "Material variant does not exist.");
                         }
 
                         // Khởi tạo thực thể liên kết Task và Vật tư
                         var requirement = new TaskMaterialRequirement
                         {
                             TaskId = taskItem.TaskId, // Sử dụng mã TaskId vừa sinh tự động ở trên
-                            MaterialId = matRequest.MaterialId,
+                            VariantId = variant.VariantId,
                             GrossQuantityRequired = matRequest.GrossQuantityRequired
                         };
 
@@ -83,10 +98,12 @@ namespace cpms_Application.Services
                     await _uow.SaveChangeAsync();
                 }
 
+                await _uow.CommitTransactionAsync();
                 return response.SetOk("Khởi tạo đầu việc dự án và định mức vật tư thành công!");
             }
             catch (Exception ex)
             {
+                await _uow.RollbackTransactionAsync();
                 // 🔍 TRÍCH XUẤT LỖI TẬN GỐC: Trả ra chính xác InnerException để hiển thị lên Swagger (ví dụ: lỗi trùng khóa, sai kiểu dữ liệu,...)
                 var deepErrorMessage = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
                 if (ex.InnerException?.InnerException != null)
@@ -108,7 +125,8 @@ namespace cpms_Application.Services
                     include: query => query
                         .Include(t => t.AssignedToUser)
                         .Include(t => t.MaterialRequirements)
-                            .ThenInclude(mr => mr.Material)
+                            .ThenInclude(mr => mr.Variant)
+                                .ThenInclude(v => v.Material)
                 );
 
                 var result = _mapper.Map<IEnumerable<TaskResponse>>(tasks);
@@ -135,7 +153,8 @@ namespace cpms_Application.Services
                 var projectRequirements = await _uow.TaskMaterialRequirements.GetAllAsync(
                     filter: r => r.TaskItem.ProjectId == projectId,
                     include: query => query
-                        .Include(r => r.Material)
+                        .Include(r => r.Variant)
+                            .ThenInclude(v => v.Material)
                         .Include(r => r.TaskItem)
                 );
 

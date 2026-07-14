@@ -13,6 +13,7 @@ using cpms_Application.Request.Warehouse;
 using cpms_Application.Response.Category;
 using cpms_Application.Response.Inventory;
 using cpms_Application.Response.MaterialRequest;
+using cpms_Application.Response.Material;
 using cpms_Application.Response.ProgressReport;
 using cpms_Application.Response.Project;
 using cpms_Application.Response.Tasks;
@@ -69,17 +70,24 @@ namespace cpms_Application.MyMapper
             CreateMap<PurchaseOrder, PurchaseOrderResponse>()
                 .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.Status.ToString()))
                 .ForMember(dest => dest.Currency, opt => opt.MapFrom(src => src.Project != null ? src.Project.Currency : "VND"))
+                .ForMember(dest => dest.WarehouseName, opt => opt.MapFrom(src => src.Warehouse != null ? src.Warehouse.WarehouseName : string.Empty))
                 .ForMember(dest => dest.Items, opt => opt.MapFrom(src => src.OrderLineItems));
 
             // Mappings cho PO Item (Tính toán SubTotal và lấy thông tin vật tư)
             CreateMap<OrderLineItem, OrderLineItemResponse>()
-                .ForMember(dest => dest.MaterialName, opt => opt.MapFrom(src => src.Material != null ? src.Material.MaterialName : string.Empty))
-                .ForMember(dest => dest.Unit, opt => opt.MapFrom(src => src.Material != null ? src.Material.Unit : string.Empty))
+                .ForMember(dest => dest.MaterialId, opt => opt.MapFrom(src => src.Variant.MaterialId))
+                .ForMember(dest => dest.MaterialName, opt => opt.MapFrom(src => src.Variant.Material.MaterialName))
+                .ForMember(dest => dest.VariantName, opt => opt.MapFrom(src => src.Variant.VariantName))
+                .ForMember(dest => dest.Unit, opt => opt.MapFrom(src => src.Variant.Unit))
                 .ForMember(dest => dest.SubTotal, opt => opt.MapFrom(src => src.Quantity * src.UnitPrice));
 
             // === MATERIALS ===
             CreateMap<cpms_Application.Request.Material.MaterialRequest, Material>();
             CreateMap<UpdateMaterialRequest, Material>();
+            CreateMap<MaterialVariantRequest, MaterialVariant>();
+            CreateMap<MaterialVariant, MaterialVariantResponse>()
+                .ForMember(dest => dest.MaterialName, opt => opt.MapFrom(src => src.Material.MaterialName));
+            CreateMap<Material, MaterialResponse>();
 
             // === WAREHOUSES & INVENTORY ===
             CreateMap<CreateWarehouseRequest, Warehouse>();
@@ -90,10 +98,13 @@ namespace cpms_Application.MyMapper
 
             CreateMap<InventoryRecord, InventoryReportResponse>()
                 .ForMember(dest => dest.WarehouseName, opt => opt.MapFrom(src => src.Warehouse.WarehouseName))
-                .ForMember(dest => dest.MaterialName, opt => opt.MapFrom(src => src.Material.MaterialName))
-                .ForMember(dest => dest.Unit, opt => opt.MapFrom(src => src.Material.Unit))
-                .ForMember(dest => dest.AvailableQuantity, opt => opt.MapFrom(src => src.QuantityOnHand - src.ReservedQuantity))
-                .ForMember(dest => dest.IsLowStock, opt => opt.MapFrom(src => (src.QuantityOnHand - src.ReservedQuantity) <= src.ReorderLevel));
+                .ForMember(dest => dest.MaterialId, opt => opt.MapFrom(src => src.Variant.MaterialId))
+                .ForMember(dest => dest.MaterialName, opt => opt.MapFrom(src => src.Variant.Material.MaterialName))
+                .ForMember(dest => dest.VariantName, opt => opt.MapFrom(src => src.Variant.VariantName))
+                .ForMember(dest => dest.Unit, opt => opt.MapFrom(src => src.Variant.Unit))
+                .ForMember(dest => dest.RowVersion, opt => opt.MapFrom(src => Convert.ToBase64String(src.RowVersion)))
+                .ForMember(dest => dest.IsLowStock, opt => opt.MapFrom(src => src.AvailableQuantity <= src.ReorderLevel));
+            CreateMap<InventoryTransaction, InventoryTransactionResponse>();
 
             // === CATEGORIES & SUPPLIERS ===
             CreateMap<CreateCategoryRequest, Category>();
@@ -120,15 +131,17 @@ namespace cpms_Application.MyMapper
                 .ForMember(dest => dest.MaterialRequirements, opt => opt.MapFrom(src => src.MaterialRequirements));
 
             CreateMap<TaskMaterialRequirement, TaskMaterialResponse>()
-                .ForMember(dest => dest.MaterialName, opt => opt.MapFrom(src => src.Material != null ? src.Material.MaterialName : null))
-                .ForMember(dest => dest.Unit, opt => opt.MapFrom(src => src.Material != null ? src.Material.Unit : null))
+                .ForMember(dest => dest.MaterialId, opt => opt.MapFrom(src => src.Variant.MaterialId))
+                .ForMember(dest => dest.MaterialName, opt => opt.MapFrom(src => src.Variant.Material.MaterialName))
+                .ForMember(dest => dest.VariantName, opt => opt.MapFrom(src => src.Variant.VariantName))
+                .ForMember(dest => dest.Unit, opt => opt.MapFrom(src => src.Variant.Unit))
                 .ForMember(dest => dest.TaskName, opt => opt.MapFrom(src => src.TaskItem != null ? src.TaskItem.TaskName : null));
 
             // === PROGRESS REPORTS ===
             CreateMap<SubmitProgressReportRequest, ProgressReport>();
             CreateMap<ProgressReport, ProgressReportResponse>()
                 .ForMember(dest => dest.TaskName, opt => opt.MapFrom(src => src.Task != null ? src.Task.TaskName : null))
-                .ForMember(dest => dest.EngineerName, opt => opt.MapFrom(src => src.Engineer != null ? $"{src.Engineer.LastName} {src.Engineer.FirstName}".Trim() : string.Empty));
+                .ForMember(dest => dest.ReportedByName, opt => opt.MapFrom(src => src.Reporter != null ? $"{src.Reporter.LastName} {src.Reporter.FirstName}".Trim() : string.Empty));
 
             // === MATERIAL REQUESTS ===
             CreateMap<MaterialItemRequest, MaterialRequisition>();
@@ -142,11 +155,14 @@ namespace cpms_Application.MyMapper
                         ? $"{src.Requester.LastName} {src.Requester.FirstName}".Trim()
                         : "Người dùng hệ thống"))
                 .ForMember(dest => dest.TaskId, opt => opt.MapFrom(src => src.TaskId))
+                .ForMember(dest => dest.WarehouseName, opt => opt.MapFrom(src => src.Warehouse != null ? src.Warehouse.WarehouseName : null))
                 .ForMember(dest => dest.Items, opt => opt.MapFrom(src => src.Requisitions));
 
             CreateMap<MaterialRequisition, MaterialRequisitionDetailResponse>()
-                .ForMember(dest => dest.MaterialName, opt => opt.MapFrom(src => src.Material != null ? src.Material.MaterialName : null))
-                .ForMember(dest => dest.Unit, opt => opt.MapFrom(src => src.Material != null ? src.Material.Unit : null));
+                .ForMember(dest => dest.MaterialId, opt => opt.MapFrom(src => src.Variant.MaterialId))
+                .ForMember(dest => dest.MaterialName, opt => opt.MapFrom(src => src.Variant.Material.MaterialName))
+                .ForMember(dest => dest.VariantName, opt => opt.MapFrom(src => src.Variant.VariantName))
+                .ForMember(dest => dest.Unit, opt => opt.MapFrom(src => src.Variant.Unit));
 
 
 

@@ -10,16 +10,15 @@ namespace cpms_Domain.Models
     {
         public int MaterialId { get; set; }
         public string MaterialName { get; set; } = null!;
-        public string Unit { get; set; } = null!;
+        public string DefaultUnit { get; set; } = null!;
+        public string? Description { get; set; }
+        public bool IsActive { get; set; } = true;
 
         // SỬA: Thay string bằng Id
         public int CategoryId { get; set; }
         public virtual Category Category { get; set; } = null!;
 
         // Navigation
-        public virtual ICollection<SupplierCatalog> SupplierCatalogs { get; set; } = new List<SupplierCatalog>();
-        public virtual ICollection<OrderLineItem> OrderLineItems { get; set; } = new List<OrderLineItem>();
-        public virtual ICollection<MaterialRequisition> MaterialRequisitions { get; set; } = new List<MaterialRequisition>();
-        public virtual ICollection<InventoryRecord> Inventories { get; set; } = new List<InventoryRecord>();
+        public virtual ICollection<MaterialVariant> Variants { get; set; } = new List<MaterialVariant>();
     }
 }

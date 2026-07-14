@@ -13,7 +13,11 @@ namespace cpms_Application.Interfaces
         Task<ApiResponse> CreateRequestAsync(CreateMaterialRequest request);
         Task<ApiResponse> CreateRequestByTaskIdAsync(int taskId);
         Task<ApiResponse> ApproveRequestAsync(int requestId);
+        Task<ApiResponse> ApproveRequestAsync(int requestId, ApproveMaterialRequest decision);
         Task<ApiResponse> RejectRequestAsync(int requestId);
+        Task<ApiResponse> RejectRequestAsync(int requestId, RejectMaterialRequest decision);
+        Task<ApiResponse> IssueRequestAsync(int requestId);
+        Task<ApiResponse> ReleaseRequestAsync(int requestId);
 
 
         Task<ApiResponse> GetRequestByIdAsync(int requestId);

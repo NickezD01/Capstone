@@ -21,6 +21,7 @@ namespace cpms_API.Controllers
 
         // POST: api/materialrequest (Tạo phiếu thủ công/phát sinh + Giữ kho tạm)
         [HttpPost]
+        [Authorize(Roles = "PM")]
         public async Task<IActionResult> CreateMaterialRequest([FromBody] CreateMaterialRequest request)
         {
             var response = await _materialRequestService.CreateRequestAsync(request);
@@ -30,6 +31,7 @@ namespace cpms_API.Controllers
 
         // POST: api/materialrequest/task/{taskId} (Tự động bốc định mức từ TaskId)
         [HttpPost("task/{taskId}")]
+        [Authorize(Roles = "PM")]
         public async Task<IActionResult> CreateRequestFromTask(int taskId)
         {
             var response = await _materialRequestService.CreateRequestByTaskIdAsync(taskId);
@@ -39,21 +41,38 @@ namespace cpms_API.Controllers
 
         // PUT: api/materialrequest/{requestId}/approve
         [HttpPut("{requestId}/approve")]
-        public async Task<IActionResult> ApproveRequest(int requestId)
+        [Authorize(Roles = "WAREHOUSE_MANAGER")]
+        public async Task<IActionResult> ApproveRequest(int requestId, [FromBody] ApproveMaterialRequest request)
         {
-            var response = await _materialRequestService.ApproveRequestAsync(requestId);
+            var response = await _materialRequestService.ApproveRequestAsync(requestId, request);
             if (!response.IsSuccess) return BadRequest(response);
             return Ok(response);
         }
 
         // PUT: api/materialrequest/{requestId}/reject
         [HttpPut("{requestId}/reject")]
-        public async Task<IActionResult> RejectRequest(int requestId)
+        [Authorize(Roles = "WAREHOUSE_MANAGER")]
+        public async Task<IActionResult> RejectRequest(int requestId, [FromBody] RejectMaterialRequest? request)
         {
-            var response = await _materialRequestService.RejectRequestAsync(requestId);
+            var response = await _materialRequestService.RejectRequestAsync(requestId, request ?? new RejectMaterialRequest());
             if (!response.IsSuccess) return BadRequest(response);
             return Ok(response);
         }
+
+        [HttpPut("{requestId}/reserve")]
+        [Authorize(Roles = "WAREHOUSE_MANAGER")]
+        public async Task<IActionResult> ReserveRequest(int requestId, [FromBody] ApproveMaterialRequest request)
+            => Ok(await _materialRequestService.ApproveRequestAsync(requestId, request));
+
+        [HttpPut("{requestId}/issue")]
+        [Authorize(Roles = "WAREHOUSE_MANAGER")]
+        public async Task<IActionResult> IssueRequest(int requestId)
+            => Ok(await _materialRequestService.IssueRequestAsync(requestId));
+
+        [HttpPut("{requestId}/release")]
+        [Authorize(Roles = "WAREHOUSE_MANAGER")]
+        public async Task<IActionResult> ReleaseRequest(int requestId)
+            => Ok(await _materialRequestService.ReleaseRequestAsync(requestId));
 
         // GET: api/materialrequest (Lấy toàn bộ phiếu)
         [HttpGet]

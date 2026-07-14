@@ -42,7 +42,10 @@ namespace cpms_Infrastructure
         // ========================================================
         public DbSet<Warehouse> Warehouses { get; set; }
         public DbSet<InventoryRecord> InventoryRecords { get; set; } // Thay thế cho Inventories cũ
+        public DbSet<InventoryReservation> InventoryReservations { get; set; }
+        public DbSet<InventoryTransaction> InventoryTransactions { get; set; }
         public DbSet<Material> Materials { get; set; }
+        public DbSet<MaterialVariant> MaterialVariants { get; set; }
         public DbSet<Category> Categories { get; set; }
         public DbSet<MaterialRequest> MaterialRequests { get; set; }
         public DbSet<MaterialRequisition> MaterialRequisitions { get; set; }

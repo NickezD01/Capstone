@@ -1,16 +1,12 @@
-﻿using AutoMapper;
+using AutoMapper;
 using cpms_Application.Interfaces;
 using cpms_Application.Request.Warehouse;
 using cpms_Application.Response;
 using cpms_Application.Response.Inventory;
 using cpms_Application.Response.Warehouse;
 using cpms_Domain.Models;
+using cpms_Domain;
 using Microsoft.EntityFrameworkCore;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace cpms_Application.Services
 {
@@ -25,110 +21,117 @@ namespace cpms_Application.Services
             _uow = uow;
             _mapper = mapper;
             _claimService = claimService;
-            }
+        }
 
         public async Task<ApiResponse> CreateWarehouseAsync(CreateWarehouseRequest request)
         {
-            var response = new ApiResponse();
-            try
-            {
-                // 3. Map dữ liệu từ request sang thực thể Kho
-                var warehouse = _mapper.Map<Warehouse>(request);
-
-                // 🚀 4. TỰ ĐỘNG LẤY ID NGƯỜI TẠO TỪ TOKEN JWT
-                var userClaim = _claimService.GetUserClaim();
-                warehouse.ManagerId = userClaim.Id;
-
-                // 5. Lưu vào Database
-                await _uow.Warehouses.AddAsync(warehouse);
-                await _uow.SaveChangeAsync();
-
-                return response.SetOk("Kho đã được tạo thành công với người quản lý là bạn!");
-            }
-            catch (Exception ex)
-            {
-                // Giữ lại bộ đào lỗi 3 tầng để bắt các lỗi database khác (nếu có)
-                var errorMsg = ex.InnerException?.InnerException != null
-                    ? ex.InnerException.InnerException.Message
-                    : (ex.InnerException != null ? ex.InnerException.Message : ex.Message);
-
-                return response.SetBadRequest("Lỗi lưu dữ liệu kho: " + errorMsg);
-            }
+            var user = _claimService.GetUserClaim();
+            if (!string.Equals(user.Role, Role.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase)) return Forbidden("Only administrators may create warehouses.");
+            var warehouse = _mapper.Map<Warehouse>(request);
+            warehouse.ManagerId = request.ManagerId > 0 ? request.ManagerId : user.Id;
+            if (await _uow.UserAccounts.GetByIdAsync(warehouse.ManagerId) == null)
+                return new ApiResponse().SetBadRequest(message: "Warehouse manager does not exist.");
+            await _uow.Warehouses.AddAsync(warehouse);
+            await _uow.SaveChangeAsync();
+            return new ApiResponse().SetOk("Warehouse created successfully.");
         }
 
         public async Task<ApiResponse> GetAllWarehousesAsync()
         {
-            var response = new ApiResponse();
-            try
-            {
-                var list = await _uow.Warehouses.GetAllAsync(
-                    filter: null,
-                    include: query => query.Include(w => w.Manager).Include(w => w.InventoryRecords)
-                );
-
-                var result = list.Select(w => new WarehouseResponse
-                {
-                    WarehouseId = w.WarehouseId,
-                    WarehouseName = w.WarehouseName,
-                    Location = w.Location,
-                    ManagerId = w.ManagerId,
-                    ManagerName = w.Manager?.LastName, // Tránh null
-                    CreatedDate = (DateTime)w.CreatedDate,
-                    ModifiedDate = w.ModifiedDate,
-                    CreatedBy = w.CreatedBy,
-                    ModifiedBy = w.ModifiedBy,
-                    IsDeleted = w.IsDeleted,
-                    InventoryRecords = w.InventoryRecords.Select(i => new InventoryRecordDto
-                    {
-                        InventoryId = i.InventoryId,
-                        MaterialId = i.MaterialId,
-                        QuantityOnHand = i.QuantityOnHand,
-                        ReservedQuantity = i.ReservedQuantity,
-                        ReorderLevel = i.ReorderLevel,
-                        UpdatedAt = i.UpdatedAt
-                    }).ToList()
-                }).ToList();
-
-                return response.SetOk(result);
-            }
-            catch (Exception ex)
-            {
-                return response.SetBadRequest("Lỗi: " + ex.Message);
-            }
+            var list = await _uow.Warehouses.GetAllAsync(null,
+                q => q.Include(w => w.Manager).Include(w => w.InventoryRecords));
+            return new ApiResponse().SetOk(_mapper.Map<List<WarehouseResponse>>(list));
         }
 
         public async Task<ApiResponse> GetWarehouseInventoryAsync(int warehouseId)
         {
-            var response = new ApiResponse();
+            var records = await _uow.Inventories.GetAllAsync(i => i.WarehouseId == warehouseId,
+                q => q.Include(i => i.Warehouse).Include(i => i.Variant).ThenInclude(v => v.Material));
+            return new ApiResponse().SetOk(_mapper.Map<List<InventoryReportResponse>>(records));
+        }
+
+        public async Task<ApiResponse> GetInventoryAsync(int warehouseId, int variantId)
+        {
+            var record = await _uow.Inventories.GetAsync(i => i.WarehouseId == warehouseId && i.VariantId == variantId,
+                q => q.Include(i => i.Warehouse).Include(i => i.Variant).ThenInclude(v => v.Material));
+            return record == null ? new ApiResponse().SetNotFound(message: "Inventory record not found.")
+                : new ApiResponse().SetOk(_mapper.Map<InventoryReportResponse>(record));
+        }
+
+        public async Task<ApiResponse> AdjustInventoryAsync(InventoryAdjustmentRequest request)
+        {
+            var user = _claimService.GetUserClaim();
+            if (!string.Equals(user.Role, Role.WAREHOUSE_MANAGER.ToString(), StringComparison.OrdinalIgnoreCase)) return Forbidden("Only warehouse managers may adjust inventory.");
+            if (request.QuantityDelta == 0) return new ApiResponse().SetBadRequest(message: "QuantityDelta cannot be zero.");
+            await _uow.BeginTransactionAsync();
             try
             {
-                // 🚀 CẬP NHẬT 1: .Include thêm bảng Warehouse để lấy được tên kho (WarehouseName)
-                var inventoryRecords = await _uow.Inventories.GetAllAsync(
-                    filter: x => x.WarehouseId == warehouseId,
-                    include: query => query.Include(i => i.Material).Include(i => i.Warehouse)
-                );
-
-                // 🚀 CẬP NHẬT 2: Map chuẩn xác sang danh sách DTO InventoryReportResponse của bạn
-                var result = inventoryRecords.Select(i => new InventoryReportResponse
+                var inventory = await _uow.Inventories.GetAsync(i => i.WarehouseId == request.WarehouseId && i.VariantId == request.VariantId);
+                if (inventory == null)
                 {
-                    MaterialId = i.MaterialId,
-                    MaterialName = i.Material.MaterialName,
-                    WarehouseName = i.Warehouse.WarehouseName, // Lấy từ bảng Warehouse đã Include ở trên
-                    Unit = i.Material.Unit,
-                    QuantityOnHand = i.QuantityOnHand,
-                    ReservedQuantity = i.ReservedQuantity,
-                    AvailableQuantity = i.QuantityOnHand - i.ReservedQuantity,
-                    ReorderLevel = i.ReorderLevel,
-                    IsLowStock = (i.QuantityOnHand - i.ReservedQuantity) <= i.ReorderLevel,
-                    UpdatedAt = i.UpdatedAt
-                }).ToList();
+                    if (request.QuantityDelta < 0) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetBadRequest(message: "Cannot create inventory with a negative adjustment."); }
+                    if (await _uow.Warehouses.GetByIdAsync(request.WarehouseId) == null || await _uow.MaterialVariants.GetByIdAsync(request.VariantId) == null)
+                    { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetBadRequest(message: "Warehouse or material variant not found."); }
+                    inventory = new InventoryRecord
+                    {
+                        WarehouseId = request.WarehouseId,
+                        VariantId = request.VariantId,
+                        QuantityOnHand = 0,
+                        UpdatedAt = DateTime.UtcNow
+                    };
+                    await _uow.Inventories.AddAsync(inventory);
+                    await _uow.SaveChangeAsync();
+                }
+                else if (!string.IsNullOrWhiteSpace(request.RowVersion) &&
+                    !Convert.ToBase64String(inventory.RowVersion).Equals(request.RowVersion, StringComparison.Ordinal))
+                {
+                    await _uow.RollbackTransactionAsync();
+                    return new ApiResponse().SetConflict(message: "Inventory has changed. Reload and retry.");
+                }
 
-                return response.SetOk(result);
+                var before = inventory.QuantityOnHand;
+                var after = before + request.QuantityDelta;
+                if (!InventoryQuantityRules.CanAdjust(before, inventory.ReservedQuantity, request.QuantityDelta))
+                { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "Adjustment cannot reduce stock below the reserved quantity."); }
+                inventory.QuantityOnHand = after;
+                inventory.UpdatedAt = DateTime.UtcNow;
+                await _uow.InventoryTransactions.AddAsync(new InventoryTransaction
+                {
+                    InventoryId = inventory.InventoryId,
+                    WarehouseId = inventory.WarehouseId,
+                    VariantId = inventory.VariantId,
+                    TransactionType = InventoryTransactionTypes.Adjustment,
+                    Quantity = request.QuantityDelta,
+                    QuantityBefore = before,
+                    QuantityAfter = after,
+                    Note = request.Note,
+                    PerformedByUserId = user.Id,
+                    TransactionDate = DateTime.UtcNow
+                });
+                await _uow.SaveChangeAsync();
+                await _uow.CommitTransactionAsync();
+                return await GetInventoryAsync(request.WarehouseId, request.VariantId);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                await _uow.RollbackTransactionAsync();
+                return new ApiResponse().SetConflict(message: "Inventory has changed. Reload and retry.");
             }
             catch (Exception ex)
             {
-                return response.SetBadRequest("Lỗi lấy dữ liệu vật tư trong kho: " + ex.Message);
+                await _uow.RollbackTransactionAsync();
+                return new ApiResponse().SetBadRequest(message: "Unable to adjust inventory: " + ex.Message);
             }
         }
+
+        public async Task<ApiResponse> GetTransactionsAsync(int? warehouseId, int? variantId)
+        {
+            var transactions = await _uow.InventoryTransactions.GetAllAsync(t =>
+                (!warehouseId.HasValue || t.WarehouseId == warehouseId.Value) &&
+                (!variantId.HasValue || t.VariantId == variantId.Value));
+            return new ApiResponse().SetOk(_mapper.Map<List<InventoryTransactionResponse>>(transactions.OrderByDescending(t => t.TransactionDate)));
+        }
+
+        private static ApiResponse Forbidden(string message) => new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, message);
     }
 }

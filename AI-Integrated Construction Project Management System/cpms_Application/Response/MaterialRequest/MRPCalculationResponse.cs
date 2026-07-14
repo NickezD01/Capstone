@@ -8,8 +8,10 @@ namespace cpms_Application.Response.MaterialRequest
 {
     public class MRPCalculationResponse
     {
+        public int VariantId { get; set; }
         public int MaterialId { get; set; }
         public string MaterialName { get; set; } = null!;
+        public string VariantName { get; set; } = null!;
         public string Unit { get; set; } = null!; 
         public decimal TotalGrossRequired { get; set; }
         public decimal CurrentInventory { get; set; }   

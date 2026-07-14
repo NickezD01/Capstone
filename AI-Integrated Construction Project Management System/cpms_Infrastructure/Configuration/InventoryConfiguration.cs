@@ -23,17 +23,32 @@ namespace cpms_Infrastructure.Configuration
                    .HasForeignKey(ir => ir.WarehouseId)
                    .OnDelete(DeleteBehavior.Cascade);
 
-            // Cấu hình Quan hệ 1-N (Material - InventoryRecord)
-            builder.HasOne(ir => ir.Material)
-                   .WithMany(m => m.Inventories) // Sử dụng đúng tên thuộc tính mới ở Material
-                   .HasForeignKey(ir => ir.MaterialId)
+            builder.HasOne(ir => ir.Variant)
+                   .WithMany(v => v.InventoryRecords)
+                   .HasForeignKey(ir => ir.VariantId)
                    .OnDelete(DeleteBehavior.Restrict);
 
             // 🚀 ĐỒNG BỘ: Cấu hình chi tiết các trường số lượng mới theo ERD
             builder.Property(ir => ir.QuantityOnHand).HasColumnType("decimal(18,4)").HasDefaultValue(0);
             builder.Property(ir => ir.ReservedQuantity).HasColumnType("decimal(18,4)").HasDefaultValue(0);
+            builder.Property(ir => ir.OnOrderQuantity).HasColumnType("decimal(18,4)").HasDefaultValue(0);
             builder.Property(ir => ir.ReorderLevel).HasColumnType("decimal(18,4)").HasDefaultValue(0);
             builder.Property(ir => ir.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
+            builder.Property(ir => ir.AvailableQuantity)
+                   .HasColumnType("decimal(19,4)")
+                   .HasComputedColumnSql("[QuantityOnHand] - [ReservedQuantity]", stored: true);
+            builder.Property(ir => ir.RowVersion).IsRowVersion();
+
+            builder.HasIndex(ir => new { ir.WarehouseId, ir.VariantId })
+                   .IsUnique()
+                   .HasFilter("[IsDeleted] = 0");
+            builder.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_InventoryRecords_QuantityOnHand", "[QuantityOnHand] >= 0");
+                t.HasCheckConstraint("CK_InventoryRecords_ReservedQuantity", "[ReservedQuantity] >= 0 AND [ReservedQuantity] <= [QuantityOnHand]");
+                t.HasCheckConstraint("CK_InventoryRecords_OnOrderQuantity", "[OnOrderQuantity] >= 0");
+                t.HasCheckConstraint("CK_InventoryRecords_ReorderLevel", "[ReorderLevel] >= 0");
+            });
 
             builder.Property(ir => ir.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
             builder.Property(ir => ir.IsDeleted).HasDefaultValue(false);

@@ -25,13 +25,17 @@ namespace cpms_Application.Services
         public async Task<ApiResponse> AddMaterialToCatalogAsync(CreateCatalogRequest request)
         {
             // Kiểm tra xem đã có cặp Supplier-Material này chưa để tránh trùng lặp
+            var variantId = request.VariantId != 0 ? request.VariantId : request.MaterialId;
+            if (await _uow.MaterialVariants.GetByIdAsync(variantId) == null)
+                return new ApiResponse().SetBadRequest(message: "Material variant does not exist.");
             var existingEntry = await _uow.SupplierCatalogs.GetAsync(x =>
-                x.SupplierId == request.SupplierId && x.MaterialId == request.MaterialId);
+                x.SupplierId == request.SupplierId && x.VariantId == variantId);
 
             if (existingEntry != null)
                 return new ApiResponse().SetBadRequest("Vật liệu này đã tồn tại trong danh mục của nhà cung cấp này.");
 
             var catalog = _mapper.Map<SupplierCatalog>(request);
+            catalog.VariantId = variantId;
             await _uow.SupplierCatalogs.AddAsync(catalog);
             await _uow.SaveChangeAsync();
             return new ApiResponse().SetOk("Đã thêm vào danh mục thành công.");

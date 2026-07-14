@@ -9,7 +9,8 @@ namespace cpms_Application.Request.Material
     public class UpdateMaterialRequest
     {
         public string MaterialName { get; set; } = null!;
-        public string Unit { get; set; } = null!;
-        //public int CategoryId { get; set; }
+        public string DefaultUnit { get; set; } = null!;
+        public string? Description { get; set; }
+        public bool IsActive { get; set; } = true;
     }
 }

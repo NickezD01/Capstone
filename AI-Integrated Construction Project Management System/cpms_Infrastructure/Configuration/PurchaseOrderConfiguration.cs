@@ -16,6 +16,7 @@ namespace cpms_Infrastructure.Configuration
             builder.ToTable("PurchaseOrders");
             builder.HasKey(po => po.PoId);
             builder.Property(po => po.TotalAmount).HasColumnType("decimal(18,2)");
+            builder.Property(po => po.Note).HasMaxLength(1000);
 
             builder.Property(po => po.Status)
                    .HasMaxLength(30)
@@ -25,6 +26,16 @@ namespace cpms_Infrastructure.Configuration
             builder.HasOne(po => po.Project)
                    .WithMany(p => p.PurchaseOrders)
                    .HasForeignKey(po => po.ProjectId)
+                   .OnDelete(DeleteBehavior.Restrict);
+
+            builder.HasOne(po => po.Warehouse)
+                   .WithMany()
+                   .HasForeignKey(po => po.WarehouseId)
+                   .OnDelete(DeleteBehavior.Restrict);
+
+            builder.HasOne(po => po.Approver)
+                   .WithMany()
+                   .HasForeignKey(po => po.ApprovedByUserId)
                    .OnDelete(DeleteBehavior.Restrict);
 
             // Mối quan hệ [8]: PurchaseOrder -> Supplier (1-N)

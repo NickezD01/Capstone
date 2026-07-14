@@ -24,8 +24,10 @@ namespace cpms_Application.Response.Tasks
     }
     public class TaskMaterialResponse
     {
+        public int VariantId { get; set; }
         public int MaterialId { get; set; }
         public string MaterialName { get; set; } = null!;
+        public string VariantName { get; set; } = null!;
         public string? TaskName { get; set; }
         public decimal GrossQuantityRequired { get; set; }
         public string Unit { get; set; } = null!;

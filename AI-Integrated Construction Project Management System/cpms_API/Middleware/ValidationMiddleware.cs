@@ -26,6 +26,7 @@ namespace cpms_API.Middleware
             catch (Exception ex)
             {
                 _logger.LogError(ex.Message);
+                throw;
             }
         }
 

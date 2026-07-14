@@ -1,5 +1,6 @@
 ﻿using cpms_Application.Request.PurchaseOrder;
 using cpms_Application.Response;
+using cpms_Application.Request.Warehouse;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -15,5 +16,6 @@ namespace cpms_Application.Interfaces
         Task<ApiResponse> ApprovePurchaseOrderAsync(int poId); // Phê duyệt
         Task<ApiResponse> RejectPurchaseOrderAsync(int poId);
         Task<ApiResponse> ImportToWarehouseAsync(int poId, int warehouseId);
+        Task<ApiResponse> ReceivePurchaseOrderAsync(int poId, ReceivePurchaseOrderRequest request);
     }
 }

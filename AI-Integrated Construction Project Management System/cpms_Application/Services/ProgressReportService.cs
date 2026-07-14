@@ -28,18 +28,24 @@ namespace cpms_Application.Services
         public async Task<ApiResponse> SubmitReportAsync(SubmitProgressReportRequest request)
         {
             var response = new ApiResponse();
+            var transactionStarted = false;
             try
             {
                 // 1. Lấy ID của kỹ sư đăng nhập từ Token bảo mật
                 var currentUser = _claimService.GetUserClaim();
-                int currentEngineerId = currentUser.Id;
+                int currentUserId = currentUser.Id;
+                if (!string.Equals(currentUser.Role, Role.PM.ToString(), StringComparison.OrdinalIgnoreCase))
+                    return response.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Only project managers may submit progress reports.");
 
                 // 2. Kiểm tra đầu việc (TaskItem) có tồn tại không
                 var task = await _uow.TaskItems.GetAsync(t => t.TaskId == request.TaskId);
                 if (task == null) return response.SetNotFound("Đầu việc không tồn tại.");
+                var project = await _uow.Projects.GetByIdAsync(task.ProjectId);
+                if (project == null || project.PMUserID != currentUserId)
+                    return response.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You may only report progress for a project you manage.");
 
                 // 🛑 CHECK VALIDATION: Lượng tăng thêm phải lớn hơn 0 (Kiểu int)
-                int progressIncrement = request.ProgressIncrement; // 👈 Chuyển sang int theo yêu cầu của bạn
+                decimal progressIncrement = request.ProgressIncrement;
                 if (progressIncrement <= 0)
                 {
                     return response.SetBadRequest("Giá trị tiến độ tăng thêm phải lớn hơn 0%.");
@@ -53,11 +59,12 @@ namespace cpms_Application.Services
 
                 // 3. Bắt đầu Database Transaction
                 await _uow.BeginTransactionAsync();
+                transactionStarted = true;
 
                 // 4. Map dữ liệu báo cáo tiến độ và lưu vào DB
                 var report = _mapper.Map<ProgressReport>(request);
                 report.ReportDate = DateTime.UtcNow;
-                report.EngineerId = currentEngineerId;
+                report.ReportedByUserId = currentUserId;
 
                 await _uow.ProgressReports.AddAsync(report);
 
@@ -83,6 +90,7 @@ namespace cpms_Application.Services
                 // 7. Lưu tất cả thay đổi xuống Database và commit transaction
                 await _uow.SaveChangeAsync();
                 await _uow.CommitTransactionAsync();
+                transactionStarted = false;
 
                 return response.SetOk($"Gửi báo cáo thành công! Đã cộng thêm {progressIncrement}%. Tiến độ hiện tại của đầu việc đạt {task.ActualProgressPct}% ({task.Status}).");
             }
@@ -92,7 +100,7 @@ namespace cpms_Application.Services
             }
             catch (Exception ex)
             {
-                await _uow.RollbackTransactionAsync();
+                if (transactionStarted) await _uow.RollbackTransactionAsync();
                 return response.SetBadRequest("Lỗi xử lý báo cáo tiến độ: " + ex.Message);
             }
         }
@@ -104,7 +112,7 @@ namespace cpms_Application.Services
             {
                 var reports = await _uow.ProgressReports.GetAllAsync(
                     filter: r => r.TaskId == taskId,
-                    include: query => query.Include(r => r.Engineer).Include(r => r.Task)
+                    include: query => query.Include(r => r.Reporter).Include(r => r.Task)
                 );
 
                 var result = _mapper.Map<IEnumerable<ProgressReportResponse>>(reports);

@@ -9,7 +9,7 @@ namespace cpms_Application.Request.ProgressReport
     public class SubmitProgressReportRequest
     {
         public int TaskId { get; set; }
-        public int ProgressIncrement { get; set; } // % tiến độ nộp thêm lượt này (Ví dụ: 10.5)
+        public decimal ProgressIncrement { get; set; }
         public string? Notes { get; set; }
         public string? SitePhotoUrl { get; set; }
     }
