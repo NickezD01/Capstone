@@ -35,14 +35,14 @@ namespace cpms_API.Controllers
                 });
             }
             var result = await _service.RegisterAsync(user);
-            return result.IsSuccess ? Ok(result) : BadRequest(result);
+            return StatusCode((int)result.StatusCode, result);
         }
 
         [HttpPost("login")]
         public async Task<IActionResult> Login(LoginRequest user)
         {
             var result = await _service.LoginAsync(user);
-            return result.IsSuccess ? Ok(result) : BadRequest(result);
+            return StatusCode((int)result.StatusCode, result);
         }
 
         [HttpPost("Verification")]
@@ -50,7 +50,7 @@ namespace cpms_API.Controllers
         {
 
             var result = await _service.VerifyEmailAsync(request.UserId, request.VerificationCode);
-            return result.IsSuccess ? Ok(result) : BadRequest(result);
+            return StatusCode((int)result.StatusCode, result);
         }
 
         [HttpPost("resend-verification")]

@@ -29,7 +29,7 @@ namespace cpms_Application.Services
                 var message = new MimeMessage();
                 if (string.IsNullOrWhiteSpace(_settings.Username) || string.IsNullOrWhiteSpace(_settings.Password))
                     return new ApiResponse().SetBadRequest(message: "SMTP credentials are not configured.");
-                message.From.Add(new MailboxAddress("AI-Integrated Construction Project Management System",
+                message.From.Add(new MailboxAddress("BuildSense",
                     string.IsNullOrWhiteSpace(_settings.FromAddress) ? _settings.Username : _settings.FromAddress));
                 message.To.Add(new MailboxAddress("", recievedUser));
                 message.Subject = $"Notification";
@@ -63,7 +63,7 @@ namespace cpms_Application.Services
                 var message = new MimeMessage();
                 if (string.IsNullOrWhiteSpace(_settings.Username) || string.IsNullOrWhiteSpace(_settings.Password))
                     return new ApiResponse().SetBadRequest(message: "SMTP credentials are not configured.");
-                message.From.Add(new MailboxAddress("AI-Integrated Construction Project Management System",
+                message.From.Add(new MailboxAddress("BuildSense",
                     string.IsNullOrWhiteSpace(_settings.FromAddress) ? _settings.Username : _settings.FromAddress));
                 message.To.Add(new MailboxAddress("", recievedUser));
                 message.Subject = $"Verification Email";
