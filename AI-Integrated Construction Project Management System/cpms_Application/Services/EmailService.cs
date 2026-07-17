@@ -1,5 +1,6 @@
 ﻿using cpms_Application.Interfaces;
 using cpms_Application.Response;
+using cpms_Domain;
 using MailKit.Net.Smtp;
 using MimeKit;
 using System;
@@ -12,8 +13,12 @@ namespace cpms_Application.Services
 {
     public class EmailService : IEmailService
     {
-        public const string EmailUserSystem = "vinhngalong123@gmail.com";
-        public const string EmailPasswordSystem = "yyqh dpoe mdmm eyge";
+        private readonly EmailSettings _settings;
+
+        public EmailService(AppSetting appSettings)
+        {
+            _settings = appSettings.Email;
+        }
 
         public async Task<ApiResponse> SendNotiMail(string recievedUser, string emailContent)
         {
@@ -22,7 +27,10 @@ namespace cpms_Application.Services
             {
 
                 var message = new MimeMessage();
-                message.From.Add(new MailboxAddress("AI-Integrated Construction Project Management System", "AIcpms@gmail.com"));
+                if (string.IsNullOrWhiteSpace(_settings.Username) || string.IsNullOrWhiteSpace(_settings.Password))
+                    return new ApiResponse().SetBadRequest(message: "SMTP credentials are not configured.");
+                message.From.Add(new MailboxAddress("AI-Integrated Construction Project Management System",
+                    string.IsNullOrWhiteSpace(_settings.FromAddress) ? _settings.Username : _settings.FromAddress));
                 message.To.Add(new MailboxAddress("", recievedUser));
                 message.Subject = $"Notification";
 
@@ -32,16 +40,16 @@ namespace cpms_Application.Services
 
                 using (var client = new SmtpClient())
                 {
-                    await client.ConnectAsync("smtp.gmail.com", 465, true);
-                    await client.AuthenticateAsync(EmailUserSystem, EmailPasswordSystem);
+                    await client.ConnectAsync(_settings.SmtpHost, _settings.SmtpPort, _settings.UseSsl);
+                    await client.AuthenticateAsync(_settings.Username, _settings.Password);
                     await client.SendAsync(message);
                     await client.DisconnectAsync(true);
                 }
                 return new ApiResponse().SetOk("Mail Sent!");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return new ApiResponse().SetBadRequest($"Something went wrong: {ex.Message}");
+                return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.ServiceUnavailable, false, "Unable to send email.");
             }
         }
 
@@ -53,7 +61,10 @@ namespace cpms_Application.Services
 
 
                 var message = new MimeMessage();
-                message.From.Add(new MailboxAddress("AI-Integrated Construction Project Management System", "AIcpms@gmail.com"));
+                if (string.IsNullOrWhiteSpace(_settings.Username) || string.IsNullOrWhiteSpace(_settings.Password))
+                    return new ApiResponse().SetBadRequest(message: "SMTP credentials are not configured.");
+                message.From.Add(new MailboxAddress("AI-Integrated Construction Project Management System",
+                    string.IsNullOrWhiteSpace(_settings.FromAddress) ? _settings.Username : _settings.FromAddress));
                 message.To.Add(new MailboxAddress("", recievedUser));
                 message.Subject = $"Verification Email";
 
@@ -63,16 +74,16 @@ namespace cpms_Application.Services
 
                 using (var client = new SmtpClient())
                 {
-                    await client.ConnectAsync("smtp.gmail.com", 465, true);
-                    await client.AuthenticateAsync(EmailUserSystem, EmailPasswordSystem);
+                    await client.ConnectAsync(_settings.SmtpHost, _settings.SmtpPort, _settings.UseSsl);
+                    await client.AuthenticateAsync(_settings.Username, _settings.Password);
                     await client.SendAsync(message);
                     await client.DisconnectAsync(true);
                 }
                 return new ApiResponse().SetOk("Mail Sent!");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return new ApiResponse().SetBadRequest($"Something went wrong: {ex.Message}");
+                return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.ServiceUnavailable, false, "Unable to send email.");
             }
         }
     }

@@ -24,23 +24,16 @@ namespace cpms_API.Controllers
         public async Task<IActionResult> SubmitProgressReport([FromBody] SubmitProgressReportRequest request)
         {
             var response = await _progressReportService.SubmitReportAsync(request);
-            if (!response.IsSuccess)
-            {
-                return BadRequest(response);
-            }
-            return Ok(response);
+            return StatusCode((int)response.StatusCode, response);
         }
 
         // GET: api/progressreport/task/{taskId}
         [HttpGet("task/{taskId}")]
+        [Authorize(Roles = "ADMIN,PM")]
         public async Task<IActionResult> GetReportsByTaskId(int taskId)
         {
             var response = await _progressReportService.GetReportsByTaskIdAsync(taskId);
-            if (!response.IsSuccess)
-            {
-                return NotFound(response);
-            }
-            return Ok(response);
+            return StatusCode((int)response.StatusCode, response);
         }
     }
 }

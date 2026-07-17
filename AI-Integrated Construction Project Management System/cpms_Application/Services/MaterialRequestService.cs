@@ -82,10 +82,10 @@ namespace cpms_Application.Services
                 await _uow.CommitTransactionAsync();
                 return await GetRequestByIdAsync(entity.RequestId);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 await _uow.RollbackTransactionAsync();
-                return new ApiResponse().SetBadRequest(message: "Unable to create material request: " + ex.Message);
+                return InternalError("Unable to create material request.");
             }
         }
 
@@ -119,8 +119,13 @@ namespace cpms_Application.Services
             if (!IsRole(user, Role.WAREHOUSE_MANAGER)) return Forbidden("Only warehouse managers may approve material requests.");
             if (decision == null || decision.WarehouseId <= 0 || decision.Items.Count == 0)
                 return new ApiResponse().SetBadRequest(message: "WarehouseId and approved item quantities are required.");
-            if (await _uow.Warehouses.GetByIdAsync(decision.WarehouseId) == null)
+            if (decision.Items.All(x => x.ApprovedQuantity == 0))
+                return new ApiResponse().SetBadRequest(message: "At least one request item must have a positive approved quantity; otherwise reject the request.");
+            var warehouse = await _uow.Warehouses.GetByIdAsync(decision.WarehouseId);
+            if (warehouse == null)
                 return new ApiResponse().SetBadRequest(message: "Warehouse not found.");
+            if (warehouse.ManagerId != user.Id)
+                return Forbidden("You may only approve requests against a warehouse you manage.");
 
             await _uow.BeginTransactionAsync();
             try
@@ -173,10 +178,10 @@ namespace cpms_Application.Services
                 await _uow.RollbackTransactionAsync();
                 return new ApiResponse().SetConflict(message: "Inventory changed while the request was being approved. Reload and retry.");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 await _uow.RollbackTransactionAsync();
-                return new ApiResponse().SetBadRequest(message: "Unable to approve material request: " + ex.Message);
+                return InternalError("Unable to approve material request.");
             }
         }
 
@@ -186,8 +191,11 @@ namespace cpms_Application.Services
         {
             var user = _claimService.GetUserClaim();
             if (!IsRole(user, Role.WAREHOUSE_MANAGER)) return Forbidden("Only warehouse managers may reject material requests.");
-            var request = await _uow.MaterialRequests.GetByIdAsync(requestId);
+            var request = await _uow.MaterialRequests.GetAsync(r => r.RequestId == requestId,
+                q => q.Include(r => r.Warehouse!));
             if (request == null) return new ApiResponse().SetNotFound(message: "Material request not found.");
+            if (request.WarehouseId.HasValue && request.Warehouse?.ManagerId != user.Id)
+                return Forbidden("You may only reject requests assigned to a warehouse you manage.");
             if (request.Status != MaterialRequestStatuses.Pending)
                 return new ApiResponse().SetConflict(message: "Only pending requests can be rejected.");
             request.Status = MaterialRequestStatuses.Rejected;
@@ -206,8 +214,10 @@ namespace cpms_Application.Services
             try
             {
                 var request = await _uow.MaterialRequests.GetAsync(r => r.RequestId == requestId,
-                    q => q.Include(r => r.Requisitions).Include(r => r.Reservations).ThenInclude(r => r.InventoryRecord));
+                    q => q.Include(r => r.Warehouse).Include(r => r.Requisitions).Include(r => r.Reservations).ThenInclude(r => r.InventoryRecord));
                 if (request == null) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetNotFound(message: "Material request not found."); }
+                if (request.Warehouse == null || request.Warehouse.ManagerId != user.Id)
+                { await _uow.RollbackTransactionAsync(); return Forbidden("You may only issue from a warehouse you manage."); }
                 if (request.Status != MaterialRequestStatuses.Approved)
                 { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "Only approved requests can be issued."); }
                 var active = request.Reservations.Where(r => r.Status == InventoryReservationStatuses.Active).ToList();
@@ -251,10 +261,10 @@ namespace cpms_Application.Services
                 await _uow.RollbackTransactionAsync();
                 return new ApiResponse().SetConflict(message: "Inventory changed while issuing. Reload and retry.");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 await _uow.RollbackTransactionAsync();
-                return new ApiResponse().SetBadRequest(message: "Unable to issue inventory: " + ex.Message);
+                return InternalError("Unable to issue inventory.");
             }
         }
 
@@ -266,8 +276,10 @@ namespace cpms_Application.Services
             try
             {
                 var request = await _uow.MaterialRequests.GetAsync(r => r.RequestId == requestId,
-                    q => q.Include(r => r.Reservations).ThenInclude(r => r.InventoryRecord));
+                    q => q.Include(r => r.Warehouse).Include(r => r.Reservations).ThenInclude(r => r.InventoryRecord));
                 if (request == null) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetNotFound(message: "Material request not found."); }
+                if (request.Warehouse == null || request.Warehouse.ManagerId != user.Id)
+                { await _uow.RollbackTransactionAsync(); return Forbidden("You may only release reservations from a warehouse you manage."); }
                 if (request.Status != MaterialRequestStatuses.Approved)
                 { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "Only approved requests can be released."); }
                 foreach (var reservation in request.Reservations.Where(r => r.Status == InventoryReservationStatuses.Active))
@@ -287,34 +299,57 @@ namespace cpms_Application.Services
                 await _uow.RollbackTransactionAsync();
                 return new ApiResponse().SetConflict(message: "Inventory changed while releasing reservations. Reload and retry.");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 await _uow.RollbackTransactionAsync();
-                return new ApiResponse().SetBadRequest(message: "Unable to release reservations: " + ex.Message);
+                return InternalError("Unable to release reservations.");
             }
         }
 
         public async Task<ApiResponse> GetRequestByIdAsync(int requestId)
         {
             var request = await _uow.MaterialRequests.GetAsync(r => r.RequestId == requestId, RequestIncludes());
-            return request == null ? new ApiResponse().SetNotFound(message: "Material request not found.")
-                : new ApiResponse().SetOk(_mapper.Map<MaterialRequestResponse>(request));
+            if (request == null) return new ApiResponse().SetNotFound(message: "Material request not found.");
+            if (!CanReadRequest(_claimService.GetUserClaim(), request))
+                return Forbidden("You do not have access to this material request.");
+            return new ApiResponse().SetOk(_mapper.Map<MaterialRequestResponse>(request));
         }
 
         public async Task<ApiResponse> GetAllRequestsAsync()
         {
-            var requests = await _uow.MaterialRequests.GetAllAsync(null, RequestIncludes());
+            var user = _claimService.GetUserClaim();
+            System.Linq.Expressions.Expression<Func<MaterialRequest, bool>>? accessFilter = user.Role.ToUpperInvariant() switch
+            {
+                nameof(Role.ADMIN) => null,
+                nameof(Role.PM) => r => r.Project.PMUserID == user.Id,
+                nameof(Role.WAREHOUSE_MANAGER) => r =>
+                    (!r.WarehouseId.HasValue && r.Status == MaterialRequestStatuses.Pending) ||
+                    (r.WarehouseId.HasValue && r.Warehouse!.ManagerId == user.Id),
+                _ => r => false
+            };
+            var requests = await _uow.MaterialRequests.GetAllAsync(accessFilter, RequestIncludes());
             return new ApiResponse().SetOk(_mapper.Map<List<MaterialRequestResponse>>(requests));
         }
 
         public async Task<ApiResponse> GetRequestsByProjectAsync(int projectId)
         {
-            var requests = await _uow.MaterialRequests.GetAllAsync(r => r.ProjectId == projectId, RequestIncludes());
+            var user = _claimService.GetUserClaim();
+            System.Linq.Expressions.Expression<Func<MaterialRequest, bool>> accessFilter = user.Role.ToUpperInvariant() switch
+            {
+                nameof(Role.ADMIN) => r => r.ProjectId == projectId,
+                nameof(Role.PM) => r => r.ProjectId == projectId && r.Project.PMUserID == user.Id,
+                nameof(Role.WAREHOUSE_MANAGER) => r => r.ProjectId == projectId &&
+                    ((!r.WarehouseId.HasValue && r.Status == MaterialRequestStatuses.Pending) ||
+                     (r.WarehouseId.HasValue && r.Warehouse!.ManagerId == user.Id)),
+                _ => r => false
+            };
+            var requests = await _uow.MaterialRequests.GetAllAsync(accessFilter, RequestIncludes());
             return new ApiResponse().SetOk(_mapper.Map<List<MaterialRequestResponse>>(requests));
         }
 
         private static Func<IQueryable<MaterialRequest>, Microsoft.EntityFrameworkCore.Query.IIncludableQueryable<MaterialRequest, object>> RequestIncludes() =>
-            q => q.Include(r => r.Requester)
+            q => q.Include(r => r.Project)
+                  .Include(r => r.Requester)
                   .Include(r => r.Warehouse)
                   .Include(r => r.Requisitions).ThenInclude(i => i.Variant).ThenInclude(v => v.Material);
 
@@ -323,6 +358,14 @@ namespace cpms_Application.Services
                 : await _uow.MaterialVariants.GetAsync(v => v.MaterialId == legacyMaterialId && v.IsActive);
 
         private static bool IsRole(ClaimDTO claim, Role role) => string.Equals(claim.Role, role.ToString(), StringComparison.OrdinalIgnoreCase);
+        private static bool CanReadRequest(ClaimDTO claim, MaterialRequest request) =>
+            IsRole(claim, Role.ADMIN) ||
+            (IsRole(claim, Role.PM) && request.Project.PMUserID == claim.Id) ||
+            (IsRole(claim, Role.WAREHOUSE_MANAGER) &&
+             ((!request.WarehouseId.HasValue && request.Status == MaterialRequestStatuses.Pending) ||
+              request.Warehouse?.ManagerId == claim.Id));
         private static ApiResponse Forbidden(string message) => new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, message);
+        private static ApiResponse InternalError(string message) =>
+            new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.InternalServerError, false, message);
     }
 }

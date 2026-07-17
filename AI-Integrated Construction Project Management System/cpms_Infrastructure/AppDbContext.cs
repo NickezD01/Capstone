@@ -59,6 +59,8 @@ namespace cpms_Infrastructure
         public DbSet<PurchaseOrder> PurchaseOrders { get; set; }
         public DbSet<OrderLineItem> OrderLineItems { get; set; }
         public DbSet<TaskMaterialRequirement> TaskMaterialRequirements { get; set; }
+        public DbSet<WarehouseTransfer> WarehouseTransfers { get; set; }
+        public DbSet<WarehouseTransferItem> WarehouseTransferItems { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

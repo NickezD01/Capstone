@@ -15,6 +15,6 @@ namespace cpms_Domain.Models
 
         //navigation property
         public int UserId { get; set; }
-        public UserAccount User { get; set; }
+        public UserAccount User { get; set; } = null!;
     }
 }

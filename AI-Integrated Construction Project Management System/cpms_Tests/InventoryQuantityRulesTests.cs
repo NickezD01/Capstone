@@ -34,4 +34,12 @@ public class InventoryQuantityRulesTests
         Assert.True(InventoryQuantityRules.CanAdjust(10m, 4m, -6m));
         Assert.False(InventoryQuantityRules.CanAdjust(10m, 4m, -6.0001m));
     }
+
+    [Fact]
+    public void Transfer_UsesOnlyUnreservedAvailableStock()
+    {
+        Assert.True(InventoryQuantityRules.CanTransfer(10m, 4m, 6m));
+        Assert.False(InventoryQuantityRules.CanTransfer(10m, 4m, 6.0001m));
+        Assert.False(InventoryQuantityRules.CanTransfer(10m, 10m, 1m));
+    }
 }

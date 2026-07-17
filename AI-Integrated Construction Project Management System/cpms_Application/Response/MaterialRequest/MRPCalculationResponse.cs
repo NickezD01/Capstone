@@ -9,11 +9,15 @@ namespace cpms_Application.Response.MaterialRequest
     public class MRPCalculationResponse
     {
         public int VariantId { get; set; }
+        public int? WarehouseId { get; set; }
+        public string InventoryScope { get; set; } = "ALL_WAREHOUSES";
         public int MaterialId { get; set; }
         public string MaterialName { get; set; } = null!;
         public string VariantName { get; set; } = null!;
         public string Unit { get; set; } = null!; 
         public decimal TotalGrossRequired { get; set; }
+        public decimal IssuedToProjectTasks { get; set; }
+        public decimal RemainingGrossRequired { get; set; }
         public decimal CurrentInventory { get; set; }   
         public decimal ReservedQuantity { get; set; }  
         public decimal AvailableQuantity { get; set; }  

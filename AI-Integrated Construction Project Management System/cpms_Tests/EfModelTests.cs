@@ -45,4 +45,19 @@ public class EfModelTests
             Assert.Null(entity.FindProperty("MaterialId"));
         }
     }
+
+    [Fact]
+    public void WarehouseTransfers_HaveConcurrencyAndUniqueTransferVariant()
+    {
+        using var context = CreateContext();
+        var transfer = context.Model.FindEntityType(typeof(WarehouseTransfer))!;
+        Assert.True(transfer.FindProperty(nameof(WarehouseTransfer.RowVersion))!.IsConcurrencyToken);
+
+        var item = context.Model.FindEntityType(typeof(WarehouseTransferItem))!;
+        Assert.Contains(item.GetIndexes(), index => index.IsUnique &&
+            index.Properties.Select(p => p.Name).SequenceEqual(new[]
+            {
+                nameof(WarehouseTransferItem.TransferId), nameof(WarehouseTransferItem.VariantId)
+            }));
+    }
 }

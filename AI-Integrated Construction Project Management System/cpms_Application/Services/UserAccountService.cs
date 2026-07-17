@@ -29,12 +29,13 @@ namespace cpms_Application.Services
             {
                 var claim = _claim.GetUserClaim();
                 var user = await _unitOfWork.UserAccounts.GetAsync(x => x.Id == claim.Id);
+                if (user == null) return apiResponse.SetNotFound("User not found.");
                 var userResponse = _mapper.Map<UserProfileResponse>(user);
                 return apiResponse.SetOk(userResponse);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return apiResponse.SetBadRequest(ex.Message);
+                return InternalError("Unable to retrieve the user profile.");
             }
         }
         public async Task<ApiResponse> UpdateUserProfileAsync(UpdateUserRequest updateUserRequest)
@@ -44,19 +45,15 @@ namespace cpms_Application.Services
             {
                 var claim = _claim.GetUserClaim();
                 var user = await _unitOfWork.UserAccounts.GetAsync(x => x.Id == claim.Id);
+                if (user == null) return apiResponse.SetNotFound("User not found.");
                 _mapper.Map(updateUserRequest, user);
-
-                user.FirstName = user.FirstName;
-                user.LastName = user.LastName;
-                user.PhoneNumber = user.PhoneNumber;
-                user.ImgUrl = user.ImgUrl;
 
                 await _unitOfWork.SaveChangeAsync();
                 return apiResponse.SetOk("Update Success");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return apiResponse.SetBadRequest(ex.Message);
+                return InternalError("Unable to update the user profile.");
             }
         }
         public async Task<ApiResponse> GetAllAccountAsync()
@@ -68,9 +65,9 @@ namespace cpms_Application.Services
                 var userResponse = _mapper.Map<List<AccountResponse>>(user);
                 return apiResponse.SetOk(userResponse);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return apiResponse.SetBadRequest(ex.Message);
+                return InternalError("Unable to retrieve accounts.");
             }
         }
 
@@ -87,9 +84,9 @@ namespace cpms_Application.Services
 
                 return apiResponse.SetOk(new { UserId = claim.Id });
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return apiResponse.SetBadRequest(ex.Message);
+                return InternalError("Unable to retrieve the current user identifier.");
             }
         }
 
@@ -111,9 +108,9 @@ namespace cpms_Application.Services
 
                 return apiResponse.SetOk("Role updated successfully!");
             }
-            catch (Exception e)
+            catch (Exception)
             {
-                return apiResponse.SetBadRequest(e.Message);
+                return InternalError("Unable to update the user role.");
             }
         }
         public async Task<ApiResponse> CountUser()
@@ -126,6 +123,9 @@ namespace cpms_Application.Services
             }
             return new ApiResponse().SetOk(count);
         }
+
+        private static ApiResponse InternalError(string message) =>
+            new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.InternalServerError, false, message);
         
     }
 }

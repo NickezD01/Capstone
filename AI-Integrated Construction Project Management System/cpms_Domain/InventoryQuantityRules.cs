@@ -13,5 +13,8 @@ namespace cpms_Domain
 
         public static bool CanAdjust(decimal quantityOnHand, decimal reservedQuantity, decimal quantityDelta) =>
             quantityDelta != 0 && quantityOnHand + quantityDelta >= reservedQuantity;
+
+        public static bool CanTransfer(decimal quantityOnHand, decimal reservedQuantity, decimal transferQuantity) =>
+            transferQuantity > 0 && quantityOnHand - reservedQuantity >= transferQuantity;
     }
 }

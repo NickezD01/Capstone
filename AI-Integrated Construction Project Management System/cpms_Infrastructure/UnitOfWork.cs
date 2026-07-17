@@ -38,6 +38,8 @@ namespace cpms_Infrastructure
         public IGenericRepository<cpms_Domain.Models.InventoryTransaction> InventoryTransactions { get; }
         public ITaskMaterialRequirementRepository TaskMaterialRequirements { get; }
         public IProjectBudgetHistoryRepository ProjectBudgetHistories { get; }
+        public IWarehouseTransferRepository WarehouseTransfers { get; }
+        public IWarehouseTransferItemRepository WarehouseTransferItems { get; }
 
 
         public IMaterialRequestRepository MaterialRequests { get; }
@@ -75,6 +77,8 @@ namespace cpms_Infrastructure
             MaterialRequisitions = new MaterialRequisitionRepository(context);
             TaskMaterialRequirements = new TaskMaterialRequirementRepository(context);
             ProjectBudgetHistories = new ProjectBudgetHistoryRepository(context);
+            WarehouseTransfers = new WarehouseTransferRepository(context);
+            WarehouseTransferItems = new WarehouseTransferItemRepository(context);
         }
 
         // =========================================
@@ -89,6 +93,7 @@ namespace cpms_Infrastructure
         // TRANSACTION MANAGEMENT
         // =========================================
         public async Task BeginTransactionAsync() => await _context.Database.BeginTransactionAsync();
+        public async Task BeginTransactionAsync(IsolationLevel isolationLevel) => await _context.Database.BeginTransactionAsync(isolationLevel);
         public async Task CommitTransactionAsync() => await _context.Database.CommitTransactionAsync();
         public async Task RollbackTransactionAsync() => await _context.Database.RollbackTransactionAsync();
 

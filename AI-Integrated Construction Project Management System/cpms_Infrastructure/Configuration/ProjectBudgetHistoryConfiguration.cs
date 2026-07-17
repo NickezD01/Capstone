@@ -37,6 +37,7 @@ namespace cpms_Infrastructure.Configuration
                    .WithMany() // Nếu bên class Project chưa khai báo Collection này thì để trống
                    .HasForeignKey(x => x.ProjectId)
                    .OnDelete(DeleteBehavior.Cascade); // Xóa Project thì tự xóa History
+            builder.HasQueryFilter(x => !x.Project.IsDeleted);
         }
     }
 }

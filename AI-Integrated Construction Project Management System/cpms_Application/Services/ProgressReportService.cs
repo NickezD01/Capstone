@@ -56,6 +56,10 @@ namespace cpms_Application.Services
                 {
                     return response.SetBadRequest("Đầu việc này đã hoàn thành 100%, không thể báo cáo thêm tiến độ.");
                 }
+                if (task.ActualProgressPct + progressIncrement > 100)
+                {
+                    return response.SetBadRequest($"Progress increment exceeds the remaining {100 - task.ActualProgressPct}%.");
+                }
 
                 // 3. Bắt đầu Database Transaction
                 await _uow.BeginTransactionAsync();
@@ -70,12 +74,6 @@ namespace cpms_Application.Services
 
                 // 5. LOGIC CỘNG DỒN: Tiến độ cũ (decimal/int) + Lượng nhập mới tăng thêm (int)
                 task.ActualProgressPct += progressIncrement;
-
-                // Chốt chặn tối đa là 100%
-                if (task.ActualProgressPct > 100)
-                {
-                    task.ActualProgressPct = 100;
-                }
 
                 // 6. TỰ ĐỘNG ĐỔI TRẠNG THÁI TASK KHI CHẠM 100%
                 if (task.ActualProgressPct >= 100)
@@ -94,14 +92,14 @@ namespace cpms_Application.Services
 
                 return response.SetOk($"Gửi báo cáo thành công! Đã cộng thêm {progressIncrement}%. Tiến độ hiện tại của đầu việc đạt {task.ActualProgressPct}% ({task.Status}).");
             }
-            catch (ArgumentNullException ex)
+            catch (ArgumentNullException)
             {
-                return response.SetBadRequest(ex.Message);
+                return response.SetApiResponse(System.Net.HttpStatusCode.Unauthorized, false, "Authenticated user claims are missing.");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 if (transactionStarted) await _uow.RollbackTransactionAsync();
-                return response.SetBadRequest("Lỗi xử lý báo cáo tiến độ: " + ex.Message);
+                return response.SetApiResponse(System.Net.HttpStatusCode.InternalServerError, false, "Unable to process the progress report.");
             }
         }
 
@@ -110,6 +108,16 @@ namespace cpms_Application.Services
             var response = new ApiResponse();
             try
             {
+                var task = await _uow.TaskItems.GetByIdAsync(taskId);
+                if (task == null) return response.SetNotFound("Task not found.");
+                var project = await _uow.Projects.GetByIdAsync(task.ProjectId);
+                if (project == null) return response.SetNotFound("Project not found.");
+                var currentUser = _claimService.GetUserClaim();
+                var isAdmin = string.Equals(currentUser.Role, Role.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase);
+                var isOwner = string.Equals(currentUser.Role, Role.PM.ToString(), StringComparison.OrdinalIgnoreCase) &&
+                              project.PMUserID == currentUser.Id;
+                if (!isAdmin && !isOwner)
+                    return response.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You do not have access to this task's progress reports.");
                 var reports = await _uow.ProgressReports.GetAllAsync(
                     filter: r => r.TaskId == taskId,
                     include: query => query.Include(r => r.Reporter).Include(r => r.Task)
@@ -118,9 +126,9 @@ namespace cpms_Application.Services
                 var result = _mapper.Map<IEnumerable<ProgressReportResponse>>(reports);
                 return response.SetOk(result);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return response.SetBadRequest("Lỗi lấy lịch sử báo cáo: " + ex.Message);
+                return response.SetApiResponse(System.Net.HttpStatusCode.InternalServerError, false, "Unable to retrieve progress reports.");
             }
         }
     }

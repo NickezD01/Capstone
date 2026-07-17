@@ -24,36 +24,26 @@ namespace cpms_API.Controllers
         public async Task<IActionResult> CreateTask([FromBody] CreateTaskRequest request)
         {
             var response = await _taskService.CreateTaskAsync(request);
-            if (!response.IsSuccess)
-            {
-                return BadRequest(response);
-            }
-            return Ok(response);
+            return StatusCode((int)response.StatusCode, response);
         }
 
         // GET: api/task/project/{projectId}
         [HttpGet("project/{projectId}")]
+        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
         public async Task<IActionResult> GetTasksByProject(int projectId)
         {
             var response = await _taskService.GetTasksByProjectAsync(projectId);
-            if (!response.IsSuccess)
-            {
-                return NotFound(response);
-            }
-            return Ok(response);
+            return StatusCode((int)response.StatusCode, response);
         }
 
         [HttpGet("project/{projectId}/material-requirements")]
+        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
         public async Task<IActionResult> GetMaterialRequirements(int projectId)
         {
             // Lưu ý: Đảm bảo trong ITaskService đã khai báo hàm này 
             // Hoặc nếu bạn đặt nó bên IProjectService thì gọi qua _projectService nhé.
             var response = await _taskService.GetMaterialRequirementsByProjectIdAsync(projectId);
-            if (!response.IsSuccess)
-            {
-                return NotFound(response);
-            }
-            return Ok(response);
+            return StatusCode((int)response.StatusCode, response);
         }
     }
 }

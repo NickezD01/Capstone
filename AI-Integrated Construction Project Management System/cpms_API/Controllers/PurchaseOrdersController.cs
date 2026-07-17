@@ -33,7 +33,7 @@ namespace cpms_API.Controllers
 
             if (!response.IsSuccess)
             {
-                return BadRequest(response);
+                return StatusCode((int)response.StatusCode, response);
             }
 
             return Ok(response);
@@ -41,10 +41,11 @@ namespace cpms_API.Controllers
 
         // GET: api/PurchaseOrders
         [HttpGet]
+        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
         public async Task<IActionResult> GetAll()
         {
             var result = await _poService.GetAllPurchaseOrdersAsync();
-            return Ok(result);
+            return StatusCode((int)result.StatusCode, result);
         }
 
         // PUT: api/PurchaseOrders/{id}/approve
@@ -53,7 +54,7 @@ namespace cpms_API.Controllers
         public async Task<IActionResult> Approve(int id)
         {
             var result = await _poService.ApprovePurchaseOrderAsync(id);
-            return result.IsSuccess ? Ok(result) : BadRequest(result);
+            return StatusCode((int)result.StatusCode, result);
         }
 
         // PUT: api/PurchaseOrders/{id}/reject
@@ -63,7 +64,7 @@ namespace cpms_API.Controllers
         public async Task<IActionResult> Reject(int id)
         {
             var result = await _poService.RejectPurchaseOrderAsync(id);
-            return result.IsSuccess ? Ok(result) : BadRequest(result);
+            return StatusCode((int)result.StatusCode, result);
         }
 
         // POST: api/PurchaseOrders/{poId}/import?warehouseId=1
@@ -72,7 +73,7 @@ namespace cpms_API.Controllers
         public async Task<IActionResult> Import(int poId, [FromQuery] int warehouseId)
         {
             var result = await _poService.ImportToWarehouseAsync(poId, warehouseId);
-            return result.IsSuccess ? Ok(result) : BadRequest(result);
+            return StatusCode((int)result.StatusCode, result);
         }
 
         [HttpPost("from-shortages")]

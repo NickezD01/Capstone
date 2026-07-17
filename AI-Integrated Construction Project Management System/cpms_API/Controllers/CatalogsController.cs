@@ -21,7 +21,7 @@ namespace cpms_API.Controllers
         public async Task<IActionResult> AddMaterial([FromBody] CreateCatalogRequest request)
         {
             var response = await _catalogService.AddMaterialToCatalogAsync(request);
-            return response.IsSuccess ? Ok(response) : BadRequest(response);
+            return StatusCode((int)response.StatusCode, response);
         }
     }
 }

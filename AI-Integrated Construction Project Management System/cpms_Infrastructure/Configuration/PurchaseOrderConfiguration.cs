@@ -49,6 +49,8 @@ namespace cpms_Infrastructure.Configuration
                    .WithMany(u => u.PurchaseOrders)
                    .HasForeignKey(po => po.UserAccountId) // Đảm bảo trùng tên FK trong Entity của bạn
                    .OnDelete(DeleteBehavior.Restrict);
+
+            builder.HasQueryFilter(po => !po.IsDeleted && !po.Project.IsDeleted);
         }
     }
 }

@@ -18,6 +18,7 @@ namespace cpms_Infrastructure.Configuration
 
             builder.Property(p => p.ProjectName).IsRequired().HasMaxLength(200);
             builder.Property(p => p.Address).HasMaxLength(500);
+            builder.Property(p => p.TotalProjectBudget).HasColumnType("decimal(18,2)");
 
             builder.Property(p => p.Status)
                    .HasMaxLength(30)

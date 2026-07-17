@@ -1,6 +1,7 @@
 ﻿using cpms_Application.Interfaces;
 using cpms_Application.Request.Supplier;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 
 namespace cpms_API.Controllers
 {
@@ -16,10 +17,11 @@ namespace cpms_API.Controllers
         }
 
         [HttpPost]
+        [Authorize(Roles = "ADMIN")]
         public async Task<IActionResult> Create([FromBody] CreateSupplierRequest request)
         {
             var response = await _supplierService.CreateSupplierAsync(request);
-            return response.IsSuccess ? Ok(response) : BadRequest(response);
+            return StatusCode((int)response.StatusCode, response);
         }
 
         [HttpGet]

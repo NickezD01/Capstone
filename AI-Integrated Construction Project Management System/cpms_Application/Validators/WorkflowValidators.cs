@@ -3,6 +3,8 @@ using cpms_Application.Request.MaterialRequest;
 using cpms_Application.Request.ProgressReport;
 using cpms_Application.Request.PurchaseOrder;
 using cpms_Application.Request.Warehouse;
+using cpms_Application.Request.WarehouseTransfer;
+using cpms_Application.Request.Tasks;
 using FluentValidation;
 
 namespace cpms_Application.Validators
@@ -92,6 +94,57 @@ namespace cpms_Application.Validators
             RuleFor(x => x.VariantId).GreaterThan(0);
             RuleFor(x => x.QuantityDelta).NotEqual(0);
             RuleFor(x => x.Note).MaximumLength(1000);
+        }
+    }
+
+    public class CreateWarehouseTransferRequestValidator : AbstractValidator<CreateWarehouseTransferRequest>
+    {
+        public CreateWarehouseTransferRequestValidator()
+        {
+            RuleFor(x => x.SourceWarehouseId).GreaterThan(0);
+            RuleFor(x => x.DestinationWarehouseId).GreaterThan(0)
+                .NotEqual(x => x.SourceWarehouseId).WithMessage("Source and destination warehouses must differ.");
+            RuleFor(x => x.Note).MaximumLength(1000);
+            RuleFor(x => x.Items).NotEmpty();
+            RuleFor(x => x.Items).Must(items => items.Select(i => i.VariantId).Distinct().Count() == items.Count)
+                .WithMessage("A variant may only appear once per transfer.");
+            RuleForEach(x => x.Items).ChildRules(item =>
+            {
+                item.RuleFor(x => x.VariantId).GreaterThan(0);
+                item.RuleFor(x => x.Quantity).GreaterThan(0);
+            });
+        }
+    }
+
+    public class ReceiveWarehouseTransferRequestValidator : AbstractValidator<ReceiveWarehouseTransferRequest>
+    {
+        public ReceiveWarehouseTransferRequestValidator()
+        {
+            RuleFor(x => x.Items).Must(items => items.Select(i => i.TransferItemId).Distinct().Count() == items.Count)
+                .WithMessage("A transfer item may only appear once per receipt.");
+            RuleForEach(x => x.Items).ChildRules(item =>
+            {
+                item.RuleFor(x => x.TransferItemId).GreaterThan(0);
+                item.RuleFor(x => x.Quantity).GreaterThan(0);
+            });
+        }
+    }
+
+    public class CreateTaskRequestValidator : AbstractValidator<CreateTaskRequest>
+    {
+        public CreateTaskRequestValidator()
+        {
+            RuleFor(x => x.ProjectId).GreaterThan(0);
+            RuleFor(x => x.AssignedToUserID).GreaterThan(0);
+            RuleFor(x => x.PhaseName).NotEmpty().MaximumLength(100);
+            RuleFor(x => x.TaskName).NotEmpty().MaximumLength(200);
+            RuleFor(x => x.PlannedBudget).GreaterThanOrEqualTo(0);
+            RuleFor(x => x.BaselineEnd).GreaterThanOrEqualTo(x => x.BaselineStart);
+            RuleForEach(x => x.Materials).ChildRules(item =>
+            {
+                item.RuleFor(x => x).Must(x => x.VariantId > 0 || x.MaterialId > 0).WithMessage("VariantId is required.");
+                item.RuleFor(x => x.GrossQuantityRequired).GreaterThan(0);
+            });
         }
     }
 }

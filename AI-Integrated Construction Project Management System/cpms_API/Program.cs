@@ -9,19 +9,19 @@ using FluentValidation;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using System.Text;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // ======================================================
 // CONFIGURATION & APPSETTINGS
 // ======================================================
-builder.Configuration.AddJsonFile("appsettings.json", optional: true, reloadOnChange: true);
-
 var configuration = builder.Configuration.Get<AppSetting>();
 if (configuration != null)
 {
@@ -60,10 +60,13 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // JWT AUTHENTICATION
 // ======================================================
 var secretValue = builder.Configuration["SecretToken:Value"];
-if (string.IsNullOrWhiteSpace(secretValue))
+if (string.IsNullOrWhiteSpace(secretValue) || Encoding.UTF8.GetByteCount(secretValue) < 64)
 {
-    throw new Exception("SecretToken:Value is missing or invalid in appsettings.json");
+    throw new Exception("SecretToken:Value must contain at least 64 bytes for HS512 signing.");
 }
+if (configuration == null || string.IsNullOrWhiteSpace(configuration.SecretToken.Issuer) ||
+    string.IsNullOrWhiteSpace(configuration.SecretToken.Audience) || configuration.SecretToken.DurationInMinutes <= 0)
+    throw new Exception("SecretToken issuer, audience, and duration must be configured.");
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -75,12 +78,28 @@ builder.Services
         {
             ValidateIssuerSigningKey = true,
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretValue)),
-            ValidateIssuer = false,
-            ValidateAudience = false,
+            ValidateIssuer = true,
+            ValidIssuer = configuration!.SecretToken.Issuer,
+            ValidateAudience = true,
+            ValidAudience = configuration.SecretToken.Audience,
             ValidateLifetime = true,
             ClockSkew = TimeSpan.Zero
         };
     });
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddPolicy("auth", context => RateLimitPartition.GetFixedWindowLimiter(
+        partitionKey: $"{context.Connection.RemoteIpAddress}:{context.Request.Path}",
+        factory: _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 5,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true
+        }));
+});
 
 // ======================================================
 // SWAGGER / OPENAPI
@@ -116,7 +135,7 @@ builder.Services.AddSwaggerGen(options =>
 // CORE SERVICES INFRASTRUCTURE & MAPPING
 // ======================================================
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddAutoMapper(typeof(MapperConfigurationsProfile).Assembly);
+builder.Services.AddAutoMapper(_ => { }, typeof(MapperConfigurationsProfile).Assembly);
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 // ======================================================
@@ -136,6 +155,7 @@ builder.Services.AddScoped<IWarehouseService, WarehouseService>();
 builder.Services.AddScoped<ITaskService, TaskService>();
 builder.Services.AddScoped<IProgressReportService, ProgressReportService>();
 builder.Services.AddScoped<IMaterialRequestService, MaterialRequestService>();
+builder.Services.AddScoped<IWarehouseTransferService, WarehouseTransferService>();
 
 
 // ======================================================
@@ -166,6 +186,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseCors("AllowAll");
+app.UseRateLimiter();
 
 app.UseAuthentication();
 app.UseAuthorization();

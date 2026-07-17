@@ -42,6 +42,8 @@ namespace cpms_Application.Services
                 var currentUser = _claimService.GetUserClaim();
                 if (!string.Equals(currentUser.Role, Role.PM.ToString(), StringComparison.OrdinalIgnoreCase) || request.PMUserID != currentUser.Id)
                     return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "A project manager may only create a project assigned to their own account.");
+                if (request.TotalProjectBudget < 0 || request.BaselineEnd < request.BaselineStart)
+                    return apiResponse.SetBadRequest("Project budget cannot be negative and baseline end must not precede baseline start.");
                 // Kiểm tra PM có tồn tại không
                 var pm = await _unitOfWork.UserAccounts.GetByIdAsync(request.PMUserID);
 
@@ -77,9 +79,9 @@ namespace cpms_Application.Services
 
                 return apiResponse.SetOk(response);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return apiResponse.SetBadRequest(ex.Message);
+                return InternalError("Unable to create the project.");
             }
         }
 
@@ -89,8 +91,18 @@ namespace cpms_Application.Services
 
             try
             {
+                var currentUser = _claimService.GetUserClaim();
+                System.Linq.Expressions.Expression<Func<Project, bool>>? accessFilter = currentUser.Role.ToUpperInvariant() switch
+                {
+                    nameof(Role.ADMIN) => null,
+                    nameof(Role.PM) => p => p.PMUserID == currentUser.Id,
+                    nameof(Role.WAREHOUSE_MANAGER) => p =>
+                        p.MaterialRequests.Any(r => r.WarehouseId.HasValue && r.Warehouse!.ManagerId == currentUser.Id) ||
+                        p.PurchaseOrders.Any(o => o.Warehouse.ManagerId == currentUser.Id),
+                    _ => p => false
+                };
                 var projects = await _unitOfWork.Projects.GetAllAsync(
-                    filter: null,
+                    filter: accessFilter,
                     include: query => query
                         .Include(p => p.ProjectManager)
                         .Include(p => p.Tasks)
@@ -101,9 +113,9 @@ namespace cpms_Application.Services
 
                 return apiResponse.SetOk(response);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return apiResponse.SetBadRequest(ex.Message);
+                return InternalError("Unable to retrieve projects.");
             }
         }
 
@@ -125,14 +137,16 @@ namespace cpms_Application.Services
                 {
                     return apiResponse.SetNotFound("Project not found or has been deleted.");
                 }
+                if (!await CanReadProjectAsync(id, project.PMUserID))
+                    return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You do not have access to this project.");
 
                 var response = _mapper.Map<ProjectResponse>(project);
 
                 return apiResponse.SetOk(response);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return apiResponse.SetBadRequest(ex.Message);
+                return InternalError("Unable to retrieve the project.");
             }
         }
 
@@ -148,6 +162,11 @@ namespace cpms_Application.Services
             try
             {
                 var currentUser = _claimService.GetUserClaim();
+                if (!string.Equals(currentUser.Role, Role.PM.ToString(), StringComparison.OrdinalIgnoreCase))
+                {
+                    await _unitOfWork.RollbackTransactionAsync();
+                    return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Only project managers may import projects.");
+                }
                 int pmUserId = currentUser.Id;
 
                 var pmAccount = await _unitOfWork.UserAccounts.GetAsync(u => u.Id == pmUserId);
@@ -169,7 +188,8 @@ namespace cpms_Application.Services
                 {
                     using (WordprocessingDocument wordDoc = WordprocessingDocument.Open(stream, false))
                     {
-                        var body = wordDoc.MainDocumentPart.Document.Body;
+                        var body = wordDoc.MainDocumentPart?.Document?.Body
+                            ?? throw new ArgumentNullException(nameof(file));
                         var paragraphs = body.Descendants<WordXml.Paragraph>();
 
                         foreach (var para in paragraphs)
@@ -189,14 +209,17 @@ namespace cpms_Application.Services
                             else if (text.StartsWith("Tiền tệ:", StringComparison.OrdinalIgnoreCase))
                                 currency = text.Replace("Tiền tệ:", "", StringComparison.OrdinalIgnoreCase).Trim();
 
-                            else if (text.StartsWith("Ngày thực tế bắt đầu:", StringComparison.OrdinalIgnoreCase))
-                                DateTime.TryParse(text.Replace("Ngày thực tế bắt đầu:", "", StringComparison.OrdinalIgnoreCase).Trim(), out startDate);
+                            else if (text.StartsWith("Ngày thực tế bắt đầu:", StringComparison.OrdinalIgnoreCase) &&
+                                     DateTime.TryParse(text.Replace("Ngày thực tế bắt đầu:", "", StringComparison.OrdinalIgnoreCase).Trim(), out var parsedStart))
+                                startDate = parsedStart;
 
-                            else if (text.StartsWith("Ngày kế hoạch bắt đầu:", StringComparison.OrdinalIgnoreCase))
-                                DateTime.TryParse(text.Replace("Ngày kế hoạch bắt đầu:", "", StringComparison.OrdinalIgnoreCase).Trim(), out baselineStart);
+                            else if (text.StartsWith("Ngày kế hoạch bắt đầu:", StringComparison.OrdinalIgnoreCase) &&
+                                     DateTime.TryParse(text.Replace("Ngày kế hoạch bắt đầu:", "", StringComparison.OrdinalIgnoreCase).Trim(), out var parsedBaselineStart))
+                                baselineStart = parsedBaselineStart;
 
-                            else if (text.StartsWith("Ngày kế hoạch kết thúc:", StringComparison.OrdinalIgnoreCase))
-                                DateTime.TryParse(text.Replace("Ngày kế hoạch kết thúc:", "", StringComparison.OrdinalIgnoreCase).Trim(), out baselineEnd);
+                            else if (text.StartsWith("Ngày kế hoạch kết thúc:", StringComparison.OrdinalIgnoreCase) &&
+                                     DateTime.TryParse(text.Replace("Ngày kế hoạch kết thúc:", "", StringComparison.OrdinalIgnoreCase).Trim(), out var parsedBaselineEnd))
+                                baselineEnd = parsedBaselineEnd;
                         }
                     }
                 }
@@ -228,15 +251,15 @@ namespace cpms_Application.Services
                 var resultResponse = _mapper.Map<ProjectResponse>(project);
                 return apiResponse.SetOk(resultResponse);
             }
-            catch (ArgumentNullException ex)
+            catch (ArgumentNullException)
             {
                 await _unitOfWork.RollbackTransactionAsync();
-                return apiResponse.SetBadRequest(ex.Message);
+                return apiResponse.SetBadRequest("The Word document does not contain all required project fields.");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 await _unitOfWork.RollbackTransactionAsync();
-                return apiResponse.SetBadRequest("Đã xảy ra lỗi bất ngờ khi bóc tách file Word: " + ex.Message);
+                return InternalError("Unable to import the Word document.");
             }
         }
 
@@ -289,9 +312,9 @@ namespace cpms_Application.Services
                 var responseResult = _mapper.Map<TaskMaterialResponse>(existingRequirement);
                 return apiResponse.SetOk(responseResult);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return apiResponse.SetBadRequest(ex.Message);
+                return InternalError("Unable to assign the material requirement.");
             }
         }
 
@@ -303,6 +326,8 @@ namespace cpms_Application.Services
                 var project = await _unitOfWork.Projects.GetByIdAsync(projectId);
                 if (project == null)
                     return apiResponse.SetNotFound("Dự án không tồn tại.");
+                if (!await CanReadProjectAsync(projectId, project.PMUserID))
+                    return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You do not have access to this project's material requirements.");
 
                 var projectRequirements = await _unitOfWork.TaskMaterialRequirements.GetAllAsync(
                     filter: r => r.TaskItem.ProjectId == projectId,
@@ -315,13 +340,13 @@ namespace cpms_Application.Services
                 var response = _mapper.Map<List<TaskMaterialResponse>>(projectRequirements);
                 return apiResponse.SetOk(response);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return apiResponse.SetBadRequest(ex.Message);
+                return InternalError("Unable to retrieve material requirements.");
             }
         }
 
-        public async Task<ApiResponse> CalculateMRPForProjectAsync(int projectId)
+        public async Task<ApiResponse> CalculateMRPForProjectAsync(int projectId, int? warehouseId = null)
         {
             var apiResponse = new ApiResponse();
             try
@@ -329,6 +354,20 @@ namespace cpms_Application.Services
                 var project = await _unitOfWork.Projects.GetByIdAsync(projectId);
                 if (project == null)
                     return apiResponse.SetNotFound("Dự án không tồn tại.");
+                var currentUser = _claimService.GetUserClaim();
+                Warehouse? selectedWarehouse = null;
+                if (warehouseId.HasValue)
+                {
+                    selectedWarehouse = await _unitOfWork.Warehouses.GetByIdAsync(warehouseId.Value);
+                    if (selectedWarehouse == null) return apiResponse.SetNotFound(message: "Warehouse not found.");
+                }
+                if (IsRole(currentUser, Role.PM) && project.PMUserID != currentUser.Id)
+                    return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You may only calculate MRP for a project you manage.");
+                if (IsRole(currentUser, Role.WAREHOUSE_MANAGER) &&
+                    (selectedWarehouse == null || selectedWarehouse.ManagerId != currentUser.Id))
+                    return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Warehouse managers must select a warehouse they manage.");
+                if (!IsRole(currentUser, Role.ADMIN) && !IsRole(currentUser, Role.PM) && !IsRole(currentUser, Role.WAREHOUSE_MANAGER))
+                    return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "This role cannot calculate MRP.");
 
                 var requirements = await _unitOfWork.TaskMaterialRequirements.GetAllAsync(
                     filter: r => r.TaskItem.ProjectId == projectId
@@ -344,6 +383,33 @@ namespace cpms_Application.Services
 
                 if (!requirementsList.Any())
                     return apiResponse.SetOk(new List<MRPCalculationResponse>());
+
+                var issuedItems = await _unitOfWork.MaterialRequisitions.GetAllAsync(
+                    filter: r => r.MaterialRequest.ProjectId == projectId && r.IssuedQuantity > 0,
+                    include: query => query.Include(r => r.MaterialRequest));
+                var issuedByVariant = issuedItems
+                    .GroupBy(r => r.VariantId)
+                    .ToDictionary(g => g.Key, g => g.Sum(r => r.IssuedQuantity));
+
+                var projectReservations = await _unitOfWork.InventoryReservations.GetAllAsync(
+                    filter: r => r.MaterialRequest.ProjectId == projectId &&
+                                 r.Status == InventoryReservationStatuses.Active &&
+                                 (!warehouseId.HasValue || r.InventoryRecord.WarehouseId == warehouseId.Value),
+                    include: query => query.Include(r => r.RequestItem).Include(r => r.InventoryRecord));
+                var reservedForProjectByVariant = projectReservations
+                    .GroupBy(r => r.RequestItem.VariantId)
+                    .ToDictionary(g => g.Key, g => g.Sum(r => r.Quantity));
+
+                var projectOpenOrderLines = await _unitOfWork.OrderLineItems.GetAllAsync(
+                    filter: line => line.PurchaseOrder.ProjectId == projectId &&
+                                    (line.PurchaseOrder.Status == PurchaseOrderStatus.PENDING ||
+                                     line.PurchaseOrder.Status == PurchaseOrderStatus.APPROVED) &&
+                                    line.ReceivedQuantity < line.Quantity &&
+                                    (!warehouseId.HasValue || line.PurchaseOrder.WarehouseId == warehouseId.Value),
+                    include: query => query.Include(line => line.PurchaseOrder));
+                var openOrderForProjectByVariant = projectOpenOrderLines
+                    .GroupBy(line => line.VariantId)
+                    .ToDictionary(g => g.Key, g => g.Sum(line => line.Quantity - line.ReceivedQuantity));
 
                 var grossRequirementsGroup = requirementsList
                     .GroupBy(r => new
@@ -362,6 +428,8 @@ namespace cpms_Application.Services
                         g.Key.VariantName,
                         g.Key.Unit,
                         TotalGross = g.Sum(r => r.GrossQuantityRequired),
+                        Issued = Math.Min(g.Sum(r => r.GrossQuantityRequired), issuedByVariant.GetValueOrDefault(g.Key.VariantId)),
+                        RemainingGross = Math.Max(0, g.Sum(r => r.GrossQuantityRequired) - issuedByVariant.GetValueOrDefault(g.Key.VariantId)),
                         EarliestNeedDate = g.Min(r => r.TaskItem.BaselineStart)
                     }).ToList();
 
@@ -370,7 +438,8 @@ namespace cpms_Application.Services
 
                 // TỐI ƯU HÓA TRUY VẤN: Chỉ lấy tồn kho của các Vật tư có trong danh sách yêu cầu
                 var currentInventories = await _unitOfWork.Inventories.GetAllAsync(
-                    filter: i => requiredVariantIds.Contains(i.VariantId)
+                    filter: i => requiredVariantIds.Contains(i.VariantId) &&
+                                 (!warehouseId.HasValue || i.WarehouseId == warehouseId.Value)
                 );
                 var inventoriesList = currentInventories.ToList();
 
@@ -390,21 +459,24 @@ namespace cpms_Application.Services
                     decimal available = currentStock - reserved;
                     if (available < 0) available = 0;
 
-                    decimal onOrder = inventoriesList
-                        .Where(i => i.VariantId == gross.VariantId)
-                        .Sum(i => i.OnOrderQuantity);
+                    decimal reservedForProject = reservedForProjectByVariant.GetValueOrDefault(gross.VariantId);
+                    decimal onOrder = openOrderForProjectByVariant.GetValueOrDefault(gross.VariantId);
 
-                    decimal netRequired = gross.TotalGross - available - onOrder;
+                    decimal netRequired = gross.RemainingGross - available - reservedForProject - onOrder;
                     if (netRequired < 0) netRequired = 0;
 
                     mrpResultList.Add(new MRPCalculationResponse
                     {
                         VariantId = gross.VariantId,
+                        WarehouseId = warehouseId,
+                        InventoryScope = warehouseId.HasValue ? "WAREHOUSE" : "ALL_WAREHOUSES",
                         MaterialId = gross.MaterialId,
                         MaterialName = gross.MaterialName,
                         VariantName = gross.VariantName,
                         Unit = gross.Unit,
                         TotalGrossRequired = gross.TotalGross,
+                        IssuedToProjectTasks = gross.Issued,
+                        RemainingGrossRequired = gross.RemainingGross,
                         CurrentInventory = currentStock,
                         ReservedQuantity = reserved,
                         AvailableQuantity = available,
@@ -416,24 +488,43 @@ namespace cpms_Application.Services
 
                 return apiResponse.SetOk(mrpResultList);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return apiResponse.SetBadRequest("Lỗi trong quá trình tính toán MRP: " + ex.Message);
+                return apiResponse.SetApiResponse(System.Net.HttpStatusCode.InternalServerError, false, "Unable to calculate MRP.");
             }
         }
         public async Task<ApiResponse> AdjustProjectBudgetAsync(AdjustBudgetRequest request)
         {
             var apiResponse = new ApiResponse();
+            var transactionStarted = false;
             try
             {
+                if (request.Amount == 0 || string.IsNullOrWhiteSpace(request.Reason))
+                    return apiResponse.SetBadRequest("A non-zero amount and a reason are required.");
+                await _unitOfWork.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+                transactionStarted = true;
                 var project = await _unitOfWork.Projects.GetByIdAsync(request.ProjectId);
                 if (project == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync();
+                    transactionStarted = false;
                     return apiResponse.SetNotFound("Không tìm thấy dự án.");
+                }
 
                 decimal oldBudget = project.TotalProjectBudget;
+                var newBudget = oldBudget + request.Amount;
+                var committedOrders = await _unitOfWork.PurchaseOrders.GetAllAsync(
+                    p => p.ProjectId == request.ProjectId && p.Status != PurchaseOrderStatus.REJECTED);
+                var committedAmount = committedOrders.Sum(p => p.TotalAmount);
+                if (newBudget < 0 || newBudget < committedAmount)
+                {
+                    await _unitOfWork.RollbackTransactionAsync();
+                    transactionStarted = false;
+                    return apiResponse.SetConflict(message: "The adjusted budget cannot be negative or below committed purchase orders.");
+                }
 
                 // Cập nhật ngân sách
-                project.TotalProjectBudget += request.Amount;
+                project.TotalProjectBudget = newBudget;
 
                 var history = new ProjectBudgetHistory
                 {
@@ -451,6 +542,8 @@ namespace cpms_Application.Services
                 _unitOfWork.Projects.Update(project);
 
                 await _unitOfWork.SaveChangeAsync();
+                await _unitOfWork.CommitTransactionAsync();
+                transactionStarted = false;
 
                 // Mapping sang Response
                 var response = _mapper.Map<ProjectBudgetHistoryResponse>(history);
@@ -460,9 +553,10 @@ namespace cpms_Application.Services
 
                 return apiResponse.SetOk(response);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return apiResponse.SetBadRequest("Lỗi: " + ex.Message);
+                if (transactionStarted) await _unitOfWork.RollbackTransactionAsync();
+                return InternalError("Unable to adjust the project budget.");
             }
         }
 
@@ -471,6 +565,11 @@ namespace cpms_Application.Services
             var apiResponse = new ApiResponse();
             try
             {
+                var project = await _unitOfWork.Projects.GetByIdAsync(projectId);
+                if (project == null) return apiResponse.SetNotFound("Project not found.");
+                var currentUser = _claimService.GetUserClaim();
+                if (!IsRole(currentUser, Role.ADMIN) && (!IsRole(currentUser, Role.PM) || project.PMUserID != currentUser.Id))
+                    return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You do not have access to this project's budget history.");
                 // 1. Lấy dữ liệu từ Database
                 var histories = await _unitOfWork.ProjectBudgetHistories.GetAllAsync(h => h.ProjectId == projectId);
 
@@ -481,10 +580,30 @@ namespace cpms_Application.Services
                 // 3. Trả về kết quả
                 return apiResponse.SetOk(result);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return apiResponse.SetBadRequest("Lỗi lấy lịch sử ngân sách: " + ex.Message);
+                return InternalError("Unable to retrieve the project budget history.");
             }
         }
+
+        private async Task<bool> CanReadProjectAsync(int projectId, int projectManagerId)
+        {
+            var currentUser = _claimService.GetUserClaim();
+            if (IsRole(currentUser, Role.ADMIN)) return true;
+            if (IsRole(currentUser, Role.PM)) return projectManagerId == currentUser.Id;
+            if (!IsRole(currentUser, Role.WAREHOUSE_MANAGER)) return false;
+
+            var linkedRequest = await _unitOfWork.MaterialRequests.GetAsync(r =>
+                r.ProjectId == projectId && r.WarehouseId.HasValue && r.Warehouse!.ManagerId == currentUser.Id);
+            if (linkedRequest != null) return true;
+            var linkedOrder = await _unitOfWork.PurchaseOrders.GetAsync(o =>
+                o.ProjectId == projectId && o.Warehouse.ManagerId == currentUser.Id);
+            return linkedOrder != null;
+        }
+
+        private static bool IsRole(ClaimDTO claim, Role role) =>
+            string.Equals(claim.Role, role.ToString(), StringComparison.OrdinalIgnoreCase);
+        private static ApiResponse InternalError(string message) =>
+            new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.InternalServerError, false, message);
     }
 }

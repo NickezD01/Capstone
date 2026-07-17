@@ -61,7 +61,7 @@ namespace cpms_Infrastructure.Repositories
         {
 #nullable disable
             IQueryable<T> query = _db;
-            return await query.FirstOrDefaultAsync(filter);
+            return (await query.FirstOrDefaultAsync(filter))!;
 #nullable restore
         }
 
@@ -72,7 +72,7 @@ namespace cpms_Infrastructure.Repositories
             {
                 query = include(query);
             }
-            return await query.FirstOrDefaultAsync(filter);
+            return (await query.FirstOrDefaultAsync(filter))!;
         }
 
         public async Task RemoveByIdAsync(object id)

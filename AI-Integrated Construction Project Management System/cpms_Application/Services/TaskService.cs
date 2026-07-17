@@ -71,6 +71,17 @@ namespace cpms_Application.Services
                 // 4. Xử lý lưu định mức vật tư đi kèm đầu việc (Nếu có dữ liệu truyền lên)
                 if (request.Materials != null && request.Materials.Any())
                 {
+                    if (request.Materials.Any(x => x.GrossQuantityRequired <= 0))
+                    {
+                        await _uow.RollbackTransactionAsync();
+                        return response.SetBadRequest("Every material requirement quantity must be greater than zero.");
+                    }
+                    var requestedVariantKeys = request.Materials.Select(x => x.VariantId > 0 ? $"V:{x.VariantId}" : $"M:{x.MaterialId}");
+                    if (requestedVariantKeys.Distinct().Count() != request.Materials.Count)
+                    {
+                        await _uow.RollbackTransactionAsync();
+                        return response.SetBadRequest("A material variant may only appear once per task.");
+                    }
                     // Tối ưu hóa: Thu thập toàn bộ MaterialId cần kiểm tra để truy vấn DB một lần duy nhất
                     foreach (var matRequest in request.Materials)
                     {
@@ -101,16 +112,10 @@ namespace cpms_Application.Services
                 await _uow.CommitTransactionAsync();
                 return response.SetOk("Khởi tạo đầu việc dự án và định mức vật tư thành công!");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 await _uow.RollbackTransactionAsync();
-                // 🔍 TRÍCH XUẤT LỖI TẬN GỐC: Trả ra chính xác InnerException để hiển thị lên Swagger (ví dụ: lỗi trùng khóa, sai kiểu dữ liệu,...)
-                var deepErrorMessage = ex.InnerException != null ? ex.InnerException.Message : ex.Message;
-                if (ex.InnerException?.InnerException != null)
-                {
-                    deepErrorMessage += " -> " + ex.InnerException.InnerException.Message;
-                }
-                return response.SetBadRequest("Lỗi tạo đầu việc (Database Error): " + deepErrorMessage);
+                return response.SetApiResponse(System.Net.HttpStatusCode.InternalServerError, false, "Unable to create the task.");
             }
         }
 
@@ -119,6 +124,10 @@ namespace cpms_Application.Services
             var response = new ApiResponse();
             try
             {
+                var project = await _uow.Projects.GetByIdAsync(projectId);
+                if (project == null) return response.SetNotFound("Project not found.");
+                if (!await CanReadProjectAsync(project))
+                    return response.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You do not have access to this project's tasks.");
                 // Tối ưu hóa truy vấn: Lôi kèm User gánh vác, danh sách định mức và thuộc tính của Vật tư để map sang DTO
                 var tasks = await _uow.TaskItems.GetAllAsync(
                     filter: t => t.ProjectId == projectId,
@@ -132,9 +141,9 @@ namespace cpms_Application.Services
                 var result = _mapper.Map<IEnumerable<TaskResponse>>(tasks);
                 return response.SetOk(result);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return response.SetBadRequest("Lỗi lấy danh sách đầu việc: " + ex.Message);
+                return response.SetApiResponse(System.Net.HttpStatusCode.InternalServerError, false, "Unable to retrieve project tasks.");
             }
         }
 
@@ -147,6 +156,8 @@ namespace cpms_Application.Services
                 var project = await _uow.Projects.GetAsync(p => p.ProjectId == projectId);
                 if (project == null)
                     return apiResponse.SetNotFound("Dự án không tồn tại.");
+                if (!await CanReadProjectAsync(project))
+                    return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You do not have access to this project's material requirements.");
 
                 // 2. 🚀 CẢI TIẾN HIỆU NĂNG: Lọc trực tiếp từ DB bằng Include thay vì bốc toàn bộ bảng định mức lên RAM (In-Memory Filtering)
                 // Lấy các định mức vật tư mà có Task thuộc về ProjectId này
@@ -168,10 +179,25 @@ namespace cpms_Application.Services
 
                 return apiResponse.SetOk(responseData);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return apiResponse.SetBadRequest("Đã xảy ra lỗi khi lấy định mức vật tư: " + ex.Message);
+                return apiResponse.SetApiResponse(System.Net.HttpStatusCode.InternalServerError, false, "Unable to retrieve material requirements.");
             }
+        }
+
+        private async Task<bool> CanReadProjectAsync(Project project)
+        {
+            var user = _claimService.GetUserClaim();
+            if (string.Equals(user.Role, Role.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase)) return true;
+            if (string.Equals(user.Role, Role.PM.ToString(), StringComparison.OrdinalIgnoreCase))
+                return project.PMUserID == user.Id;
+            if (!string.Equals(user.Role, Role.WAREHOUSE_MANAGER.ToString(), StringComparison.OrdinalIgnoreCase)) return false;
+
+            var request = await _uow.MaterialRequests.GetAsync(r =>
+                r.ProjectId == project.ProjectId && r.WarehouseId.HasValue && r.Warehouse!.ManagerId == user.Id);
+            if (request != null) return true;
+            return await _uow.PurchaseOrders.GetAsync(o =>
+                o.ProjectId == project.ProjectId && o.Warehouse.ManagerId == user.Id) != null;
         }
     }
 }

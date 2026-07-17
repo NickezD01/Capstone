@@ -23,6 +23,8 @@ namespace cpms_Infrastructure.Configuration
                 .WithMany(x => x.EmailVerifications)
                 .HasForeignKey(x => x.UserId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            builder.HasQueryFilter(x => !x.IsDeleted && !x.User.IsDeleted);
         }
     }
 }

@@ -28,5 +28,7 @@ namespace cpms_Domain.Models
         public const string Issue = "ISSUE";
         public const string Return = "RETURN";
         public const string Adjustment = "ADJUSTMENT";
+        public const string TransferOut = "TRANSFER_OUT";
+        public const string TransferIn = "TRANSFER_IN";
     }
 }

@@ -12,7 +12,7 @@ namespace cpms_Domain.Models
 
         public int UserId { get; set; }
 
-        public string Token { get; set; }
+        public string Token { get; set; } = string.Empty;
 
         public DateTime ExpiresAt { get; set; }
 
@@ -20,6 +20,6 @@ namespace cpms_Domain.Models
 
         public DateTime CreatedAt { get; set; }
 
-        public virtual UserAccount User { get; set; }
+        public virtual UserAccount User { get; set; } = null!;
     }
 }

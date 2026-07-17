@@ -38,13 +38,17 @@ namespace cpms_Application.Services
 
         public async Task<ApiResponse> GetAllWarehousesAsync()
         {
-            var list = await _uow.Warehouses.GetAllAsync(null,
+            var user = _claimService.GetUserClaim();
+            if (!IsAdmin(user) && !IsWarehouseManager(user)) return Forbidden("Warehouse access is not allowed for this role.");
+            var list = await _uow.Warehouses.GetAllAsync(IsAdmin(user) ? null : w => w.ManagerId == user.Id,
                 q => q.Include(w => w.Manager).Include(w => w.InventoryRecords));
             return new ApiResponse().SetOk(_mapper.Map<List<WarehouseResponse>>(list));
         }
 
         public async Task<ApiResponse> GetWarehouseInventoryAsync(int warehouseId)
         {
+            var access = await AuthorizeReadAsync(warehouseId);
+            if (access != null) return access;
             var records = await _uow.Inventories.GetAllAsync(i => i.WarehouseId == warehouseId,
                 q => q.Include(i => i.Warehouse).Include(i => i.Variant).ThenInclude(v => v.Material));
             return new ApiResponse().SetOk(_mapper.Map<List<InventoryReportResponse>>(records));
@@ -52,6 +56,8 @@ namespace cpms_Application.Services
 
         public async Task<ApiResponse> GetInventoryAsync(int warehouseId, int variantId)
         {
+            var access = await AuthorizeReadAsync(warehouseId);
+            if (access != null) return access;
             var record = await _uow.Inventories.GetAsync(i => i.WarehouseId == warehouseId && i.VariantId == variantId,
                 q => q.Include(i => i.Warehouse).Include(i => i.Variant).ThenInclude(v => v.Material));
             return record == null ? new ApiResponse().SetNotFound(message: "Inventory record not found.")
@@ -63,6 +69,9 @@ namespace cpms_Application.Services
             var user = _claimService.GetUserClaim();
             if (!string.Equals(user.Role, Role.WAREHOUSE_MANAGER.ToString(), StringComparison.OrdinalIgnoreCase)) return Forbidden("Only warehouse managers may adjust inventory.");
             if (request.QuantityDelta == 0) return new ApiResponse().SetBadRequest(message: "QuantityDelta cannot be zero.");
+            var managedWarehouse = await _uow.Warehouses.GetByIdAsync(request.WarehouseId);
+            if (managedWarehouse == null) return new ApiResponse().SetNotFound(message: "Warehouse not found.");
+            if (managedWarehouse.ManagerId != user.Id) return Forbidden("You may only adjust inventory in a warehouse you manage.");
             await _uow.BeginTransactionAsync();
             try
             {
@@ -117,21 +126,41 @@ namespace cpms_Application.Services
                 await _uow.RollbackTransactionAsync();
                 return new ApiResponse().SetConflict(message: "Inventory has changed. Reload and retry.");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 await _uow.RollbackTransactionAsync();
-                return new ApiResponse().SetBadRequest(message: "Unable to adjust inventory: " + ex.Message);
+                return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.InternalServerError, false, "Unable to adjust inventory.");
             }
         }
 
         public async Task<ApiResponse> GetTransactionsAsync(int? warehouseId, int? variantId)
         {
+            var user = _claimService.GetUserClaim();
+            var isAdmin = IsAdmin(user);
+            if (!isAdmin && !IsWarehouseManager(user)) return Forbidden("Warehouse transaction access is not allowed for this role.");
+            if (warehouseId.HasValue)
+            {
+                var access = await AuthorizeReadAsync(warehouseId.Value);
+                if (access != null) return access;
+            }
             var transactions = await _uow.InventoryTransactions.GetAllAsync(t =>
                 (!warehouseId.HasValue || t.WarehouseId == warehouseId.Value) &&
-                (!variantId.HasValue || t.VariantId == variantId.Value));
+                (!variantId.HasValue || t.VariantId == variantId.Value) &&
+                (isAdmin || t.Warehouse.ManagerId == user.Id));
             return new ApiResponse().SetOk(_mapper.Map<List<InventoryTransactionResponse>>(transactions.OrderByDescending(t => t.TransactionDate)));
         }
 
         private static ApiResponse Forbidden(string message) => new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, message);
+        private async Task<ApiResponse?> AuthorizeReadAsync(int warehouseId)
+        {
+            var user = _claimService.GetUserClaim();
+            var warehouse = await _uow.Warehouses.GetByIdAsync(warehouseId);
+            if (warehouse == null) return new ApiResponse().SetNotFound(message: "Warehouse not found.");
+            return IsAdmin(user) || (IsWarehouseManager(user) && warehouse.ManagerId == user.Id)
+                ? null
+                : Forbidden("You do not manage this warehouse.");
+        }
+        private static bool IsAdmin(ClaimDTO user) => string.Equals(user.Role, Role.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase);
+        private static bool IsWarehouseManager(ClaimDTO user) => string.Equals(user.Role, Role.WAREHOUSE_MANAGER.ToString(), StringComparison.OrdinalIgnoreCase);
     }
 }

@@ -47,6 +47,8 @@ namespace cpms_Application
         IGenericRepository<InventoryReservation> InventoryReservations { get; }
         IGenericRepository<InventoryTransaction> InventoryTransactions { get; }
         ITaskMaterialRequirementRepository TaskMaterialRequirements { get; }
+        IWarehouseTransferRepository WarehouseTransfers { get; }
+        IWarehouseTransferItemRepository WarehouseTransferItems { get; }
 
         // ========================================================
         // CORE METHODS
@@ -55,6 +57,7 @@ namespace cpms_Application
 
         // Hỗ trợ quản lý Transaction đồng bộ dữ liệu phức tạp
         Task BeginTransactionAsync();
+        Task BeginTransactionAsync(System.Data.IsolationLevel isolationLevel);
         Task CommitTransactionAsync();
         Task RollbackTransactionAsync();
 

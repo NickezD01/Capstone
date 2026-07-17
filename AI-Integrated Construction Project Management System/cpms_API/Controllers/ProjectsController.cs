@@ -24,35 +24,25 @@ namespace cpms_API.Controllers
         public async Task<IActionResult> CreateProject([FromBody] CreateProjectRequest request)
         {
             var response = await _projectService.CreateProjectAsync(request);
-            if (!response.IsSuccess)
-            {
-                return BadRequest(response);
-            }
-            return Ok(response); // Hiện tại sẽ trả về JSON Object đầy đủ của dự án vừa tạo
+            return StatusCode((int)response.StatusCode, response);
         }
 
         // GET: api/projects
         [HttpGet]
+        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
         public async Task<IActionResult> GetAllProjects()
         {
             var response = await _projectService.GetAllProjectsAsync();
-            if (!response.IsSuccess)
-            {
-                return NotFound(response);
-            }
-            return Ok(response);
+            return StatusCode((int)response.StatusCode, response);
         }
 
         // GET: api/projects/{id}
         [HttpGet("{id}")]
+        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
         public async Task<IActionResult> GetProjectById(int id)
         {
             var response = await _projectService.GetProjectByIdAsync(id);
-            if (!response.IsSuccess)
-            {
-                return NotFound(response);
-            }
-            return Ok(response);
+            return StatusCode((int)response.StatusCode, response);
         }
 
         [HttpPost("import-word")]
@@ -61,11 +51,7 @@ namespace cpms_API.Controllers
         public async Task<IActionResult> ImportProjectFromWord(IFormFile file)
         {
             var response = await _projectService.ImportProjectFromWordAsync(file);
-            if (!response.IsSuccess)
-            {
-                return BadRequest(response);
-            }
-            return Ok(response);
+            return StatusCode((int)response.StatusCode, response);
         }
 
         // POST: api/projects/tasks/{taskId}/materials
@@ -74,58 +60,41 @@ namespace cpms_API.Controllers
         public async Task<IActionResult> AssignMaterialRequirementToTask(int taskId, [FromBody] CreateTaskMaterialRequirementRequest request)
         {
             var response = await _projectService.AssignMaterialRequirementToTaskAsync(taskId, request);
-            if (!response.IsSuccess)
-            {
-                return BadRequest(response);
-            }
-            return Ok(response); // Hiện tại sẽ trả về dữ liệu định mức chi tiết thay vì chuỗi message thành công
+            return StatusCode((int)response.StatusCode, response);
         }
 
         // GET: api/projects/{projectId}/material-requirements
         [HttpGet("{projectId}/material-requirements")]
+        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
         public async Task<IActionResult> GetMaterialRequirementsByProjectId(int projectId)
         {
             var response = await _projectService.GetMaterialRequirementsByProjectIdAsync(projectId);
-            if (!response.IsSuccess)
-            {
-                return NotFound(response);
-            }
-            return Ok(response);
+            return StatusCode((int)response.StatusCode, response);
         }
 
         // GET: api/projects/{projectId}/calculate-mrp
         [HttpGet("{projectId}/calculate-mrp")]
-        public async Task<IActionResult> CalculateMRPForProject(int projectId)
+        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
+        public async Task<IActionResult> CalculateMRPForProject(int projectId, [FromQuery] int? warehouseId)
         {
-            var response = await _projectService.CalculateMRPForProjectAsync(projectId);
-            if (!response.IsSuccess)
-            {
-                return BadRequest(response);
-            }
-            return Ok(response);
+            var response = await _projectService.CalculateMRPForProjectAsync(projectId, warehouseId);
+            return StatusCode((int)response.StatusCode, response);
         }
         [HttpPost("adjust-budget")]
         [Authorize(Roles = "ADMIN")]
         public async Task<IActionResult> AdjustProjectBudget([FromBody] AdjustBudgetRequest request)
         {
             var response = await _projectService.AdjustProjectBudgetAsync(request);
-            if (!response.IsSuccess)
-            {
-                return BadRequest(response);
-            }
-            return Ok(response);
+            return StatusCode((int)response.StatusCode, response);
         }
 
         // GET: api/projects/{projectId}/budget-histories
         [HttpGet("{projectId}/budget-histories")]
+        [Authorize(Roles = "ADMIN,PM")]
         public async Task<IActionResult> GetBudgetHistories(int projectId)
         {
             var response = await _projectService.GetBudgetHistoriesByProjectIdAsync(projectId);
-            if (!response.IsSuccess)
-            {
-                return NotFound(response);
-            }
-            return Ok(response);
+            return StatusCode((int)response.StatusCode, response);
         }
     }
 }

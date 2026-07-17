@@ -25,9 +25,20 @@ namespace cpms_Application.Services
         public async Task<ApiResponse> AddMaterialToCatalogAsync(CreateCatalogRequest request)
         {
             // Kiểm tra xem đã có cặp Supplier-Material này chưa để tránh trùng lặp
-            var variantId = request.VariantId != 0 ? request.VariantId : request.MaterialId;
+            var variantId = request.VariantId;
+            if (variantId == 0)
+            {
+                var activeVariants = await _uow.MaterialVariants.GetAllAsync(v => v.MaterialId == request.MaterialId && v.IsActive);
+                if (activeVariants.Count != 1)
+                    return new ApiResponse().SetBadRequest(message: "MaterialId must resolve to exactly one active variant; otherwise VariantId is required.");
+                variantId = activeVariants[0].VariantId;
+            }
             if (await _uow.MaterialVariants.GetByIdAsync(variantId) == null)
                 return new ApiResponse().SetBadRequest(message: "Material variant does not exist.");
+            if (await _uow.Suppliers.GetByIdAsync(request.SupplierId) == null)
+                return new ApiResponse().SetBadRequest(message: "Supplier does not exist.");
+            if (request.UnitPrice < 0 || request.MinimumOrderQuantity < 0 || request.LeadTimeDays < 0)
+                return new ApiResponse().SetBadRequest(message: "Price, minimum quantity, and lead time cannot be negative.");
             var existingEntry = await _uow.SupplierCatalogs.GetAsync(x =>
                 x.SupplierId == request.SupplierId && x.VariantId == variantId);
 

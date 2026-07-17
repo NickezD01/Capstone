@@ -64,7 +64,8 @@ namespace cpms_Application.MyMapper
 
             // Cấu hình map lồng cho Project & Supplier bên trong PO Detail
             CreateMap<Project, ProjectDto>();
-            CreateMap<Supplier, SupplierDto>();
+            CreateMap<Supplier, SupplierDto>()
+                .ForMember(dest => dest.SupplierName, opt => opt.MapFrom(src => src.CompanyName));
 
             // Mappings cho PO Detail
             CreateMap<PurchaseOrder, PurchaseOrderResponse>()
@@ -75,6 +76,7 @@ namespace cpms_Application.MyMapper
 
             // Mappings cho PO Item (Tính toán SubTotal và lấy thông tin vật tư)
             CreateMap<OrderLineItem, OrderLineItemResponse>()
+                .ForMember(dest => dest.OrderLineItemId, opt => opt.MapFrom(src => src.LineItemId))
                 .ForMember(dest => dest.MaterialId, opt => opt.MapFrom(src => src.Variant.MaterialId))
                 .ForMember(dest => dest.MaterialName, opt => opt.MapFrom(src => src.Variant.Material.MaterialName))
                 .ForMember(dest => dest.VariantName, opt => opt.MapFrom(src => src.Variant.VariantName))

@@ -32,6 +32,7 @@ namespace cpms_Infrastructure.Configuration
                    .WithMany(v => v.SupplierCatalogs)
                    .HasForeignKey(sc => sc.VariantId)
                    .OnDelete(DeleteBehavior.Restrict);
+            builder.HasQueryFilter(sc => !sc.IsDeleted && !sc.Variant.IsDeleted);
         }
     }
 }

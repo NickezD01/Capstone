@@ -44,6 +44,7 @@ namespace cpms_Infrastructure.Configuration
                    .WithMany(x => x.RefreshTokens)
                    .HasForeignKey(x => x.UserId)
                    .OnDelete(DeleteBehavior.Cascade);
+            builder.HasQueryFilter(x => !x.IsDeleted && !x.User.IsDeleted);
         }
     }
 }

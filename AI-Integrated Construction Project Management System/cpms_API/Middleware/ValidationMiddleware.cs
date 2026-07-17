@@ -42,7 +42,7 @@ namespace cpms_API.Middleware
                 statusCode = 400,
                 isSuccess = false,
                 errorMessage = "Validation failed", // You can modify this message or customize it further
-                result = (object)null // You can customize the result field as needed
+                result = (object?)null // You can customize the result field as needed
             };
 
             // Serialize and return the custom error response

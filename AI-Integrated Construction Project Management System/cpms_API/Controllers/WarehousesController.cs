@@ -21,33 +21,48 @@ namespace cpms_API.Controllers
         [Authorize(Roles = "ADMIN")]
         public async Task<IActionResult> Create([FromBody] CreateWarehouseRequest request)
         {
-            return Ok(await _warehouseService.CreateWarehouseAsync(request));
+            var response = await _warehouseService.CreateWarehouseAsync(request);
+            return StatusCode((int)response.StatusCode, response);
         }
 
         [HttpGet("{warehouseId}/inventory/{variantId}")]
+        [Authorize(Roles = "ADMIN,WAREHOUSE_MANAGER")]
         public async Task<IActionResult> GetInventory(int warehouseId, int variantId)
-            => Ok(await _warehouseService.GetInventoryAsync(warehouseId, variantId));
+        {
+            var response = await _warehouseService.GetInventoryAsync(warehouseId, variantId);
+            return StatusCode((int)response.StatusCode, response);
+        }
 
         [HttpPost("inventory/adjust")]
         [Authorize(Roles = "WAREHOUSE_MANAGER")]
         public async Task<IActionResult> AdjustInventory([FromBody] InventoryAdjustmentRequest request)
-            => Ok(await _warehouseService.AdjustInventoryAsync(request));
+        {
+            var response = await _warehouseService.AdjustInventoryAsync(request);
+            return StatusCode((int)response.StatusCode, response);
+        }
 
         [HttpGet("inventory/transactions")]
+        [Authorize(Roles = "ADMIN,WAREHOUSE_MANAGER")]
         public async Task<IActionResult> GetTransactions([FromQuery] int? warehouseId, [FromQuery] int? variantId)
-            => Ok(await _warehouseService.GetTransactionsAsync(warehouseId, variantId));
+        {
+            var response = await _warehouseService.GetTransactionsAsync(warehouseId, variantId);
+            return StatusCode((int)response.StatusCode, response);
+        }
 
         [HttpGet]
+        [Authorize(Roles = "ADMIN,WAREHOUSE_MANAGER")]
         public async Task<IActionResult> GetAll()
         {
-            return Ok(await _warehouseService.GetAllWarehousesAsync());
+            var response = await _warehouseService.GetAllWarehousesAsync();
+            return StatusCode((int)response.StatusCode, response);
         }
 
         [HttpGet("{id}/inventory")]
+        [Authorize(Roles = "ADMIN,WAREHOUSE_MANAGER")]
         public async Task<IActionResult> GetWarehouseInventory(int id)
         {
             var result = await _warehouseService.GetWarehouseInventoryAsync(id);
-            return Ok(result);
+            return StatusCode((int)result.StatusCode, result);
         }
     }
 }

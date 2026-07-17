@@ -18,6 +18,6 @@ namespace cpms_Domain.Models
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         // Navigation Property (Nếu hệ thống của bạn có thiết lập quan hệ)
-        public virtual Project? Project { get; set; }
+        public virtual Project Project { get; set; } = null!;
     }
 }

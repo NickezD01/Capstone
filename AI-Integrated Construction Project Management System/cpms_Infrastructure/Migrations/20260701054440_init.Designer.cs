@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using cpms_Infrastructure;
 
 #nullable disable
+#pragma warning disable CS8981
 
 namespace cpms_Infrastructure.Migrations
 {

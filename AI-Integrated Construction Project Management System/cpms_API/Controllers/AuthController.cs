@@ -1,11 +1,13 @@
 ﻿using cpms_Application.Interfaces;
 using cpms_Application.Request.UserAccount;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.Mvc;
 
 namespace cpms_API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [EnableRateLimiting("auth")]
     public class AuthController : ControllerBase
     {
         public IAuthService _service;
@@ -29,7 +31,7 @@ namespace cpms_API.Controllers
                     statusCode = 400,
                     isSuccess = false,
                     errorMessage = string.Join("; ", errors),
-                    result = (object)null
+                    result = (object?)null
                 });
             }
             var result = await _service.RegisterAsync(user);
@@ -49,6 +51,13 @@ namespace cpms_API.Controllers
 
             var result = await _service.VerifyEmailAsync(request.UserId, request.VerificationCode);
             return result.IsSuccess ? Ok(result) : BadRequest(result);
+        }
+
+        [HttpPost("resend-verification")]
+        public async Task<IActionResult> ResendVerification(ResendVerificationRequest request)
+        {
+            var result = await _service.ResendVerificationAsync(request.Email);
+            return StatusCode((int)result.StatusCode, result);
         }
     }
 }

@@ -9,7 +9,7 @@ namespace cpms_Infrastructure.Configuration
         public void Configure(EntityTypeBuilder<InventoryTransaction> builder)
         {
             builder.ToTable("InventoryTransactions", t =>
-                t.HasCheckConstraint("CK_InventoryTransactions_Type", "[TransactionType] IN ('RECEIPT','ISSUE','RETURN','ADJUSTMENT')"));
+                t.HasCheckConstraint("CK_InventoryTransactions_Type", "[TransactionType] IN ('RECEIPT','ISSUE','RETURN','ADJUSTMENT','TRANSFER_OUT','TRANSFER_IN')"));
             builder.HasKey(t => t.TransactionId);
             builder.Property(t => t.TransactionType).IsRequired().HasMaxLength(30);
             builder.Property(t => t.Quantity).HasColumnType("decimal(18,4)");
@@ -24,6 +24,8 @@ namespace cpms_Infrastructure.Configuration
             builder.HasOne(t => t.Warehouse).WithMany().HasForeignKey(t => t.WarehouseId).OnDelete(DeleteBehavior.Restrict);
             builder.HasOne(t => t.PerformedBy).WithMany().HasForeignKey(t => t.PerformedByUserId).OnDelete(DeleteBehavior.Restrict);
             builder.HasIndex(t => new { t.WarehouseId, t.VariantId, t.TransactionDate });
+            builder.HasQueryFilter(t => !t.InventoryRecord.IsDeleted && !t.Variant.IsDeleted &&
+                                        !t.Warehouse.IsDeleted && !t.PerformedBy.IsDeleted);
         }
     }
 }

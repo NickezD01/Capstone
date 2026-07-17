@@ -35,9 +35,9 @@ namespace cpms_Application.Services
 
                 return apiResponse.SetOk("Category created successfully");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return apiResponse.SetBadRequest(ex.InnerException?.Message ?? ex.Message);
+                return apiResponse.SetApiResponse(System.Net.HttpStatusCode.InternalServerError, false, "Unable to create the category.");
             }
         }
 
@@ -57,9 +57,9 @@ namespace cpms_Application.Services
                 var response = _mapper.Map<List<CategoryResponse>>(categories);
                 return apiResponse.SetOk(response);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return apiResponse.SetBadRequest(ex.Message);
+                return apiResponse.SetApiResponse(System.Net.HttpStatusCode.InternalServerError, false, "Unable to retrieve categories.");
             }
         }
 
@@ -74,9 +74,9 @@ namespace cpms_Application.Services
                 var response = _mapper.Map<CategoryResponse>(category);
                 return apiResponse.SetOk(response);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return apiResponse.SetBadRequest(ex.Message);
+                return apiResponse.SetApiResponse(System.Net.HttpStatusCode.InternalServerError, false, "Unable to retrieve the category.");
             }
         }
 
@@ -96,9 +96,9 @@ namespace cpms_Application.Services
 
                 return apiResponse.SetOk("Category updated successfully");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return apiResponse.SetBadRequest(ex.InnerException?.Message ?? ex.Message);
+                return apiResponse.SetApiResponse(System.Net.HttpStatusCode.InternalServerError, false, "Unable to update the category.");
             }
         }
 
@@ -115,9 +115,9 @@ namespace cpms_Application.Services
 
                 return apiResponse.SetOk("Category deleted successfully");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return apiResponse.SetBadRequest("Cannot delete this category. It might contain materials.");
+                return apiResponse.SetConflict(message: "Cannot delete this category while it contains materials.");
             }
         }
     }

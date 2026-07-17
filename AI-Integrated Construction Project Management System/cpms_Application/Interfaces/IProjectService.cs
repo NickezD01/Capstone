@@ -23,6 +23,6 @@ namespace cpms_Application.Interfaces
         Task<ApiResponse> AssignMaterialRequirementToTaskAsync(int taskId, CreateTaskMaterialRequirementRequest request);
 
         Task<ApiResponse> GetMaterialRequirementsByProjectIdAsync(int projectId);
-        Task<ApiResponse> CalculateMRPForProjectAsync(int projectId);
+        Task<ApiResponse> CalculateMRPForProjectAsync(int projectId, int? warehouseId = null);
     }
 }

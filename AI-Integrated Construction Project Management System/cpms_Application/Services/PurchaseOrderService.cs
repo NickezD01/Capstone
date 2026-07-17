@@ -32,66 +32,116 @@ namespace cpms_Application.Services
             var user = _claimService.GetUserClaim();
             if (!IsWarehouseManager(user)) return Forbidden("Only warehouse managers may create purchase orders.");
             if (request.Items == null || request.Items.Count == 0) return new ApiResponse().SetBadRequest(message: "At least one order item is required.");
-            var project = await _uow.Projects.GetByIdAsync(request.ProjectId);
-            if (project == null || await _uow.Suppliers.GetByIdAsync(request.SupplierId) == null || await _uow.Warehouses.GetByIdAsync(request.WarehouseId) == null)
-                return new ApiResponse().SetBadRequest(message: "Project, supplier, or warehouse does not exist.");
-
-            var resolved = new List<(OrderLineItemDto Item, int VariantId)>();
-            foreach (var item in request.Items)
+            var linkedRequestItemIds = request.Items.Where(x => x.RequestItemId.HasValue).Select(x => x.RequestItemId!.Value).ToList();
+            if (linkedRequestItemIds.Distinct().Count() != linkedRequestItemIds.Count)
+                return new ApiResponse().SetBadRequest(message: "A material request item may only appear once per purchase order.");
+            await _uow.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            try
             {
-                if (item.Quantity <= 0 || item.UnitPrice < 0) return new ApiResponse().SetBadRequest(message: "Order quantities must be positive and prices cannot be negative.");
-                var variant = item.VariantId != 0 ? await _uow.MaterialVariants.GetByIdAsync(item.VariantId)
-                    : await _uow.MaterialVariants.GetAsync(v => v.MaterialId == item.MaterialId && v.IsActive);
-                if (variant == null) return new ApiResponse().SetBadRequest(message: "Material variant not found.");
-                var catalog = await _uow.SupplierCatalogs.GetAsync(c => c.SupplierId == request.SupplierId && c.VariantId == variant.VariantId && c.IsAvailable);
-                if (catalog == null) return new ApiResponse().SetBadRequest(message: $"Variant {variant.VariantId} is not available from the selected supplier.");
-                if (item.Quantity < catalog.MinimumOrderQuantity)
-                    return new ApiResponse().SetBadRequest(message: $"Variant {variant.VariantId} is below the supplier minimum order quantity.");
-                if (item.RequestItemId.HasValue)
+                async Task<ApiResponse> Abort(ApiResponse response)
                 {
-                    var requestItem = await _uow.MaterialRequisitions.GetByIdAsync(item.RequestItemId.Value);
-                    if (requestItem == null || requestItem.VariantId != variant.VariantId)
-                        return new ApiResponse().SetBadRequest(message: "RequestItemId does not match the ordered variant.");
+                    await _uow.RollbackTransactionAsync();
+                    return response;
                 }
-                resolved.Add((item, variant.VariantId));
-            }
 
-            var total = resolved.Sum(x => x.Item.Quantity * x.Item.UnitPrice);
-            if (project.TotalProjectBudget > 0)
-            {
-                var committed = await _uow.PurchaseOrders.GetAllAsync(p => p.ProjectId == request.ProjectId && p.Status != PurchaseOrderStatus.REJECTED);
-                if (committed.Sum(p => p.TotalAmount) + total > project.TotalProjectBudget)
-                    return new ApiResponse().SetConflict(message: "Purchase order exceeds the remaining project budget.");
-            }
+                var project = await _uow.Projects.GetAsync(p => p.ProjectId == request.ProjectId);
+                var warehouse = await _uow.Warehouses.GetAsync(w => w.WarehouseId == request.WarehouseId);
+                var supplier = await _uow.Suppliers.GetAsync(s => s.SupplierId == request.SupplierId);
+                if (project == null || supplier == null || warehouse == null)
+                    return await Abort(new ApiResponse().SetBadRequest(message: "Project, supplier, or warehouse does not exist."));
+                if (warehouse.ManagerId != user.Id)
+                    return await Abort(Forbidden("You may only create purchase orders for a warehouse you manage."));
 
-            var po = new PurchaseOrder
-            {
-                ProjectId = request.ProjectId,
-                SupplierId = request.SupplierId,
-                WarehouseId = request.WarehouseId,
-                UserAccountId = user.Id,
-                TotalAmount = total,
-                OrderDate = DateTime.UtcNow,
-                ExpectedDeliveryDate = request.ExpectedDeliveryDate,
-                Note = request.Note,
-                Status = PurchaseOrderStatus.PENDING
-            };
-            foreach (var entry in resolved)
-                po.OrderLineItems.Add(new OrderLineItem
+                var resolved = new List<(OrderLineItemDto Item, int VariantId, decimal UnitPrice)>();
+                foreach (var item in request.Items)
                 {
-                    VariantId = entry.VariantId,
-                    RequestItemId = entry.Item.RequestItemId,
-                    Quantity = entry.Item.Quantity,
-                    UnitPrice = entry.Item.UnitPrice
-                });
-            await _uow.PurchaseOrders.AddAsync(po);
-            await _uow.SaveChangeAsync();
-            return new ApiResponse().SetOk(_mapper.Map<PurchaseOrderResponse>(await GetDetailsAsync(po.PoId)));
+                    if (item.Quantity <= 0 || item.UnitPrice < 0)
+                        return await Abort(new ApiResponse().SetBadRequest(message: "Order quantities must be positive and prices cannot be negative."));
+                    var variant = item.VariantId != 0
+                        ? await _uow.MaterialVariants.GetAsync(v => v.VariantId == item.VariantId)
+                        : await _uow.MaterialVariants.GetAsync(v => v.MaterialId == item.MaterialId && v.IsActive);
+                    if (variant == null || !variant.IsActive)
+                        return await Abort(new ApiResponse().SetBadRequest(message: "Material variant not found or inactive."));
+                    var catalog = await _uow.SupplierCatalogs.GetAsync(c =>
+                        c.SupplierId == request.SupplierId && c.VariantId == variant.VariantId && c.IsAvailable);
+                    if (catalog == null)
+                        return await Abort(new ApiResponse().SetBadRequest(message: $"Variant {variant.VariantId} is not available from the selected supplier."));
+                    if (item.Quantity < catalog.MinimumOrderQuantity)
+                        return await Abort(new ApiResponse().SetBadRequest(message: $"Variant {variant.VariantId} is below the supplier minimum order quantity."));
+                    if (item.RequestItemId.HasValue)
+                    {
+                        var requestItem = await _uow.MaterialRequisitions.GetAsync(r => r.ItemId == item.RequestItemId.Value);
+                        if (requestItem == null || requestItem.VariantId != variant.VariantId)
+                            return await Abort(new ApiResponse().SetBadRequest(message: "RequestItemId does not match the ordered variant."));
+                        var materialRequest = await _uow.MaterialRequests.GetAsync(r => r.RequestId == requestItem.RequestId);
+                        if (materialRequest == null || materialRequest.ProjectId != request.ProjectId ||
+                            (materialRequest.Status != MaterialRequestStatuses.Approved && materialRequest.Status != MaterialRequestStatuses.Issued))
+                            return await Abort(new ApiResponse().SetBadRequest(message: "RequestItemId must belong to an approved material request for this project."));
+                        var existingLines = await _uow.OrderLineItems.GetAllAsync(l =>
+                            l.RequestItemId == requestItem.ItemId && l.PurchaseOrder.Status != PurchaseOrderStatus.REJECTED);
+                        var remainingShortage = requestItem.Quantity - requestItem.ApprovedQuantity - existingLines.Sum(l => l.Quantity);
+                        if (item.Quantity > remainingShortage)
+                            return await Abort(new ApiResponse().SetConflict(message: "Ordered quantity exceeds the remaining request shortage."));
+                    }
+                    resolved.Add((item, variant.VariantId, catalog.UnitPrice));
+                }
+
+                var total = resolved.Sum(x => x.Item.Quantity * x.UnitPrice);
+                if (project.TotalProjectBudget > 0)
+                {
+                    var committed = await _uow.PurchaseOrders.GetAllAsync(p => p.ProjectId == request.ProjectId && p.Status != PurchaseOrderStatus.REJECTED);
+                    if (committed.Sum(p => p.TotalAmount) + total > project.TotalProjectBudget)
+                        return await Abort(new ApiResponse().SetConflict(message: "Purchase order exceeds the remaining project budget."));
+                }
+
+                var po = new PurchaseOrder
+                {
+                    ProjectId = request.ProjectId,
+                    SupplierId = request.SupplierId,
+                    WarehouseId = request.WarehouseId,
+                    UserAccountId = user.Id,
+                    TotalAmount = total,
+                    OrderDate = DateTime.UtcNow,
+                    ExpectedDeliveryDate = request.ExpectedDeliveryDate,
+                    Note = request.Note,
+                    Status = PurchaseOrderStatus.PENDING
+                };
+                foreach (var entry in resolved)
+                    po.OrderLineItems.Add(new OrderLineItem
+                    {
+                        VariantId = entry.VariantId,
+                        RequestItemId = entry.Item.RequestItemId,
+                        Quantity = entry.Item.Quantity,
+                        UnitPrice = entry.UnitPrice
+                    });
+                await _uow.PurchaseOrders.AddAsync(po);
+                await _uow.SaveChangeAsync();
+                await _uow.CommitTransactionAsync();
+                return new ApiResponse().SetOk(_mapper.Map<PurchaseOrderResponse>(await GetDetailsAsync(po.PoId)));
+            }
+            catch (DbUpdateException)
+            {
+                await _uow.RollbackTransactionAsync();
+                return new ApiResponse().SetConflict(message: "Purchase order data changed while it was being created. Reload and retry.");
+            }
+            catch (Exception)
+            {
+                await _uow.RollbackTransactionAsync();
+                return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.InternalServerError, false, "Unable to create purchase order.");
+            }
         }
 
         public async Task<ApiResponse> GetAllPurchaseOrdersAsync()
         {
-            var pos = await _uow.PurchaseOrders.GetAllAsync(null,
+            var user = _claimService.GetUserClaim();
+            System.Linq.Expressions.Expression<Func<PurchaseOrder, bool>>? accessFilter = user.Role.ToUpperInvariant() switch
+            {
+                nameof(Role.ADMIN) => null,
+                nameof(Role.PM) => p => p.Project.PMUserID == user.Id,
+                nameof(Role.WAREHOUSE_MANAGER) => p => p.Warehouse.ManagerId == user.Id,
+                _ => p => false
+            };
+            var pos = await _uow.PurchaseOrders.GetAllAsync(accessFilter,
                 q => q.Include(p => p.Project).Include(p => p.Supplier).Include(p => p.Warehouse)
                       .Include(p => p.OrderLineItems).ThenInclude(l => l.Variant).ThenInclude(v => v.Material));
             return new ApiResponse().SetOk(_mapper.Map<List<PurchaseOrderResponse>>(pos));
@@ -104,8 +154,9 @@ namespace cpms_Application.Services
             await _uow.BeginTransactionAsync();
             try
             {
-                var po = await _uow.PurchaseOrders.GetAsync(p => p.PoId == poId, q => q.Include(p => p.OrderLineItems));
+                var po = await _uow.PurchaseOrders.GetAsync(p => p.PoId == poId, q => q.Include(p => p.Warehouse).Include(p => p.OrderLineItems));
                 if (po == null) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetNotFound(message: "Purchase order not found."); }
+                if (po.Warehouse.ManagerId != user.Id) { await _uow.RollbackTransactionAsync(); return Forbidden("You may only approve purchase orders for a warehouse you manage."); }
                 if (po.Status != PurchaseOrderStatus.PENDING) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "Only pending purchase orders can be approved."); }
 
                 foreach (var line in po.OrderLineItems)
@@ -131,10 +182,10 @@ namespace cpms_Application.Services
                 await _uow.RollbackTransactionAsync();
                 return new ApiResponse().SetConflict(message: "Inventory changed while approving the purchase order. Reload and retry.");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 await _uow.RollbackTransactionAsync();
-                return new ApiResponse().SetBadRequest(message: "Unable to approve purchase order: " + ex.Message);
+                return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.InternalServerError, false, "Unable to approve purchase order.");
             }
         }
 
@@ -142,8 +193,9 @@ namespace cpms_Application.Services
         {
             var user = _claimService.GetUserClaim();
             if (!IsWarehouseManager(user)) return Forbidden("Only warehouse managers may reject purchase orders.");
-            var po = await _uow.PurchaseOrders.GetByIdAsync(poId);
+            var po = await _uow.PurchaseOrders.GetAsync(p => p.PoId == poId, q => q.Include(p => p.Warehouse));
             if (po == null) return new ApiResponse().SetNotFound(message: "Purchase order not found.");
+            if (po.Warehouse.ManagerId != user.Id) return Forbidden("You may only reject purchase orders for a warehouse you manage.");
             if (po.Status != PurchaseOrderStatus.PENDING) return new ApiResponse().SetConflict(message: "Only pending purchase orders can be rejected.");
             po.Status = PurchaseOrderStatus.REJECTED;
             await _uow.SaveChangeAsync();
@@ -159,8 +211,9 @@ namespace cpms_Application.Services
             await _uow.BeginTransactionAsync();
             try
             {
-                var po = await _uow.PurchaseOrders.GetAsync(p => p.PoId == poId, q => q.Include(p => p.OrderLineItems));
+                var po = await _uow.PurchaseOrders.GetAsync(p => p.PoId == poId, q => q.Include(p => p.Warehouse).Include(p => p.OrderLineItems));
                 if (po == null) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetNotFound(message: "Purchase order not found."); }
+                if (po.Warehouse.ManagerId != user.Id) { await _uow.RollbackTransactionAsync(); return Forbidden("You may only receive purchase orders into a warehouse you manage."); }
                 if (po.Status != PurchaseOrderStatus.APPROVED) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "Only approved purchase orders can be received."); }
                 if (request.Items.Select(i => i.LineItemId).Distinct().Count() != request.Items.Count)
                 { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetBadRequest(message: "Receipt contains duplicate line items."); }
@@ -208,10 +261,10 @@ namespace cpms_Application.Services
                 await _uow.RollbackTransactionAsync();
                 return new ApiResponse().SetConflict(message: "Inventory changed while receiving the purchase order. Reload and retry.");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 await _uow.RollbackTransactionAsync();
-                return new ApiResponse().SetBadRequest(message: "Unable to receive purchase order: " + ex.Message);
+                return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.InternalServerError, false, "Unable to receive purchase order.");
             }
         }
 

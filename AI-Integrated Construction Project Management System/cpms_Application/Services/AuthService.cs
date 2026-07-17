@@ -17,6 +17,7 @@ namespace cpms_Application.Services
 {
     public class AuthService : IAuthService
     {
+        private const int PasswordIterations = 210_000;
         private IUnitOfWork _unitOfWork;
         private AppSetting _appSettings;
         private IClaimService _claimService;
@@ -31,6 +32,7 @@ namespace cpms_Application.Services
         public async Task<ApiResponse> RegisterAsync(UserRegisterRequest userRequest)
         {
             ApiResponse response = new ApiResponse();
+            var transactionStarted = false;
             try
             {
 
@@ -40,7 +42,8 @@ namespace cpms_Application.Services
                     response.SetBadRequest(message: "Confirm password is wrong !");
                     return response;
                 }
-                var existingUser = await _unitOfWork.UserAccounts.GetAsync(x => x.Email == userRequest.Email);
+                var normalizedEmail = userRequest.Email.Trim().ToLowerInvariant();
+                var existingUser = await _unitOfWork.UserAccounts.GetAsync(x => x.Email == normalizedEmail);
                 if (existingUser != null)
                 {
                     response.SetBadRequest(message: "The email address is already register");
@@ -53,13 +56,15 @@ namespace cpms_Application.Services
                     //UserName = userRequest.UserName,
                     PasswordHash = pass.PasswordHash,
                     PasswordSalt = pass.PasswordSalt,
-                    Email = userRequest.Email,
+                    Email = normalizedEmail,
                     FirstName = userRequest.FirstName,
                     LastName = userRequest.LastName,
-                    Role = userRequest.Role,
+                    Role = Role.CUSTOMER,
                     IsEmailVerified = false // Initially, email is not verified
                 };
 
+                await _unitOfWork.BeginTransactionAsync();
+                transactionStarted = true;
                 await _unitOfWork.UserAccounts.AddAsync(user);
                 await _unitOfWork.SaveChangeAsync();
 
@@ -68,8 +73,8 @@ namespace cpms_Application.Services
                 var emailVerification = new EmailVerification
                 {
                     UserId = user.Id,
-                    VerificationCode = verificationCode,
-                    ExpiresAt = DateTime.Now.AddMinutes(30), // Code valid for 30 minutes
+                    VerificationCode = HashVerificationCode(user.Id, verificationCode),
+                    ExpiresAt = DateTime.UtcNow.AddMinutes(30), // Code valid for 30 minutes
                     IsUsed = false
                 };
 
@@ -77,80 +82,82 @@ namespace cpms_Application.Services
                 await _unitOfWork.EmailVerifications.AddAsync(emailVerification);
                 await _unitOfWork.SaveChangeAsync();
 
-                // Prepare email content
-                string emailContent = $"Dear {user.FirstName},<br/>Please use the following verification code to validate your email: <strong>{verificationCode}</strong>.<br/>The code will expire in 30 minutes.";
+                await _unitOfWork.CommitTransactionAsync();
+                transactionStarted = false;
 
-                // Send validation email
+                string emailContent = BuildVerificationEmail(user.FirstName, verificationCode);
                 var emailResponse = await _emailService.SendValidationEmail(user.Email, emailContent);
                 if (!emailResponse.IsSuccess)
-                {
-                    response.SetBadRequest("Failed to send verification email.");
-                    return response;
-                }
-
+                    return response.SetApiResponse(System.Net.HttpStatusCode.ServiceUnavailable, false,
+                        "Account created, but the verification email could not be sent. Use the resend-verification endpoint.", user.Id);
                 response.SetOk(user.Id);
                 return response;
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                return response.SetBadRequest($"Error: {ex.Message}. Details: {ex.InnerException?.Message}");
+                if (transactionStarted) await _unitOfWork.RollbackTransactionAsync();
+                return response.SetApiResponse(System.Net.HttpStatusCode.InternalServerError, false, "Unable to register the account.");
             }
 
         }
         public async Task<ApiResponse> VerifyEmailAsync(int userId, string verificationCode)
         {
             ApiResponse response = new ApiResponse();
+            if (userId <= 0 || string.IsNullOrWhiteSpace(verificationCode))
+                return response.SetBadRequest("Invalid or expired verification code.");
 
-            // Retrieve the verification record
-            var verificationRecord = await _unitOfWork.EmailVerifications
-                .GetAsync(x => x.UserId == userId && x.VerificationCode == verificationCode && x.IsUsed == false);
-
-            // Verification record not found or code already used
-            if (verificationRecord == null)
+            await _unitOfWork.BeginTransactionAsync();
+            try
             {
-                response.SetBadRequest("Invalid or expired verification code.");
-                return response;
-            }
+                var hashedCode = HashVerificationCode(userId, verificationCode.Trim());
+                var verificationRecord = await _unitOfWork.EmailVerifications.GetAsync(x =>
+                    x.UserId == userId && !x.IsUsed &&
+                    (x.VerificationCode == hashedCode || x.VerificationCode == verificationCode));
+                if (verificationRecord == null || verificationRecord.ExpiresAt < DateTime.UtcNow)
+                {
+                    if (verificationRecord != null)
+                    {
+                        verificationRecord.IsUsed = true;
+                        await _unitOfWork.SaveChangeAsync();
+                    }
+                    await _unitOfWork.CommitTransactionAsync();
+                    return response.SetBadRequest("Invalid or expired verification code.");
+                }
 
-            // Check if the code has expired
-            if (verificationRecord.ExpiresAt < DateTime.Now)
+                var user = await _unitOfWork.UserAccounts.GetAsync(x => x.Id == userId);
+                if (user == null)
+                {
+                    await _unitOfWork.RollbackTransactionAsync();
+                    return response.SetBadRequest("Invalid or expired verification code.");
+                }
+
+                verificationRecord.IsUsed = true;
+                user.IsEmailVerified = true;
+                await _unitOfWork.SaveChangeAsync();
+                await _unitOfWork.CommitTransactionAsync();
+                return response.SetOk("Email verified successfully.");
+            }
+            catch (Exception)
             {
-                response.SetBadRequest("The verification code has expired.");
-                return response;
+                await _unitOfWork.RollbackTransactionAsync();
+                return response.SetApiResponse(System.Net.HttpStatusCode.InternalServerError, false, "Unable to verify the email address.");
             }
-
-            // Mark the verification code as used
-            verificationRecord.IsUsed = true;
-            await _unitOfWork.SaveChangeAsync();
-
-            // Mark the user's email as verified
-            var user = await _unitOfWork.UserAccounts.GetAsync(x => x.Id == userId);
-            if (user == null)
-            {
-                response.SetBadRequest("User not found.");
-                return response;
-            }
-
-            user.IsEmailVerified = true;
-            await _unitOfWork.SaveChangeAsync();
-
-            response.SetOk("Email verified successfully.");
-            return response;
         }
         private PasswordDTO CreatePasswordHash(string password)
         {
-            PasswordDTO pass = new PasswordDTO();
-            using (var hmac = new HMACSHA512())
+            var salt = RandomNumberGenerator.GetBytes(32);
+            return new PasswordDTO
             {
-                pass.PasswordSalt = hmac.Key;
-                pass.PasswordHash = hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes(password));
-            }
-            return pass;
+                PasswordSalt = salt,
+                PasswordHash = Rfc2898DeriveBytes.Pbkdf2(password, salt, PasswordIterations,
+                    HashAlgorithmName.SHA512, 64)
+            };
         }
         public async Task<ApiResponse> LoginAsync(LoginRequest request)
         {
             ApiResponse response = new ApiResponse();
-            var account = await _unitOfWork.UserAccounts.GetAsync(u => u.Email == request.UserEmail);
+            var normalizedEmail = request.UserEmail.Trim().ToLowerInvariant();
+            var account = await _unitOfWork.UserAccounts.GetAsync(u => u.Email == normalizedEmail);
             if (account == null || !VerifyPasswordHash(request.Password, account.PasswordHash, account.PasswordSalt))
             {
                 response.SetBadRequest(message: "Email or password is wrong");
@@ -163,6 +170,14 @@ namespace cpms_Application.Services
                 return response;
             }
 
+            if (IsLegacyPasswordHash(account.PasswordSalt))
+            {
+                var upgraded = CreatePasswordHash(request.Password);
+                account.PasswordHash = upgraded.PasswordHash;
+                account.PasswordSalt = upgraded.PasswordSalt;
+                await _unitOfWork.SaveChangeAsync();
+            }
+
             response.SetOk(CreateToken(account));
             return response;
         }
@@ -170,12 +185,22 @@ namespace cpms_Application.Services
 
         private bool VerifyPasswordHash(string password, byte[] passwordHash, byte[] passwordSalt)
         {
-            using (var hmac = new HMACSHA512(passwordSalt))
+            byte[] computedHash;
+            if (IsLegacyPasswordHash(passwordSalt))
             {
-                var computedHash = hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes(password));
-                return computedHash.SequenceEqual(passwordHash);
+                using var hmac = new HMACSHA512(passwordSalt);
+                computedHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(password));
             }
+            else
+            {
+                computedHash = Rfc2898DeriveBytes.Pbkdf2(password, passwordSalt, PasswordIterations,
+                    HashAlgorithmName.SHA512, 64);
+            }
+            return computedHash.Length == passwordHash.Length &&
+                   CryptographicOperations.FixedTimeEquals(computedHash, passwordHash);
         }
+
+        private static bool IsLegacyPasswordHash(byte[] salt) => salt.Length != 32;
 
 
         private string CreateToken(UserAccount user)
@@ -198,18 +223,72 @@ namespace cpms_Application.Services
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha512Signature);
 
             var token = new JwtSecurityToken(
+                issuer: _appSettings.SecretToken.Issuer,
+                audience: _appSettings.SecretToken.Audience,
                 claims: claims,
-                expires: DateTime.Now.AddDays(1),
+                expires: DateTime.UtcNow.AddMinutes(_appSettings.SecretToken.DurationInMinutes),
                 signingCredentials: creds);
 
             var jwt = new JwtSecurityTokenHandler().WriteToken(token);
             return jwt;
         }
 
+        public async Task<ApiResponse> ResendVerificationAsync(string email)
+        {
+            var response = new ApiResponse();
+            if (string.IsNullOrWhiteSpace(email))
+                return response.SetBadRequest("Email is required.");
+
+            var normalizedEmail = email.Trim().ToLowerInvariant();
+            var user = await _unitOfWork.UserAccounts.GetAsync(x => x.Email == normalizedEmail);
+            if (user == null || user.IsEmailVerified == true)
+                return response.SetOk("If the account is eligible, a verification email will be sent.");
+
+            var code = GenerateVerificationCode();
+            await _unitOfWork.BeginTransactionAsync();
+            try
+            {
+                var previousCodes = await _unitOfWork.EmailVerifications.GetAllAsync(x => x.UserId == user.Id && !x.IsUsed);
+                foreach (var previousCode in previousCodes)
+                {
+                    previousCode.IsUsed = true;
+                    _unitOfWork.EmailVerifications.Update(previousCode);
+                }
+                await _unitOfWork.EmailVerifications.AddAsync(new EmailVerification
+                {
+                    UserId = user.Id,
+                    VerificationCode = HashVerificationCode(user.Id, code),
+                    ExpiresAt = DateTime.UtcNow.AddMinutes(30),
+                    IsUsed = false
+                });
+                await _unitOfWork.SaveChangeAsync();
+                await _unitOfWork.CommitTransactionAsync();
+            }
+            catch (Exception)
+            {
+                await _unitOfWork.RollbackTransactionAsync();
+                return response.SetApiResponse(System.Net.HttpStatusCode.InternalServerError, false, "Unable to create a verification code.");
+            }
+
+            var emailResponse = await _emailService.SendValidationEmail(user.Email!, BuildVerificationEmail(user.FirstName, code));
+            return emailResponse.IsSuccess
+                ? response.SetOk("If the account is eligible, a verification email will be sent.")
+                : response.SetApiResponse(System.Net.HttpStatusCode.ServiceUnavailable, false, "The verification email could not be sent. Try again later.");
+        }
+
+        private string HashVerificationCode(int userId, string code)
+        {
+            using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(_appSettings.SecretToken.Value));
+            var hash = Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes($"{userId}:{code}")));
+            return hash[..20];
+        }
+
+        private static string BuildVerificationEmail(string? firstName, string code) =>
+            $"Dear {firstName},<br/>Please use the following verification code to validate your email: <strong>{code}</strong>.<br/>The code will expire in 30 minutes.";
+
         private string GenerateVerificationCode()
         {
-            Random random = new Random();
-            return random.Next(100000, 999999).ToString(); // Generate a 6-digit code
+            return RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
         }
         public bool CheckUserPassword(UserRegisterRequest user)
         {

@@ -1,6 +1,7 @@
 ﻿using cpms_Application.Interfaces;
 using cpms_Application.Request.Category;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 
 namespace cpms_API.Controllers
 {
@@ -12,23 +13,28 @@ namespace cpms_API.Controllers
         public CategoriesController(ICategoryService service) => _service = service;
 
         [HttpPost]
+        [Authorize(Roles = "ADMIN")]
         public async Task<IActionResult> Create(CreateCategoryRequest request)
-            => Ok(await _service.CreateCategoryAsync(request));
+            => ToResult(await _service.CreateCategoryAsync(request));
 
         [HttpGet]
         public async Task<IActionResult> GetAll()
-            => Ok(await _service.GetAllCategoriesAsync());
+            => ToResult(await _service.GetAllCategoriesAsync());
 
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById(int id)
-            => Ok(await _service.GetCategoryByIdAsync(id));
+            => ToResult(await _service.GetCategoryByIdAsync(id));
 
         [HttpPut("{id}")]
+        [Authorize(Roles = "ADMIN")]
         public async Task<IActionResult> Update(int id, UpdateCategoryRequest request)
-            => Ok(await _service.UpdateCategoryAsync(id, request));
+            => ToResult(await _service.UpdateCategoryAsync(id, request));
 
         [HttpDelete("{id}")]
+        [Authorize(Roles = "ADMIN")]
         public async Task<IActionResult> Delete(int id)
-            => Ok(await _service.DeleteCategoryAsync(id));
+            => ToResult(await _service.DeleteCategoryAsync(id));
+
+        private ObjectResult ToResult(cpms_Application.Response.ApiResponse response) => StatusCode((int)response.StatusCode, response);
     }
 }

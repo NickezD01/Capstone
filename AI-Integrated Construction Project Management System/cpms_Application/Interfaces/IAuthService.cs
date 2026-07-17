@@ -13,6 +13,7 @@ namespace cpms_Application.Interfaces
         Task<ApiResponse> RegisterAsync(UserRegisterRequest userRequest);
         Task<ApiResponse> LoginAsync(LoginRequest request);
         Task<ApiResponse> VerifyEmailAsync(int userId, string verificationCode);
+        Task<ApiResponse> ResendVerificationAsync(string email);
 
     }
 }
