@@ -37,8 +37,11 @@ namespace cpms_Domain.Models
     {
         public const string Pending = "PENDING";
         public const string Approved = "APPROVED";
+        public const string PartiallyApproved = "PARTIALLY_APPROVED";
         public const string Rejected = "REJECTED";
         public const string Issued = "ISSUED";
+        public const string PartiallyIssued = "PARTIALLY_ISSUED";
         public const string Released = "RELEASED";
+        public const string Cancelled = "CANCELLED";
     }
 }

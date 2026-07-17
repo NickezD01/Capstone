@@ -17,7 +17,7 @@ namespace cpms_Infrastructure.Configuration
                 .WithMany(x => x.SystemReports)
                 .HasForeignKey(x => x.GeneratedBy)
                 .OnDelete(DeleteBehavior.Restrict);
-            builder.HasQueryFilter(x => !x.IsDeleted && !x.Project.IsDeleted && !x.Generator.IsDeleted);
+            builder.HasQueryFilter(x => !x.IsDeleted);
         }
     }
 }

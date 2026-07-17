@@ -30,20 +30,27 @@ namespace cpms_Infrastructure
         public IPurchaseOrderRepository PurchaseOrders { get; }
         public IOrderLineItemRepository OrderLineItems { get; }
         public IEmailVerificationRepository EmailVerifications { get; }
+        public IGenericRepository<cpms_Domain.Models.EmailOutboxMessage> EmailOutboxMessages { get; }
         public IRefreshTokenRepository RefreshTokens { get; }
         public ICategoryRepository Categories { get; }
         public IWarehouseRepository Warehouses { get; }
         public IInventoryRepository Inventories { get; }
         public IGenericRepository<cpms_Domain.Models.InventoryReservation> InventoryReservations { get; }
         public IGenericRepository<cpms_Domain.Models.InventoryTransaction> InventoryTransactions { get; }
+        public IGenericRepository<cpms_Domain.Models.InventoryAdjustment> InventoryAdjustments { get; }
+        public IGenericRepository<cpms_Domain.Models.PhysicalCountSession> PhysicalCountSessions { get; }
+        public IGenericRepository<cpms_Domain.Models.PhysicalCountLine> PhysicalCountLines { get; }
         public ITaskMaterialRequirementRepository TaskMaterialRequirements { get; }
         public IProjectBudgetHistoryRepository ProjectBudgetHistories { get; }
+        public IGenericRepository<cpms_Domain.Models.MrpPlanningRun> MrpPlanningRuns { get; }
         public IWarehouseTransferRepository WarehouseTransfers { get; }
         public IWarehouseTransferItemRepository WarehouseTransferItems { get; }
+        public IGenericRepository<cpms_Domain.Models.TransferInventoryReservation> TransferInventoryReservations { get; }
 
 
         public IMaterialRequestRepository MaterialRequests { get; }
         public IMaterialRequisitionRepository MaterialRequisitions { get; }
+        public IGenericRepository<cpms_Domain.Models.MaterialReturn> MaterialReturns { get; }
 
 
         // =========================================
@@ -65,20 +72,27 @@ namespace cpms_Infrastructure
             PurchaseOrders = new PurchaseOrderRepository(context);
             OrderLineItems = new OrderLineItemRepository(context);
             EmailVerifications = new EmailVerificationRepository(context);
+            EmailOutboxMessages = new GenericRepository<cpms_Domain.Models.EmailOutboxMessage>(context);
             RefreshTokens = new RefreshTokenRepository(context);
             Categories = new CategoryRepository(context);
             Warehouses = new WarehouseRepository(context);
             Inventories = new InventoryRepository(context);
             InventoryReservations = new GenericRepository<cpms_Domain.Models.InventoryReservation>(context);
             InventoryTransactions = new GenericRepository<cpms_Domain.Models.InventoryTransaction>(context);
+            InventoryAdjustments = new GenericRepository<cpms_Domain.Models.InventoryAdjustment>(context);
+            PhysicalCountSessions = new GenericRepository<cpms_Domain.Models.PhysicalCountSession>(context);
+            PhysicalCountLines = new GenericRepository<cpms_Domain.Models.PhysicalCountLine>(context);
 
  
             MaterialRequests = new MaterialRequestRepository(context);
             MaterialRequisitions = new MaterialRequisitionRepository(context);
+            MaterialReturns = new GenericRepository<cpms_Domain.Models.MaterialReturn>(context);
             TaskMaterialRequirements = new TaskMaterialRequirementRepository(context);
             ProjectBudgetHistories = new ProjectBudgetHistoryRepository(context);
+            MrpPlanningRuns = new GenericRepository<cpms_Domain.Models.MrpPlanningRun>(context);
             WarehouseTransfers = new WarehouseTransferRepository(context);
             WarehouseTransferItems = new WarehouseTransferItemRepository(context);
+            TransferInventoryReservations = new GenericRepository<cpms_Domain.Models.TransferInventoryReservation>(context);
         }
 
         // =========================================

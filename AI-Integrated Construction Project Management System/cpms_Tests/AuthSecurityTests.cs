@@ -2,6 +2,7 @@ using cpms_Application.Interfaces;
 using cpms_Application.Request.UserAccount;
 using cpms_Application.Response;
 using cpms_Application.Services;
+using cpms_Application.Security;
 using cpms_Domain;
 using cpms_Domain.Models;
 using System.Security.Cryptography;
@@ -35,9 +36,14 @@ public class AuthSecurityTests
         Assert.Equal(64, user.PasswordHash.Length);
         var verification = Assert.Single(uow.EmailVerificationRecords);
         Assert.Equal(20, verification.VerificationCode.Length);
-        Assert.NotEqual(email.VerificationCode, verification.VerificationCode);
+        Assert.InRange(verification.ExpiresAt, DateTime.UtcNow.AddMinutes(4).AddSeconds(50), DateTime.UtcNow.AddMinutes(5).AddSeconds(5));
+        var queued = Assert.Single(uow.EmailOutboxRecords);
+        var queuedBody = ProtectedPayload.Unprotect(queued.ProtectedHtmlBody, new string('k', 64), "email-outbox");
+        Assert.Contains("expires in 5 minutes", queuedBody);
+        var verificationCode = Regex.Match(queuedBody, @"<strong>(\d{6})</strong>").Groups[1].Value;
+        Assert.NotEqual(verificationCode, verification.VerificationCode);
 
-        var verified = await service.VerifyEmailAsync(user.Id, email.VerificationCode!);
+        var verified = await service.VerifyEmailAsync(user.Id, verificationCode);
         Assert.True(verified.IsSuccess);
         Assert.True(user.IsEmailVerified);
     }
@@ -69,6 +75,34 @@ public class AuthSecurityTests
         Assert.True(loggedIn.IsSuccess);
         Assert.Equal(32, uow.UserAccountRecords[0].PasswordSalt.Length);
         Assert.Equal(64, uow.UserAccountRecords[0].PasswordHash.Length);
+    }
+
+    [Fact]
+    public async Task AdministratorCanLoginWithEmailAndPassword()
+    {
+        var uow = new TestUnitOfWork();
+        const string password = "Manager001";
+        var salt = RandomNumberGenerator.GetBytes(32);
+        uow.UserAccountRecords.Add(new UserAccount
+        {
+            Id = 1,
+            Email = "manager@gmail.com",
+            FirstName = "System",
+            LastName = "Manager",
+            IsEmailVerified = true,
+            Role = Role.ADMIN,
+            PasswordSalt = salt,
+            PasswordHash = Rfc2898DeriveBytes.Pbkdf2(password, salt, 210_000, HashAlgorithmName.SHA512, 64),
+            PasswordChangedAt = DateTime.UtcNow
+        });
+
+        var response = await CreateService(uow, new CapturingEmailService()).LoginAsync(new LoginRequest
+        {
+            UserEmail = "manager@gmail.com",
+            Password = password
+        });
+
+        Assert.True(response.IsSuccess, response.ErrorMessage);
     }
 
     private static AuthService CreateService(TestUnitOfWork uow, IEmailService email) =>

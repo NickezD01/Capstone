@@ -45,5 +45,38 @@ namespace cpms_API.Controllers
             var response = await _taskService.GetMaterialRequirementsByProjectIdAsync(projectId);
             return StatusCode((int)response.StatusCode, response);
         }
+
+        [HttpGet("assigned")]
+        public async Task<IActionResult> GetAssignedTasks()
+        {
+            var response = await _taskService.GetAssignedTasksAsync();
+            return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpPut("{taskId:int}")]
+        [Authorize(Roles = "PM")]
+        public async Task<IActionResult> UpdateTask(int taskId, UpdateTaskRequest request)
+        {
+            var response = await _taskService.UpdateTaskAsync(taskId, request);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpPost("{taskId:int}/cancel")]
+        [Authorize(Roles = "PM")]
+        public Task<IActionResult> Cancel(int taskId, TaskLifecycleRequest request) => ChangeStatus(taskId, "cancel", request);
+
+        [HttpPost("{taskId:int}/reject")]
+        [Authorize(Roles = "PM")]
+        public Task<IActionResult> Reject(int taskId, TaskLifecycleRequest request) => ChangeStatus(taskId, "reject", request);
+
+        [HttpPost("{taskId:int}/reopen")]
+        [Authorize(Roles = "PM")]
+        public Task<IActionResult> Reopen(int taskId, TaskLifecycleRequest request) => ChangeStatus(taskId, "reopen", request);
+
+        private async Task<IActionResult> ChangeStatus(int taskId, string action, TaskLifecycleRequest request)
+        {
+            var response = await _taskService.ChangeTaskStatusAsync(taskId, action, request);
+            return StatusCode((int)response.StatusCode, response);
+        }
     }
 }

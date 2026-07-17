@@ -41,6 +41,30 @@ namespace cpms_API.Controllers
             return StatusCode((int)response.StatusCode, response);
         }
 
+        [HttpGet("inventory/adjustments")]
+        [Authorize(Roles = "ADMIN,WAREHOUSE_MANAGER")]
+        public async Task<IActionResult> GetInventoryAdjustments([FromQuery] string? status)
+        {
+            var response = await _warehouseService.GetInventoryAdjustmentsAsync(status);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpPost("inventory/adjustments/{adjustmentId:int}/approve")]
+        [Authorize(Roles = "ADMIN")]
+        public async Task<IActionResult> ApproveInventoryAdjustment(int adjustmentId, ReviewInventoryAdjustmentRequest request)
+        {
+            var response = await _warehouseService.ReviewInventoryAdjustmentAsync(adjustmentId, true, request);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpPost("inventory/adjustments/{adjustmentId:int}/reject")]
+        [Authorize(Roles = "ADMIN")]
+        public async Task<IActionResult> RejectInventoryAdjustment(int adjustmentId, ReviewInventoryAdjustmentRequest request)
+        {
+            var response = await _warehouseService.ReviewInventoryAdjustmentAsync(adjustmentId, false, request);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
         [HttpPost("inventory/return")]
         [Authorize(Roles = "WAREHOUSE_MANAGER")]
         public async Task<IActionResult> ReturnInventory([FromBody] InventoryReturnRequest request)
@@ -54,6 +78,46 @@ namespace cpms_API.Controllers
         public async Task<IActionResult> GetTransactions([FromQuery] int? warehouseId, [FromQuery] int? variantId)
         {
             var response = await _warehouseService.GetTransactionsAsync(warehouseId, variantId);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpPost("physical-counts")]
+        [Authorize(Roles = "WAREHOUSE_MANAGER")]
+        public async Task<IActionResult> StartPhysicalCount(StartPhysicalCountRequest request)
+        {
+            var response = await _warehouseService.StartPhysicalCountAsync(request);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpPost("physical-counts/{sessionId:int}/submit")]
+        [Authorize(Roles = "WAREHOUSE_MANAGER")]
+        public async Task<IActionResult> SubmitPhysicalCount(int sessionId, SubmitPhysicalCountRequest request)
+        {
+            var response = await _warehouseService.SubmitPhysicalCountAsync(sessionId, request);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpPost("physical-counts/{sessionId:int}/approve")]
+        [Authorize(Roles = "ADMIN")]
+        public async Task<IActionResult> ApprovePhysicalCount(int sessionId, ReviewPhysicalCountRequest request)
+        {
+            var response = await _warehouseService.ReviewPhysicalCountAsync(sessionId, true, request);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpPost("physical-counts/{sessionId:int}/reject")]
+        [Authorize(Roles = "ADMIN")]
+        public async Task<IActionResult> RejectPhysicalCount(int sessionId, ReviewPhysicalCountRequest request)
+        {
+            var response = await _warehouseService.ReviewPhysicalCountAsync(sessionId, false, request);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpGet("physical-counts")]
+        [Authorize(Roles = "ADMIN,WAREHOUSE_MANAGER")]
+        public async Task<IActionResult> GetPhysicalCounts([FromQuery] int? warehouseId, [FromQuery] string? status)
+        {
+            var response = await _warehouseService.GetPhysicalCountsAsync(warehouseId, status);
             return StatusCode((int)response.StatusCode, response);
         }
 

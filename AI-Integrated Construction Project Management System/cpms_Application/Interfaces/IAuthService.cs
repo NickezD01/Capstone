@@ -14,6 +14,11 @@ namespace cpms_Application.Interfaces
         Task<ApiResponse> LoginAsync(LoginRequest request);
         Task<ApiResponse> VerifyEmailAsync(int userId, string verificationCode);
         Task<ApiResponse> ResendVerificationAsync(string email);
-
+        Task<ApiResponse> RefreshSessionAsync(RefreshSessionRequest request);
+        Task<ApiResponse> LogoutAsync(string refreshToken);
+        Task<ApiResponse> ForgotPasswordAsync(string email);
+        Task<ApiResponse> ResetPasswordAsync(ResetPasswordRequest request);
+        Task<ApiResponse> ChangePasswordAsync(ChangePasswordRequest request);
+        Task<ApiResponse> AdminResetPasswordAsync(int userId);
     }
 }

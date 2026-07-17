@@ -16,6 +16,8 @@ namespace cpms_Domain.Models
         // SỬA: Dùng decimal cho Quantity
         public decimal Quantity { get; set; }
         public decimal ReceivedQuantity { get; set; }
+        public decimal DamagedQuantity { get; set; }
+        public decimal MissingQuantity { get; set; }
         public decimal UnitPrice { get; set; }
 
         // TÍNH TOÁN: Trường này có thể là Read-only property

@@ -17,4 +17,25 @@ namespace cpms_Application.Request.MaterialRequest
     {
         public string? DecisionNote { get; set; }
     }
+
+    public class UpdatePendingMaterialRequest
+    {
+        public string RowVersion { get; set; } = string.Empty;
+        public string? RequestNote { get; set; }
+        public List<UpdateMaterialRequestItem> Items { get; set; } = new();
+    }
+
+    public class UpdateMaterialRequestItem
+    {
+        public int ItemId { get; set; }
+        public decimal Quantity { get; set; }
+        public DateTime NeededByDate { get; set; }
+        public string? Note { get; set; }
+    }
+
+    public class CancelMaterialRequest
+    {
+        public string RowVersion { get; set; } = string.Empty;
+        public string? Reason { get; set; }
+    }
 }

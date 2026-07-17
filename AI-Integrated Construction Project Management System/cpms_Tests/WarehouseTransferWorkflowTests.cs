@@ -318,6 +318,7 @@ internal class FakeRepository<T> : IGenericRepository<T> where T : class
         return Task.FromResult(query.ToList());
     }
     public Task<List<T>> GetAllAsync(Expression<Func<T, bool>>? filter, Func<IQueryable<T>, IIncludableQueryable<T, object>>? include = null, int pageIndex = 1, int pageSize = 25) => GetAllAsync(filter);
+    public Task<List<T>> GetAllIgnoringQueryFiltersAsync(Expression<Func<T, bool>>? filter) => GetAllAsync(filter);
     public Task<T> GetAsync(Expression<Func<T, bool>> filter) => Task.FromResult(Data.AsQueryable().FirstOrDefault(filter)!);
     public Task<T> GetAsync(Expression<Func<T, bool>> filter, Func<IQueryable<T>, IIncludableQueryable<T, object>>? include) => GetAsync(filter);
     public Task<T?> GetByIdAsync(object id)
@@ -332,7 +333,7 @@ internal class FakeRepository<T> : IGenericRepository<T> where T : class
     private static PropertyInfo? KeyProperty() => typeof(T).GetProperties().FirstOrDefault(p =>
         p.Name is "Id" or "WarehouseId" or "VariantId" or "InventoryId" or "TransferId" or "TransferItemId" or
         "ProjectId" or "ItemId" or "TransactionId" or "TaskId" or "PoId" or "LineItemId" or "RequestId" or
-        "SupplierId" or "CatalogId" or "ReportId" or "ReservationId");
+        "SupplierId" or "CatalogId" or "ReportId" or "ReservationId" or "AdjustmentId" or "ReturnId" or "TransferReservationId");
     private void AssignIdentity(T entity)
     {
         var key = KeyProperty();
@@ -362,65 +363,87 @@ internal sealed class FakeTaskItemRepository : FakeRepository<TaskItem>, ITaskIt
 internal sealed class FakeProgressReportRepository : FakeRepository<ProgressReport>, IProgressReportRepository { public FakeProgressReportRepository(List<ProgressReport> data) : base(data) { } }
 internal sealed class FakeSupplierRepository : FakeRepository<Supplier>, ISupplierRepository { public FakeSupplierRepository(List<Supplier> data) : base(data) { } }
 internal sealed class FakeSupplierCatalogRepository : FakeRepository<SupplierCatalog>, ISupplierCatalogRepository { public FakeSupplierCatalogRepository(List<SupplierCatalog> data) : base(data) { } }
+internal sealed class FakeRefreshTokenRepository : FakeRepository<RefreshToken>, IRefreshTokenRepository { public FakeRefreshTokenRepository(List<RefreshToken> data) : base(data) { } }
 
 internal sealed class TestUnitOfWork : IUnitOfWork
 {
+    public void Dispose() { }
     public List<Warehouse> WarehouseRecords { get; } = new();
     public List<InventoryRecord> InventoryRecords { get; } = new();
     public List<InventoryTransaction> TransactionRecords { get; } = new();
+    public List<InventoryAdjustment> AdjustmentRecords { get; } = new();
     public List<MaterialVariant> VariantRecords { get; } = new();
     public List<WarehouseTransfer> TransferRecords { get; } = new();
     public List<WarehouseTransferItem> TransferItemRecords { get; } = new();
+    public List<TransferInventoryReservation> TransferReservationRecords { get; } = new();
     public List<Project> ProjectRecords { get; } = new();
     public List<TaskMaterialRequirement> RequirementRecords { get; } = new();
     public List<MaterialRequisition> RequisitionRecords { get; } = new();
+    public List<MaterialReturn> MaterialReturnRecords { get; } = new();
     public List<MaterialRequest> RequestRecords { get; } = new();
     public List<InventoryReservation> ReservationRecords { get; } = new();
     public List<PurchaseOrder> PurchaseOrderRecords { get; } = new();
     public List<OrderLineItem> OrderLineRecords { get; } = new();
     public List<UserAccount> UserAccountRecords { get; } = new();
     public List<EmailVerification> EmailVerificationRecords { get; } = new();
+    public List<EmailOutboxMessage> EmailOutboxRecords { get; } = new();
+    public List<RefreshToken> RefreshTokenRecords { get; } = new();
     public List<TaskItem> TaskRecords { get; } = new();
     public List<ProgressReport> ProgressReportRecords { get; } = new();
     public List<Supplier> SupplierRecords { get; } = new();
     public List<SupplierCatalog> SupplierCatalogRecords { get; } = new();
+    public List<MrpPlanningRun> MrpPlanningRunRecords { get; } = new();
+    public List<PhysicalCountSession> PhysicalCountSessionRecords { get; } = new();
+    public List<PhysicalCountLine> PhysicalCountLineRecords { get; } = new();
 
     public IWarehouseRepository Warehouses { get; }
     public IInventoryRepository Inventories { get; }
     public IGenericRepository<InventoryTransaction> InventoryTransactions { get; }
+    public IGenericRepository<InventoryAdjustment> InventoryAdjustments { get; }
     public IGenericRepository<MaterialVariant> MaterialVariants { get; }
     public IWarehouseTransferRepository WarehouseTransfers { get; }
     public IWarehouseTransferItemRepository WarehouseTransferItems { get; }
+    public IGenericRepository<TransferInventoryReservation> TransferInventoryReservations { get; }
     public IProjectRepository Projects { get; }
     public ITaskMaterialRequirementRepository TaskMaterialRequirements { get; }
     public IMaterialRequisitionRepository MaterialRequisitions { get; }
+    public IGenericRepository<MaterialReturn> MaterialReturns { get; }
 
     public TestUnitOfWork()
     {
         Warehouses = new FakeWarehouseRepository(WarehouseRecords);
         Inventories = new FakeInventoryRepository(InventoryRecords);
         InventoryTransactions = new FakeRepository<InventoryTransaction>(TransactionRecords);
+        InventoryAdjustments = new FakeRepository<InventoryAdjustment>(AdjustmentRecords);
         MaterialVariants = new FakeRepository<MaterialVariant>(VariantRecords);
         WarehouseTransfers = new FakeTransferRepository(TransferRecords);
         WarehouseTransferItems = new FakeTransferItemRepository(TransferItemRecords);
+        TransferInventoryReservations = new FakeRepository<TransferInventoryReservation>(TransferReservationRecords);
         Projects = new FakeProjectRepository(ProjectRecords);
         TaskMaterialRequirements = new FakeRequirementRepository(RequirementRecords);
         MaterialRequisitions = new FakeRequisitionRepository(RequisitionRecords);
+        MaterialReturns = new FakeRepository<MaterialReturn>(MaterialReturnRecords);
         MaterialRequests = new FakeMaterialRequestRepository(RequestRecords);
         InventoryReservations = new FakeRepository<InventoryReservation>(ReservationRecords);
         PurchaseOrders = new FakePurchaseOrderRepository(PurchaseOrderRecords);
         OrderLineItems = new FakeOrderLineRepository(OrderLineRecords);
         UserAccounts = new FakeUserAccountRepository(UserAccountRecords);
         EmailVerifications = new FakeEmailVerificationRepository(EmailVerificationRecords);
+        EmailOutboxMessages = new FakeRepository<EmailOutboxMessage>(EmailOutboxRecords);
+        RefreshTokens = new FakeRefreshTokenRepository(RefreshTokenRecords);
         TaskItems = new FakeTaskItemRepository(TaskRecords);
         ProgressReports = new FakeProgressReportRepository(ProgressReportRecords);
         Suppliers = new FakeSupplierRepository(SupplierRecords);
         SupplierCatalogs = new FakeSupplierCatalogRepository(SupplierCatalogRecords);
+        MrpPlanningRuns = new FakeRepository<MrpPlanningRun>(MrpPlanningRunRecords);
+        PhysicalCountSessions = new FakeRepository<PhysicalCountSession>(PhysicalCountSessionRecords);
+        PhysicalCountLines = new FakeRepository<PhysicalCountLine>(PhysicalCountLineRecords);
     }
 
     public IUserAccountRepository UserAccounts { get; }
-    public IRefreshTokenRepository RefreshTokens => null!;
+    public IRefreshTokenRepository RefreshTokens { get; }
     public IEmailVerificationRepository EmailVerifications { get; }
+    public IGenericRepository<EmailOutboxMessage> EmailOutboxMessages { get; }
     public ITaskItemRepository TaskItems { get; }
     public IProgressReportRepository ProgressReports { get; }
     public IMaterialRepository Materials => null!;
@@ -430,6 +453,9 @@ internal sealed class TestUnitOfWork : IUnitOfWork
     public ICategoryRepository Categories => null!;
     public IMaterialRequestRepository MaterialRequests { get; }
     public IProjectBudgetHistoryRepository ProjectBudgetHistories => null!;
+    public IGenericRepository<MrpPlanningRun> MrpPlanningRuns { get; }
+    public IGenericRepository<PhysicalCountSession> PhysicalCountSessions { get; }
+    public IGenericRepository<PhysicalCountLine> PhysicalCountLines { get; }
     public IPurchaseOrderRepository PurchaseOrders { get; }
     public IOrderLineItemRepository OrderLineItems { get; }
     public IGenericRepository<InventoryReservation> InventoryReservations { get; }

@@ -37,7 +37,12 @@ namespace cpms_Domain.Models
     {
         PENDING,
         APPROVED,
+        PROCESSING,
+        SHIPPED,
+        PARTIALLY_RECEIVED,
         REJECTED,
-        DELIVERED
+        DELIVERED,
+        CLOSED_WITH_VARIANCE,
+        CANCELLED
     }
 }

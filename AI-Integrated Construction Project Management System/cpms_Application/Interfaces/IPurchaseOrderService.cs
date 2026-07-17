@@ -17,5 +17,7 @@ namespace cpms_Application.Interfaces
         Task<ApiResponse> RejectPurchaseOrderAsync(int poId);
         Task<ApiResponse> ImportToWarehouseAsync(int poId, int warehouseId);
         Task<ApiResponse> ReceivePurchaseOrderAsync(int poId, ReceivePurchaseOrderRequest request);
+        Task<ApiResponse> CancelPurchaseOrderAsync(int poId);
+        Task<ApiResponse> MarkShippedAsync(int poId);
     }
 }

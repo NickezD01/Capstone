@@ -55,12 +55,19 @@ namespace cpms_API.Controllers
             return StatusCode((int)response.StatusCode, response);
         }
 
-        [HttpPut("{requestId}/reserve")]
-        [Authorize(Roles = "WAREHOUSE_MANAGER")]
-        [Obsolete("Approval already reserves inventory. Use PUT /api/MaterialRequest/{requestId}/approve.")]
-        public async Task<IActionResult> ReserveRequest(int requestId, [FromBody] ApproveMaterialRequest request)
+        [HttpPut("{requestId}")]
+        [Authorize(Roles = "PM")]
+        public async Task<IActionResult> UpdatePendingRequest(int requestId, [FromBody] UpdatePendingMaterialRequest request)
         {
-            var response = await _materialRequestService.ApproveRequestAsync(requestId, request);
+            var response = await _materialRequestService.UpdatePendingRequestAsync(requestId, request);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpPut("{requestId}/cancel")]
+        [Authorize(Roles = "PM")]
+        public async Task<IActionResult> CancelPendingRequest(int requestId, [FromBody] CancelMaterialRequest request)
+        {
+            var response = await _materialRequestService.CancelPendingRequestAsync(requestId, request);
             return StatusCode((int)response.StatusCode, response);
         }
 

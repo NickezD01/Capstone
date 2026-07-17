@@ -11,7 +11,7 @@ namespace cpms_Infrastructure.Configuration
             builder.ToTable("WarehouseTransfers", table =>
             {
                 table.HasCheckConstraint("CK_WarehouseTransfers_DifferentWarehouses", "[SourceWarehouseId] <> [DestinationWarehouseId]");
-                table.HasCheckConstraint("CK_WarehouseTransfers_Status", "[Status] IN ('REQUESTED','APPROVED','IN_TRANSIT','RECEIVED','REJECTED','CANCELLED')");
+                table.HasCheckConstraint("CK_WarehouseTransfers_Status", "[Status] IN ('REQUESTED','APPROVED','IN_TRANSIT','RECEIVED','CLOSED_WITH_VARIANCE','REJECTED','CANCELLED')");
             });
             builder.HasKey(x => x.TransferId);
             builder.Property(x => x.Status).IsRequired().HasMaxLength(30).HasDefaultValue(WarehouseTransferStatuses.Requested);
@@ -43,12 +43,15 @@ namespace cpms_Infrastructure.Configuration
             {
                 table.HasCheckConstraint("CK_WarehouseTransferItems_RequestedQuantity", "[RequestedQuantity] > 0");
                 table.HasCheckConstraint("CK_WarehouseTransferItems_ShippedQuantity", "[ShippedQuantity] >= 0 AND [ShippedQuantity] <= [RequestedQuantity]");
-                table.HasCheckConstraint("CK_WarehouseTransferItems_ReceivedQuantity", "[ReceivedQuantity] >= 0 AND [ReceivedQuantity] <= [ShippedQuantity]");
+                table.HasCheckConstraint("CK_WarehouseTransferItems_ReceivedQuantity", "[ReceivedQuantity] >= 0 AND [DamagedQuantity] >= 0 AND [LostQuantity] >= 0 AND [ReceivedQuantity] + [DamagedQuantity] + [LostQuantity] <= [ShippedQuantity]");
             });
             builder.HasKey(x => x.TransferItemId);
             builder.Property(x => x.RequestedQuantity).HasColumnType("decimal(18,4)");
             builder.Property(x => x.ShippedQuantity).HasColumnType("decimal(18,4)").HasDefaultValue(0);
             builder.Property(x => x.ReceivedQuantity).HasColumnType("decimal(18,4)").HasDefaultValue(0);
+            builder.Property(x => x.DamagedQuantity).HasColumnType("decimal(18,4)").HasDefaultValue(0);
+            builder.Property(x => x.LostQuantity).HasColumnType("decimal(18,4)").HasDefaultValue(0);
+            builder.Property(x => x.UnitCost).HasColumnType("decimal(18,4)").HasDefaultValue(0);
             builder.Property(x => x.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
             builder.Property(x => x.IsDeleted).HasDefaultValue(false);
             builder.HasQueryFilter(x => !x.IsDeleted);

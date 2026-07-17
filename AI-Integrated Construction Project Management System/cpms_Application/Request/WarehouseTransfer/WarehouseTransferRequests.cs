@@ -23,5 +23,7 @@ namespace cpms_Application.Request.WarehouseTransfer
     {
         public int TransferItemId { get; set; }
         public decimal Quantity { get; set; }
+        public decimal DamagedQuantity { get; set; }
+        public decimal LostQuantity { get; set; }
     }
 }

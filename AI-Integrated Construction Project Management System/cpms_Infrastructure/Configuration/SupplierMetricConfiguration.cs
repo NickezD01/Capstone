@@ -18,6 +18,19 @@ namespace cpms_Infrastructure.Configuration
 
             // Bắt buộc Unique trường SupplierId để thiết lập quan hệ 1:1
             builder.HasIndex(sm => sm.SupplierId).IsUnique();
+            builder.Property(sm => sm.AvgDeliveryDelay).HasDefaultValue(0);
+            builder.Property(sm => sm.DefectRatePct).HasDefaultValue(0);
+            builder.Property(sm => sm.ReliabilityScore).HasDefaultValue(0);
+            builder.Property(sm => sm.EvaluatedOrderCount).HasDefaultValue(0);
+            builder.Property(sm => sm.OnTimeDeliveryRatePct).HasDefaultValue(0);
+            builder.Property(sm => sm.QualityScore).HasDefaultValue(100);
+            builder.Property(sm => sm.RowVersion).IsRowVersion();
+
+            builder.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_SupplierMetrics_Rates", "[DefectRatePct] >= 0 AND [DefectRatePct] <= 100 AND [OnTimeDeliveryRatePct] >= 0 AND [OnTimeDeliveryRatePct] <= 100 AND [QualityScore] >= 0 AND [QualityScore] <= 100 AND [ReliabilityScore] >= 0 AND [ReliabilityScore] <= 100");
+                t.HasCheckConstraint("CK_SupplierMetrics_OrderCount", "[EvaluatedOrderCount] >= 0");
+            });
 
             builder.Property(sm => sm.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
             builder.Property(sm => sm.IsDeleted).HasDefaultValue(false);

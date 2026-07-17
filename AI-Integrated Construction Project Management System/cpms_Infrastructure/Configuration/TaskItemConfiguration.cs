@@ -22,6 +22,14 @@ namespace cpms_Infrastructure.Configuration
             builder.Property(t => t.ActualProgressPct).HasColumnType("decimal(5,2)").HasDefaultValue(0.00);
             builder.Property(t => t.RowVersion).IsRowVersion();
 
+            builder.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_TaskItems_PlannedBudget", "[PlannedBudget] >= 0");
+                t.HasCheckConstraint("CK_TaskItems_ActualCost", "[ActualCost] >= 0");
+                t.HasCheckConstraint("CK_TaskItems_ActualProgressPct", "[ActualProgressPct] >= 0 AND [ActualProgressPct] <= 100");
+                t.HasCheckConstraint("CK_TaskItems_BaselineDates", "[BaselineEnd] >= [BaselineStart]");
+            });
+
             builder.Property(t => t.Status)
                    .HasMaxLength(30)
                    .HasConversion<string>(); // Lưu Enum dưới dạng String trong DB cho dễ đọc
@@ -38,7 +46,7 @@ namespace cpms_Infrastructure.Configuration
 
             // 🚀 BỔ SUNG: Cấu hình khóa ngoại liên kết tới người được giao việc (AssignedToUser)
             builder.HasOne(t => t.AssignedToUser)
-                   .WithMany() // Không cần tạo danh sách ngược ở UserAccount
+                   .WithMany(u => u.Tasks)
                    .HasForeignKey(t => t.AssignedToUserID)
                    .OnDelete(DeleteBehavior.Restrict);
         }

@@ -24,6 +24,7 @@ namespace cpms_Domain.Models
 
         // 🚀 BỔ SUNG KHÓA NGOẠI: Người quản lý dự án (Project Manager)
         public int PMUserID { get; set; }
+        public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 
 
         // ==========================================
@@ -41,10 +42,57 @@ namespace cpms_Domain.Models
 
         // 4. Dự án có các đơn mua hàng (Bảng PurchaseOrders / POs)
         public virtual ICollection<PurchaseOrder> PurchaseOrders { get; set; } = new List<PurchaseOrder>();
+        public virtual ICollection<ProjectBudgetHistory> BudgetHistories { get; set; } = new List<ProjectBudgetHistory>();
 
         // 5. Hệ thống cảnh báo AI & Báo cáo thuộc về dự án này (Bổ sung theo ERD)
         public virtual ICollection<AIAlert> AIAlerts { get; set; } = new List<AIAlert>();
         public virtual ICollection<SystemReport> SystemReports { get; set; } = new List<SystemReport>();
+
+        public void Start(DateTime utcNow)
+        {
+            if (Status is not (ProjectStatus.PLANNING or ProjectStatus.DELAYED))
+                throw new InvalidOperationException("Only a planning or delayed project can be started.");
+            Status = utcNow > BaselineEnd ? ProjectStatus.DELAYED : ProjectStatus.IN_PROGRESS;
+        }
+
+        public void Pause()
+        {
+            if (Status is not (ProjectStatus.IN_PROGRESS or ProjectStatus.DELAYED))
+                throw new InvalidOperationException("Only an active project can be paused.");
+            Status = ProjectStatus.PAUSED;
+        }
+
+        public void Cancel()
+        {
+            if (Status == ProjectStatus.COMPLETED) throw new InvalidOperationException("A completed project cannot be cancelled.");
+            Status = ProjectStatus.CANCELLED;
+        }
+
+        public void Reopen()
+        {
+            if (Status is not (ProjectStatus.PAUSED or ProjectStatus.CANCELLED))
+                throw new InvalidOperationException("Only a paused or cancelled project can be reopened.");
+            Status = ProjectStatus.PLANNING;
+        }
+
+        public void Complete(bool allTasksCompleted)
+        {
+            if (!allTasksCompleted) throw new InvalidOperationException("Every project task must be completed first.");
+            Status = ProjectStatus.COMPLETED;
+        }
+
+        public void UpdatePlan(string name, string? address, DateTime startDate, DateTime baselineStart, DateTime baselineEnd)
+        {
+            if (Status is ProjectStatus.COMPLETED or ProjectStatus.CANCELLED)
+                throw new InvalidOperationException("A closed project cannot be edited.");
+            if (baselineEnd < baselineStart || startDate < baselineStart || startDate > baselineEnd)
+                throw new ArgumentException("Project dates are invalid.");
+            ProjectName = name.Trim();
+            Address = string.IsNullOrWhiteSpace(address) ? null : address.Trim();
+            StartDate = startDate;
+            BaselineStart = baselineStart;
+            BaselineEnd = baselineEnd;
+        }
     }
 
     public enum ProjectStatus
@@ -52,6 +100,8 @@ namespace cpms_Domain.Models
         PLANNING,
         IN_PROGRESS,
         COMPLETED,
-        DELAYED
+        DELAYED,
+        PAUSED,
+        CANCELLED
     }
 }

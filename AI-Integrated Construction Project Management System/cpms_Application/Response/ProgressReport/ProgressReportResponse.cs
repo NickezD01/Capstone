@@ -18,5 +18,11 @@ namespace cpms_Application.Response.ProgressReport
         public decimal ActualCostIncrement { get; set; }
         public string? Notes { get; set; }
         public string? SitePhotoUrl { get; set; }
+        public string Status { get; set; } = string.Empty;
+        public int? ReviewedByUserId { get; set; }
+        public DateTime? ReviewedAt { get; set; }
+        public string? ReviewNote { get; set; }
+        public int? OriginalReportId { get; set; }
+        public string RowVersion { get; set; } = string.Empty;
     }
 }

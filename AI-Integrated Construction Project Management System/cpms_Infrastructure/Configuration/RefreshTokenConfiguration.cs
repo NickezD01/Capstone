@@ -24,7 +24,11 @@ namespace cpms_Infrastructure.Configuration
 
             builder.Property(x => x.Token)
                    .IsRequired()
-                   .HasMaxLength(512);
+                   .HasMaxLength(64);
+            builder.Property(x => x.ReplacedByTokenHash).HasMaxLength(64);
+            builder.Property(x => x.ParentTokenHash).HasMaxLength(64);
+            builder.Property(x => x.SessionFamilyId).IsRequired();
+            builder.Property(x => x.DeviceInfo).HasMaxLength(500);
 
             builder.Property(x => x.ExpiresAt)
                    .IsRequired();
@@ -38,6 +42,7 @@ namespace cpms_Infrastructure.Configuration
             // UNIQUE
             builder.HasIndex(x => x.Token)
                    .IsUnique();
+            builder.HasIndex(x => new { x.UserId, x.SessionFamilyId });
 
             // RELATIONSHIP
             builder.HasOne(x => x.User)

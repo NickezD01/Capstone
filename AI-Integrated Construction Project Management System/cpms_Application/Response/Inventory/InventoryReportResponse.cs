@@ -23,6 +23,9 @@ namespace cpms_Application.Response.Inventory
         public decimal OnOrderQuantity { get; set; }
         public decimal AvailableQuantity { get; set; } // Lượng hàng khả dụng thực tế (= QuantityOnHand - ReservedQuantity)
         public decimal ReorderLevel { get; set; }      // Định mức tối thiểu để báo động nhập hàng
+        public decimal QuarantineQuantity { get; set; }
+        public decimal AverageUnitCost { get; set; }
+        public decimal InventoryValue { get; set; }
         public bool IsLowStock { get; set; }           // Trạng thái cảnh báo hết hàng sắp xảy ra
         public DateTime UpdatedAt { get; set; }
         public string RowVersion { get; set; } = null!;

@@ -3,6 +3,7 @@ using cpms_Application.MyMapper;
 using cpms_Application.Request.ProgressReport;
 using cpms_Application.Request.PurchaseOrder;
 using cpms_Application.Request.Tasks;
+using cpms_Application.Request.User;
 using cpms_Application.Request.Warehouse;
 using cpms_Application.Services;
 using cpms_Domain.Models;
@@ -13,6 +14,26 @@ namespace cpms_Tests;
 
 public class BusinessRuleRegressionTests
 {
+    [Fact]
+    public async Task AdministratorCanAssignPrivilegedRoleDirectly()
+    {
+        var uow = new TestUnitOfWork();
+        var account = new UserAccount
+        {
+            Id = 20,
+            Email = "pm@example.com",
+            IsEmailVerified = true,
+            Role = Role.CUSTOMER
+        };
+        uow.UserAccountRecords.Add(account);
+
+        var response = await new UserAccountService(uow, CreateMapper(), new FakeClaimService(1, Role.ADMIN))
+            .UpdateUserRoleProfileAsync(account.Id, new UpdateUserRoleRequest { Role = Role.PM });
+
+        Assert.True(response.IsSuccess, response.ErrorMessage);
+        Assert.Equal(Role.PM, account.Role);
+    }
+
     [Fact]
     public async Task ReturnCannotExceedIssuedQuantityAfterPreviousReturns()
     {
@@ -152,6 +173,10 @@ public class BusinessRuleRegressionTests
             .SubmitReportAsync(new SubmitProgressReportRequest { TaskId = 1, ProgressIncrement = 10, ActualCostIncrement = 5 });
 
         Assert.True(response.IsSuccess);
+        var report = Assert.Single(uow.ProgressReportRecords);
+        var approved = await new ProgressReportService(uow, CreateMapper(), new FakeClaimService(5, Role.PM))
+            .ApproveReportAsync(report.ReportId, new ReviewProgressReportRequest { AllowCostOverrun = true });
+        Assert.True(approved.IsSuccess);
         Assert.Equal(cpms_Domain.Models.TaskStatus.IN_PROGRESS, task.Status);
     }
 

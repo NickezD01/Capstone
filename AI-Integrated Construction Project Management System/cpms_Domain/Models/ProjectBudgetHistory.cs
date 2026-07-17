@@ -16,8 +16,10 @@ namespace cpms_Domain.Models
         public string Reason { get; set; } = string.Empty; // Lý do điều chỉnh
         public int UpdatedByUserId { get; set; }   // ID của Manager thực hiện thay đổi
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+        public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 
         // Navigation Property (Nếu hệ thống của bạn có thiết lập quan hệ)
         public virtual Project Project { get; set; } = null!;
+        public virtual UserAccount UpdatedByUser { get; set; } = null!;
     }
 }

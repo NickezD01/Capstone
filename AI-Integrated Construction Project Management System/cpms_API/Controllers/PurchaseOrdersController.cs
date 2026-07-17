@@ -36,7 +36,7 @@ namespace cpms_API.Controllers
                 return StatusCode((int)response.StatusCode, response);
             }
 
-            return Ok(response);
+            return StatusCode((int)response.StatusCode, response);
         }
 
         // GET: api/PurchaseOrders
@@ -67,15 +67,6 @@ namespace cpms_API.Controllers
             return StatusCode((int)result.StatusCode, result);
         }
 
-        // POST: api/PurchaseOrders/{poId}/import?warehouseId=1
-        [HttpPost("{poId}/import")]
-        [Authorize(Roles = "WAREHOUSE_MANAGER")]
-        public async Task<IActionResult> Import(int poId, [FromQuery] int warehouseId)
-        {
-            var result = await _poService.ImportToWarehouseAsync(poId, warehouseId);
-            return StatusCode((int)result.StatusCode, result);
-        }
-
         [HttpPost("from-shortages")]
         [Authorize(Roles = "WAREHOUSE_MANAGER")]
         public async Task<IActionResult> CreateFromShortages([FromBody] CreatePurchaseOrderRequest request)
@@ -92,6 +83,22 @@ namespace cpms_API.Controllers
         {
             var result = await _poService.ReceivePurchaseOrderAsync(poId, request);
             return result.IsSuccess ? Ok(result) : StatusCode((int)result.StatusCode, result);
+        }
+
+        [HttpPost("{poId}/ship")]
+        [Authorize(Roles = "WAREHOUSE_MANAGER")]
+        public async Task<IActionResult> Ship(int poId)
+        {
+            var result = await _poService.MarkShippedAsync(poId);
+            return StatusCode((int)result.StatusCode, result);
+        }
+
+        [HttpPost("{poId}/cancel")]
+        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
+        public async Task<IActionResult> Cancel(int poId)
+        {
+            var result = await _poService.CancelPurchaseOrderAsync(poId);
+            return StatusCode((int)result.StatusCode, result);
         }
     }
 }

@@ -12,6 +12,9 @@ namespace cpms_Domain.Models
         public int UserID { get; set; }
         public string ActivityName { get; set; } = null!;
         public string EntityType { get; set; } = null!;
+        public string? EntityId { get; set; }
+        public string? ChangesJson { get; set; }
+        public string? CorrelationId { get; set; }
 
         // Navigation Property
         public virtual UserAccount User { get; set; } = null!;

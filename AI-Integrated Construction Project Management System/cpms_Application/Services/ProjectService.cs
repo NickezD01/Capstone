@@ -10,9 +10,11 @@ using cpms_Domain.Models;
 using DocumentFormat.OpenXml.Packaging;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -42,8 +44,9 @@ namespace cpms_Application.Services
                 var currentUser = _claimService.GetUserClaim();
                 if (!string.Equals(currentUser.Role, Role.PM.ToString(), StringComparison.OrdinalIgnoreCase) || request.PMUserID != currentUser.Id)
                     return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "A project manager may only create a project assigned to their own account.");
-                if (request.TotalProjectBudget < 0 || request.BaselineEnd < request.BaselineStart)
-                    return apiResponse.SetBadRequest("Project budget cannot be negative and baseline end must not precede baseline start.");
+                if (request.TotalProjectBudget < 0 || request.BaselineEnd < request.BaselineStart ||
+                    request.StartDate < request.BaselineStart || request.StartDate > request.BaselineEnd)
+                    return apiResponse.SetBadRequest("Project budget cannot be negative and the start date must be inside the baseline period.");
                 // Kiểm tra PM có tồn tại không
                 var pm = await _unitOfWork.UserAccounts.GetByIdAsync(request.PMUserID);
 
@@ -207,22 +210,23 @@ namespace cpms_Application.Services
                                 address = text.Replace("Địa điểm:", "", StringComparison.OrdinalIgnoreCase).Trim();
 
                             else if (text.StartsWith("Ngân sách tổng:", StringComparison.OrdinalIgnoreCase))
-                                decimal.TryParse(text.Replace("Ngân sách tổng:", "", StringComparison.OrdinalIgnoreCase).Trim(), out totalBudget);
+                            {
+                                var value = text.Replace("Ngân sách tổng:", "", StringComparison.OrdinalIgnoreCase).Trim();
+                                if (!decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out totalBudget))
+                                    throw new FormatException("Ngân sách tổng must use invariant numeric format, for example 1250000.50.");
+                            }
 
                             else if (text.StartsWith("Tiền tệ:", StringComparison.OrdinalIgnoreCase))
                                 currency = text.Replace("Tiền tệ:", "", StringComparison.OrdinalIgnoreCase).Trim();
 
-                            else if (text.StartsWith("Ngày thực tế bắt đầu:", StringComparison.OrdinalIgnoreCase) &&
-                                     DateTime.TryParse(text.Replace("Ngày thực tế bắt đầu:", "", StringComparison.OrdinalIgnoreCase).Trim(), out var parsedStart))
-                                startDate = parsedStart;
+                            else if (text.StartsWith("Ngày thực tế bắt đầu:", StringComparison.OrdinalIgnoreCase))
+                                startDate = ParseImportDate(text.Replace("Ngày thực tế bắt đầu:", "", StringComparison.OrdinalIgnoreCase).Trim());
 
-                            else if (text.StartsWith("Ngày kế hoạch bắt đầu:", StringComparison.OrdinalIgnoreCase) &&
-                                     DateTime.TryParse(text.Replace("Ngày kế hoạch bắt đầu:", "", StringComparison.OrdinalIgnoreCase).Trim(), out var parsedBaselineStart))
-                                baselineStart = parsedBaselineStart;
+                            else if (text.StartsWith("Ngày kế hoạch bắt đầu:", StringComparison.OrdinalIgnoreCase))
+                                baselineStart = ParseImportDate(text.Replace("Ngày kế hoạch bắt đầu:", "", StringComparison.OrdinalIgnoreCase).Trim());
 
-                            else if (text.StartsWith("Ngày kế hoạch kết thúc:", StringComparison.OrdinalIgnoreCase) &&
-                                     DateTime.TryParse(text.Replace("Ngày kế hoạch kết thúc:", "", StringComparison.OrdinalIgnoreCase).Trim(), out var parsedBaselineEnd))
-                                baselineEnd = parsedBaselineEnd;
+                            else if (text.StartsWith("Ngày kế hoạch kết thúc:", StringComparison.OrdinalIgnoreCase))
+                                baselineEnd = ParseImportDate(text.Replace("Ngày kế hoạch kết thúc:", "", StringComparison.OrdinalIgnoreCase).Trim());
                         }
                     }
                 }
@@ -232,7 +236,7 @@ namespace cpms_Application.Services
                     await _unitOfWork.RollbackTransactionAsync();
                     return apiResponse.SetBadRequest("File văn bản sai cấu trúc hoặc trống. Không tìm thấy dòng chứa tiêu đề 'Tên dự án:'.");
                 }
-                if (projectName.Length > 200 || address.Length > 500 || totalBudget < 0 || baselineEnd < baselineStart)
+                if (projectName.Length > 200 || address.Length > 500 || totalBudget < 0 || baselineEnd < baselineStart || startDate > baselineEnd)
                 {
                     await _unitOfWork.RollbackTransactionAsync();
                     return apiResponse.SetBadRequest(message: "The imported project contains invalid lengths, a negative budget, or an invalid baseline date range.");
@@ -271,6 +275,15 @@ namespace cpms_Application.Services
             }
         }
 
+        private static DateTime ParseImportDate(string value)
+        {
+            var formats = new[] { "yyyy-MM-dd", "yyyy-MM-ddTHH:mm:ss", "O" };
+            if (DateTime.TryParseExact(value, formats, CultureInfo.InvariantCulture,
+                    DateTimeStyles.AllowWhiteSpaces | DateTimeStyles.AssumeUniversal, out var parsed))
+                return parsed;
+            throw new FormatException($"Invalid date '{value}'. Use yyyy-MM-dd.");
+        }
+
         public async Task<ApiResponse> AssignMaterialRequirementToTaskAsync(int taskId, CreateTaskMaterialRequirementRequest request)
         {
             var apiResponse = new ApiResponse();
@@ -289,6 +302,14 @@ namespace cpms_Application.Services
                 var currentUser = _claimService.GetUserClaim();
                 if (project == null || !string.Equals(currentUser.Role, Role.PM.ToString(), StringComparison.OrdinalIgnoreCase) || project.PMUserID != currentUser.Id)
                     return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You may only edit planned materials for a project you manage.");
+                if (project.Status is ProjectStatus.COMPLETED or ProjectStatus.CANCELLED)
+                    return apiResponse.SetConflict("Closed projects cannot accept material-plan changes.");
+                if (taskItem.Status is cpms_Domain.Models.TaskStatus.COMPLETED or cpms_Domain.Models.TaskStatus.CANCELLED)
+                    return apiResponse.SetConflict("Closed tasks cannot accept material-plan changes.");
+                var downstreamRequest = await _unitOfWork.MaterialRequests.GetAsync(r =>
+                    r.TaskId == taskId && r.Status != MaterialRequestStatuses.Rejected && r.Status != MaterialRequestStatuses.Released);
+                if (downstreamRequest != null)
+                    return apiResponse.SetConflict("Material planning is locked after a material request has entered fulfillment.");
 
                 MaterialVariant? variant;
                 if (request.VariantId != 0)
@@ -298,7 +319,7 @@ namespace cpms_Application.Services
                     var candidates = await _unitOfWork.MaterialVariants.GetAllAsync(v => v.MaterialId == request.MaterialId && v.IsActive);
                     variant = candidates.Count == 1 ? candidates[0] : null;
                 }
-                if (variant == null)
+                if (variant == null || !variant.IsActive)
                     return apiResponse.SetNotFound(message: "Material variant not found.");
 
                 var existingRequirement = await _unitOfWork.TaskMaterialRequirements
@@ -362,6 +383,7 @@ namespace cpms_Application.Services
         public async Task<ApiResponse> CalculateMRPForProjectAsync(int projectId, int? warehouseId = null)
         {
             var apiResponse = new ApiResponse();
+            var versionTransactionStarted = false;
             try
             {
                 var project = await _unitOfWork.Projects.GetByIdAsync(projectId);
@@ -369,6 +391,8 @@ namespace cpms_Application.Services
                     return apiResponse.SetNotFound("Dự án không tồn tại.");
                 var currentUser = _claimService.GetUserClaim();
                 Warehouse? selectedWarehouse = null;
+                if (!warehouseId.HasValue)
+                    return apiResponse.SetBadRequest("warehouseId is required so inventory from another warehouse cannot hide a local shortage.");
                 if (warehouseId.HasValue)
                 {
                     selectedWarehouse = await _unitOfWork.Warehouses.GetByIdAsync(warehouseId.Value);
@@ -420,13 +444,17 @@ namespace cpms_Application.Services
 
                 var projectOpenOrderLines = await _unitOfWork.OrderLineItems.GetAllAsync(
                     filter: line => line.PurchaseOrder.ProjectId == projectId &&
-                                    line.PurchaseOrder.Status == PurchaseOrderStatus.APPROVED &&
-                                    line.ReceivedQuantity < line.Quantity &&
+                                    (line.PurchaseOrder.Status == PurchaseOrderStatus.APPROVED ||
+                                     line.PurchaseOrder.Status == PurchaseOrderStatus.PROCESSING ||
+                                     line.PurchaseOrder.Status == PurchaseOrderStatus.SHIPPED ||
+                                     line.PurchaseOrder.Status == PurchaseOrderStatus.PARTIALLY_RECEIVED) &&
+                                    line.ReceivedQuantity + line.DamagedQuantity + line.MissingQuantity < line.Quantity &&
                                     (!warehouseId.HasValue || line.PurchaseOrder.WarehouseId == warehouseId.Value),
                     include: query => query.Include(line => line.PurchaseOrder));
                 var openOrderForProjectByVariant = projectOpenOrderLines
                     .GroupBy(line => line.VariantId)
-                    .ToDictionary(g => g.Key, g => g.Sum(line => line.Quantity - line.ReceivedQuantity));
+                    .ToDictionary(g => g.Key, g => g.Sum(line =>
+                        line.Quantity - line.ReceivedQuantity - line.DamagedQuantity - line.MissingQuantity));
 
                 var grossRequirementsGroup = requirementsList
                     .GroupBy(r => new
@@ -459,6 +487,8 @@ namespace cpms_Application.Services
                                  (!warehouseId.HasValue || i.WarehouseId == warehouseId.Value)
                 );
                 var inventoriesList = currentInventories.ToList();
+                var alternateInventories = await _unitOfWork.Inventories.GetAllAsync(
+                    filter: i => requiredVariantIds.Contains(i.VariantId) && i.WarehouseId != warehouseId.Value);
 
                 var mrpResultList = new List<MRPCalculationResponse>();
 
@@ -473,7 +503,11 @@ namespace cpms_Application.Services
                         .Where(i => i.VariantId == gross.VariantId)
                         .Sum(i => i.ReservedQuantity);
 
-                    decimal available = currentStock - reserved;
+                    decimal quarantined = inventoriesList
+                        .Where(i => i.VariantId == gross.VariantId)
+                        .Sum(i => i.QuarantineQuantity);
+
+                    decimal available = currentStock - reserved - quarantined;
                     if (available < 0) available = 0;
 
                     decimal reservedForProject = reservedForProjectByVariant.GetValueOrDefault(gross.VariantId);
@@ -482,11 +516,31 @@ namespace cpms_Application.Services
                     decimal netRequired = gross.RemainingGross - available - reservedForProject - onOrder;
                     if (netRequired < 0) netRequired = 0;
 
+                    var remainingForTransfer = netRequired;
+                    var transferRecommendations = alternateInventories
+                        .Where(i => i.VariantId == gross.VariantId && i.QuantityOnHand - i.ReservedQuantity - i.QuarantineQuantity > 0)
+                        .OrderByDescending(i => i.QuantityOnHand - i.ReservedQuantity - i.QuarantineQuantity)
+                        .Select(i =>
+                        {
+                            var suggested = Math.Min(remainingForTransfer,
+                                Math.Max(0, i.QuantityOnHand - i.ReservedQuantity - i.QuarantineQuantity));
+                            remainingForTransfer -= suggested;
+                            return new MRPTransferRecommendation
+                            {
+                                SourceWarehouseId = i.WarehouseId,
+                                DestinationWarehouseId = warehouseId.Value,
+                                VariantId = gross.VariantId,
+                                SuggestedQuantity = suggested
+                            };
+                        })
+                        .Where(x => x.SuggestedQuantity > 0)
+                        .ToList();
+
                     mrpResultList.Add(new MRPCalculationResponse
                     {
                         VariantId = gross.VariantId,
                         WarehouseId = warehouseId,
-                        InventoryScope = warehouseId.HasValue ? "WAREHOUSE" : "ALL_WAREHOUSES",
+                        InventoryScope = "WAREHOUSE",
                         MaterialId = gross.MaterialId,
                         MaterialName = gross.MaterialName,
                         VariantName = gross.VariantName,
@@ -499,14 +553,45 @@ namespace cpms_Application.Services
                         AvailableQuantity = available,
                         OnOrderQuantity = onOrder,
                         NetQuantityRequired = netRequired,
-                        EarliestStartDate = gross.EarliestNeedDate
+                        EarliestStartDate = gross.EarliestNeedDate,
+                        TransferRecommendations = transferRecommendations
                     });
+                }
+
+                await _unitOfWork.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+                versionTransactionStarted = true;
+                var previousRuns = await _unitOfWork.MrpPlanningRuns.GetAllAsync(
+                    r => r.ProjectId == projectId && r.WarehouseId == warehouseId.Value);
+                var run = new MrpPlanningRun
+                {
+                    ProjectId = projectId,
+                    WarehouseId = warehouseId.Value,
+                    Version = previousRuns.Count == 0 ? 1 : previousRuns.Max(r => r.Version) + 1,
+                    CalculatedAt = DateTime.UtcNow,
+                    CalculatedByUserId = currentUser.Id,
+                    SnapshotJson = JsonSerializer.Serialize(mrpResultList),
+                    TransferRecommendationsJson = JsonSerializer.Serialize(mrpResultList.SelectMany(x => x.TransferRecommendations))
+                };
+                await _unitOfWork.MrpPlanningRuns.AddAsync(run);
+                await _unitOfWork.SaveChangeAsync();
+                await _unitOfWork.CommitTransactionAsync();
+                versionTransactionStarted = false;
+                foreach (var item in mrpResultList)
+                {
+                    item.PlanningRunId = run.RunId;
+                    item.PlanningVersion = run.Version;
                 }
 
                 return apiResponse.SetOk(mrpResultList);
             }
+            catch (DbUpdateException)
+            {
+                if (versionTransactionStarted) await _unitOfWork.RollbackTransactionAsync();
+                return apiResponse.SetConflict("Another MRP run was created concurrently. Run the calculation again.");
+            }
             catch (Exception)
             {
+                if (versionTransactionStarted) await _unitOfWork.RollbackTransactionAsync();
                 return apiResponse.SetApiResponse(System.Net.HttpStatusCode.InternalServerError, false, "Unable to calculate MRP.");
             }
         }
@@ -531,7 +616,8 @@ namespace cpms_Application.Services
                 decimal oldBudget = project.TotalProjectBudget;
                 var newBudget = oldBudget + request.Amount;
                 var committedOrders = await _unitOfWork.PurchaseOrders.GetAllAsync(
-                    p => p.ProjectId == request.ProjectId && p.Status != PurchaseOrderStatus.REJECTED);
+                    p => p.ProjectId == request.ProjectId && p.Status != PurchaseOrderStatus.REJECTED &&
+                         p.Status != PurchaseOrderStatus.CANCELLED);
                 var committedAmount = committedOrders.Sum(p => p.TotalAmount);
                 if (newBudget < 0 || newBudget < committedAmount)
                 {
@@ -602,6 +688,106 @@ namespace cpms_Application.Services
                 return InternalError("Unable to retrieve the project budget history.");
             }
         }
+
+        public async Task<ApiResponse> UpdateProjectAsync(int projectId, UpdateProjectRequest request)
+        {
+            var project = await _unitOfWork.Projects.GetByIdAsync(projectId);
+            if (project == null) return new ApiResponse().SetNotFound("Project not found.");
+            var user = _claimService.GetUserClaim();
+            if (!IsRole(user, Role.PM) || project.PMUserID != user.Id)
+                return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Only the owning project manager may update this project.");
+            if (!MatchesRowVersion(project.RowVersion, request.RowVersion))
+                return new ApiResponse().SetConflict("Project changed. Reload and retry.");
+            try
+            {
+                project.UpdatePlan(request.ProjectName, request.Address, request.StartDate, request.BaselineStart, request.BaselineEnd);
+                await _unitOfWork.SaveChangeAsync();
+                return await GetProjectByIdAsync(projectId);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or ArgumentException)
+            {
+                return new ApiResponse().SetConflict(ex.Message);
+            }
+        }
+
+        public async Task<ApiResponse> ChangeProjectStatusAsync(int projectId, string action, ProjectLifecycleRequest request)
+        {
+            var normalizedAction = action.Trim().ToLowerInvariant();
+            var cancellationTransaction = normalizedAction == "cancel";
+            if (cancellationTransaction)
+                await _unitOfWork.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+
+            async Task<ApiResponse> Abort(ApiResponse response)
+            {
+                if (cancellationTransaction) await _unitOfWork.RollbackTransactionAsync();
+                return response;
+            }
+
+            try
+            {
+                var project = await _unitOfWork.Projects.GetAsync(p => p.ProjectId == projectId,
+                    query => query.Include(p => p.Tasks));
+                if (project == null) return await Abort(new ApiResponse().SetNotFound("Project not found."));
+                var user = _claimService.GetUserClaim();
+                if (!IsRole(user, Role.ADMIN) && (!IsRole(user, Role.PM) || project.PMUserID != user.Id))
+                    return await Abort(new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You cannot change this project."));
+                if (!MatchesRowVersion(project.RowVersion, request.RowVersion))
+                    return await Abort(new ApiResponse().SetConflict("Project changed. Reload and retry."));
+
+                switch (normalizedAction)
+                {
+                    case "start": project.Start(DateTime.UtcNow); break;
+                    case "pause": project.Pause(); break;
+                    case "cancel":
+                        var activeReservations = await _unitOfWork.InventoryReservations.GetAsync(r =>
+                            r.MaterialRequest.ProjectId == projectId && r.Status == InventoryReservationStatuses.Active);
+                        var openOrder = await _unitOfWork.PurchaseOrders.GetAsync(p => p.ProjectId == projectId &&
+                            (p.Status == PurchaseOrderStatus.PENDING || p.Status == PurchaseOrderStatus.APPROVED ||
+                             p.Status == PurchaseOrderStatus.PROCESSING || p.Status == PurchaseOrderStatus.SHIPPED ||
+                             p.Status == PurchaseOrderStatus.PARTIALLY_RECEIVED));
+                        if (activeReservations != null || openOrder != null)
+                            return await Abort(new ApiResponse().SetConflict("Release active inventory reservations and close or cancel open purchase orders before cancelling the project."));
+                        project.Cancel();
+                        break;
+                    case "reopen": project.Reopen(); break;
+                    case "complete": project.Complete(project.Tasks.Count > 0 && project.Tasks.All(t => t.Status == cpms_Domain.Models.TaskStatus.COMPLETED)); break;
+                    default: return await Abort(new ApiResponse().SetBadRequest("Supported project actions are start, pause, cancel, reopen, and complete."));
+                }
+                await _unitOfWork.SaveChangeAsync();
+                if (cancellationTransaction) await _unitOfWork.CommitTransactionAsync();
+                return new ApiResponse().SetOk(new { project.ProjectId, Status = project.Status.ToString(), RowVersion = Convert.ToBase64String(project.RowVersion) });
+            }
+            catch (InvalidOperationException ex)
+            {
+                if (cancellationTransaction) await _unitOfWork.RollbackTransactionAsync();
+                return new ApiResponse().SetConflict(ex.Message);
+            }
+            catch
+            {
+                if (cancellationTransaction) await _unitOfWork.RollbackTransactionAsync();
+                throw;
+            }
+        }
+
+        public async Task<ApiResponse> ReassignProjectManagerAsync(int projectId, ReassignProjectManagerRequest request)
+        {
+            var user = _claimService.GetUserClaim();
+            if (!IsRole(user, Role.ADMIN))
+                return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Administrator access is required.");
+            var project = await _unitOfWork.Projects.GetByIdAsync(projectId);
+            if (project == null) return new ApiResponse().SetNotFound("Project not found.");
+            if (!MatchesRowVersion(project.RowVersion, request.RowVersion))
+                return new ApiResponse().SetConflict("Project changed. Reload and retry.");
+            var manager = await _unitOfWork.UserAccounts.GetByIdAsync(request.ProjectManagerUserId);
+            if (manager == null || manager.Role != Role.PM || manager.IsEmailVerified != true)
+                return new ApiResponse().SetBadRequest("The new manager must be a verified PM.");
+            project.PMUserID = manager.Id;
+            await _unitOfWork.SaveChangeAsync();
+            return await GetProjectByIdAsync(projectId);
+        }
+
+        private static bool MatchesRowVersion(byte[] current, string supplied) =>
+            !string.IsNullOrWhiteSpace(supplied) && Convert.ToBase64String(current).Equals(supplied, StringComparison.Ordinal);
 
         private async Task<bool> CanReadProjectAsync(int projectId, int projectManagerId)
         {

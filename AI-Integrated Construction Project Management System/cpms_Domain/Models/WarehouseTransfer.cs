@@ -32,6 +32,7 @@ namespace cpms_Domain.Models
         public const string Approved = "APPROVED";
         public const string InTransit = "IN_TRANSIT";
         public const string Received = "RECEIVED";
+        public const string ClosedWithVariance = "CLOSED_WITH_VARIANCE";
         public const string Rejected = "REJECTED";
         public const string Cancelled = "CANCELLED";
     }

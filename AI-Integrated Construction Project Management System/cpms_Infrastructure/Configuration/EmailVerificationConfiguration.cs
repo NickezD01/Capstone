@@ -18,6 +18,9 @@ namespace cpms_Infrastructure.Configuration
             builder.Property(x => x.VerificationCode)
                 .IsRequired()
                 .HasMaxLength(20);
+            builder.Property(x => x.Purpose).IsRequired().HasMaxLength(30).HasDefaultValue(SecurityTokenPurposes.EmailVerification);
+            builder.Property(x => x.FailedAttempts).HasDefaultValue(0);
+            builder.HasIndex(x => new { x.UserId, x.Purpose, x.IsUsed, x.ExpiresAt });
 
             builder.HasOne(x => x.User)
                 .WithMany(x => x.EmailVerifications)

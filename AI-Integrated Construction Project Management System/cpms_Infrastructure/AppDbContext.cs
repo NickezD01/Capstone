@@ -25,10 +25,12 @@ namespace cpms_Infrastructure
         // ========================================================
         public DbSet<UserAccount> UserAccounts { get; set; }
         public DbSet<EmailVerification> EmailVerifications { get; set; }
+        public DbSet<EmailOutboxMessage> EmailOutboxMessages { get; set; }
         public DbSet<RefreshToken> RefreshTokens { get; set; }
         public DbSet<ActivityLog> Activities { get; set; }
         public DbSet<AIAlert> AIAlerts { get; set; }
         public DbSet<SystemReport> SystemReports { get; set; }
+        public DbSet<AuthRateLimitEntry> AuthRateLimitEntries { get; set; }
 
         // ========================================================
         // CORE PROJECT MANAGEMENT & PROGRESS
@@ -37,6 +39,7 @@ namespace cpms_Infrastructure
         public DbSet<TaskItem> TaskItems { get; set; }
         public DbSet<ProgressReport> ProgressReports { get; set; }
         public DbSet<ProjectBudgetHistory> ProjectBudgetHistories { get; set; }
+        public DbSet<MrpPlanningRun> MrpPlanningRuns { get; set; }
         // ========================================================
         // WAREHOUSE & MATERIAL INVENTORY (Đã đồng bộ chuẩn ERD)
         // ========================================================
@@ -44,11 +47,15 @@ namespace cpms_Infrastructure
         public DbSet<InventoryRecord> InventoryRecords { get; set; } // Thay thế cho Inventories cũ
         public DbSet<InventoryReservation> InventoryReservations { get; set; }
         public DbSet<InventoryTransaction> InventoryTransactions { get; set; }
+        public DbSet<InventoryAdjustment> InventoryAdjustments { get; set; }
+        public DbSet<PhysicalCountSession> PhysicalCountSessions { get; set; }
+        public DbSet<PhysicalCountLine> PhysicalCountLines { get; set; }
         public DbSet<Material> Materials { get; set; }
         public DbSet<MaterialVariant> MaterialVariants { get; set; }
         public DbSet<Category> Categories { get; set; }
         public DbSet<MaterialRequest> MaterialRequests { get; set; }
         public DbSet<MaterialRequisition> MaterialRequisitions { get; set; }
+        public DbSet<MaterialReturn> MaterialReturns { get; set; }
 
         // ========================================================
         // SUPPLIERS & PURCHASING ORDERS
@@ -61,6 +68,7 @@ namespace cpms_Infrastructure
         public DbSet<TaskMaterialRequirement> TaskMaterialRequirements { get; set; }
         public DbSet<WarehouseTransfer> WarehouseTransfers { get; set; }
         public DbSet<WarehouseTransferItem> WarehouseTransferItems { get; set; }
+        public DbSet<TransferInventoryReservation> TransferInventoryReservations { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

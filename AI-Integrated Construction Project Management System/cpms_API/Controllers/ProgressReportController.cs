@@ -35,5 +35,37 @@ namespace cpms_API.Controllers
             var response = await _progressReportService.GetReportsByTaskIdAsync(taskId);
             return StatusCode((int)response.StatusCode, response);
         }
+
+        [HttpPost("{reportId:int}/approve")]
+        [Authorize(Roles = "PM")]
+        public async Task<IActionResult> Approve(int reportId, ReviewProgressReportRequest request)
+        {
+            var response = await _progressReportService.ApproveReportAsync(reportId, request);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpPost("{reportId:int}/reject")]
+        [Authorize(Roles = "PM")]
+        public async Task<IActionResult> Reject(int reportId, ReviewProgressReportRequest request)
+        {
+            var response = await _progressReportService.RejectReportAsync(reportId, request);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpPost("{reportId:int}/correct")]
+        [Authorize(Roles = "PM")]
+        public async Task<IActionResult> Correct(int reportId, CorrectProgressReportRequest request)
+        {
+            var response = await _progressReportService.CorrectReportAsync(reportId, request);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpPost("{reportId:int}/reverse")]
+        [Authorize(Roles = "PM")]
+        public async Task<IActionResult> Reverse(int reportId, ReviewProgressReportRequest request)
+        {
+            var response = await _progressReportService.ReverseReportAsync(reportId, request);
+            return StatusCode((int)response.StatusCode, response);
+        }
     }
 }

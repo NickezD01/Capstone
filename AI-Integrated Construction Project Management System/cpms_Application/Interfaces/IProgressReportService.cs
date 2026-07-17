@@ -12,5 +12,9 @@ namespace cpms_Application.Interfaces
     {
         Task<ApiResponse> SubmitReportAsync(SubmitProgressReportRequest request);
         Task<ApiResponse> GetReportsByTaskIdAsync(int taskId);
+        Task<ApiResponse> ApproveReportAsync(int reportId, ReviewProgressReportRequest request);
+        Task<ApiResponse> RejectReportAsync(int reportId, ReviewProgressReportRequest request);
+        Task<ApiResponse> CorrectReportAsync(int reportId, CorrectProgressReportRequest request);
+        Task<ApiResponse> ReverseReportAsync(int reportId, ReviewProgressReportRequest request);
     }
 }

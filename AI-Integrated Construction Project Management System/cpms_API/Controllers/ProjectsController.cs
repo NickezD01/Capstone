@@ -96,5 +96,47 @@ namespace cpms_API.Controllers
             var response = await _projectService.GetBudgetHistoriesByProjectIdAsync(projectId);
             return StatusCode((int)response.StatusCode, response);
         }
+
+        [HttpPut("{projectId:int}")]
+        [Authorize(Roles = "PM")]
+        public async Task<IActionResult> UpdateProject(int projectId, UpdateProjectRequest request)
+        {
+            var response = await _projectService.UpdateProjectAsync(projectId, request);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpPost("{projectId:int}/start")]
+        [Authorize(Roles = "PM,ADMIN")]
+        public Task<IActionResult> Start(int projectId, ProjectLifecycleRequest request) => ChangeStatus(projectId, "start", request);
+
+        [HttpPost("{projectId:int}/pause")]
+        [Authorize(Roles = "PM,ADMIN")]
+        public Task<IActionResult> Pause(int projectId, ProjectLifecycleRequest request) => ChangeStatus(projectId, "pause", request);
+
+        [HttpPost("{projectId:int}/cancel")]
+        [Authorize(Roles = "PM,ADMIN")]
+        public Task<IActionResult> Cancel(int projectId, ProjectLifecycleRequest request) => ChangeStatus(projectId, "cancel", request);
+
+        [HttpPost("{projectId:int}/reopen")]
+        [Authorize(Roles = "PM,ADMIN")]
+        public Task<IActionResult> Reopen(int projectId, ProjectLifecycleRequest request) => ChangeStatus(projectId, "reopen", request);
+
+        [HttpPost("{projectId:int}/complete")]
+        [Authorize(Roles = "PM,ADMIN")]
+        public Task<IActionResult> Complete(int projectId, ProjectLifecycleRequest request) => ChangeStatus(projectId, "complete", request);
+
+        private async Task<IActionResult> ChangeStatus(int projectId, string action, ProjectLifecycleRequest request)
+        {
+            var response = await _projectService.ChangeProjectStatusAsync(projectId, action, request);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpPut("{projectId:int}/project-manager")]
+        [Authorize(Roles = "ADMIN")]
+        public async Task<IActionResult> ReassignProjectManager(int projectId, ReassignProjectManagerRequest request)
+        {
+            var response = await _projectService.ReassignProjectManagerAsync(projectId, request);
+            return StatusCode((int)response.StatusCode, response);
+        }
     }
 }

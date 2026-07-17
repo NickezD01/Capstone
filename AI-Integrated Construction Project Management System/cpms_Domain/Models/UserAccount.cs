@@ -15,8 +15,13 @@ namespace cpms_Domain.Models
         public string? FirstName { get; set; }
         public string? LastName { get; set; }
         public string? Email { get; set; }
+        public string NormalizedEmail { get; private set; } = string.Empty;
         public string? PhoneNumber { get; set; }
         public bool? IsEmailVerified { get; set; } = false;
+        public int FailedLoginAttempts { get; set; }
+        public DateTime? LockoutEnd { get; set; }
+        public DateTime PasswordChangedAt { get; set; } = DateTime.UtcNow;
+        public byte[] RowVersion { get; set; } = Array.Empty<byte>();
         public string? ImgUrl { get; set; }
         public Role Role { get; set; }
 
@@ -43,8 +48,7 @@ namespace cpms_Domain.Models
         // Hoạt động hệ thống (Bảng "Activities" dưới đáy sơ đồ ERD)
         public virtual ICollection<ActivityLog> Activities { get; set; } = new List<ActivityLog>();
 
-        // Cảnh báo AI & Báo cáo hệ thống sở hữu bởi User
-        public virtual ICollection<AIAlert> AIAlerts { get; set; } = new List<AIAlert>();
+        // AI alerts are owned by projects. User ownership is intentionally not modeled.
         public virtual ICollection<SystemReport> SystemReports { get; set; } = new List<SystemReport>();
 
         // Token & Bảo mật tài khoản
@@ -58,6 +62,7 @@ namespace cpms_Domain.Models
         PM,
         WAREHOUSE_MANAGER,
         SUPPLIER,
-        CUSTOMER
+        CUSTOMER,
+        WORKER
     }
 }

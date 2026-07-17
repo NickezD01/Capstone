@@ -24,5 +24,16 @@ namespace cpms_Application.Response.MaterialRequest
         public decimal OnOrderQuantity { get; set; }    
         public decimal NetQuantityRequired { get; set; }
         public DateTime EarliestStartDate { get; set; }
+        public long PlanningRunId { get; set; }
+        public int PlanningVersion { get; set; }
+        public List<MRPTransferRecommendation> TransferRecommendations { get; set; } = new();
+    }
+
+    public class MRPTransferRecommendation
+    {
+        public int SourceWarehouseId { get; set; }
+        public int DestinationWarehouseId { get; set; }
+        public int VariantId { get; set; }
+        public decimal SuggestedQuantity { get; set; }
     }
 }

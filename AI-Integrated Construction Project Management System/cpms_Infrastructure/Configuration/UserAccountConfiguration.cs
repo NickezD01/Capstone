@@ -18,9 +18,15 @@ namespace cpms_Infrastructure.Configuration
 
             // Cấu hình thuộc tính người dùng
             builder.Property(u => u.Email).IsRequired().HasMaxLength(150);
-            builder.HasIndex(u => u.Email).IsUnique();
+            builder.Property(u => u.NormalizedEmail)
+                   .HasMaxLength(150)
+                   .HasComputedColumnSql("UPPER(LTRIM(RTRIM([Email])))", stored: true);
+            builder.HasIndex(u => u.NormalizedEmail).IsUnique();
             builder.Property(u => u.PasswordHash).IsRequired();
             builder.Property(u => u.PasswordSalt).IsRequired();
+            builder.Property(u => u.FailedLoginAttempts).HasDefaultValue(0);
+            builder.Property(u => u.PasswordChangedAt).HasDefaultValueSql("GETUTCDATE()");
+            builder.Property(u => u.RowVersion).IsRowVersion();
 
             builder.Property(u => u.Role)
                    .HasMaxLength(20)

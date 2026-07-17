@@ -22,6 +22,7 @@ namespace cpms_Application.Response.Project
 
         // 3. Tài chính
         public decimal TotalProjectBudget { get; set; }
+        public decimal ActualCost { get; set; }
         public string Currency { get; set; } = "VND";
 
         // 4. Thông tin PM (Để FE hiển thị luôn "Quản lý bởi: Nguyễn Văn A")
@@ -31,5 +32,6 @@ namespace cpms_Application.Response.Project
         // 5. Thống kê (Không bắt buộc nhưng FE rất thích)
         public int TotalTasks { get; set; }
         public int TotalAIAlerts { get; set; }
+        public string RowVersion { get; set; } = string.Empty;
     }
 }

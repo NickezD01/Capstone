@@ -21,6 +21,7 @@ namespace cpms_Application.Repository
         Task<int> CountAsync();
         Task AddRangeAsync(List<T> entities);
         Task<List<T>> GetAllAsync(System.Linq.Expressions.Expression<Func<T, bool>>? filter);
+        Task<List<T>> GetAllIgnoringQueryFiltersAsync(Expression<Func<T, bool>>? filter);
         Task<T> GetAsync(System.Linq.Expressions.Expression<Func<T, bool>> filter, Func<IQueryable<T>, IIncludableQueryable<T, object>>? include);
         Task<List<T>> GetAllAsync(System.Linq.Expressions.Expression<Func<T, bool>>? filter,
                                                Func<IQueryable<T>, IIncludableQueryable<T, object>>? include = null, int pageIndex = 1, int pageSize = 0);

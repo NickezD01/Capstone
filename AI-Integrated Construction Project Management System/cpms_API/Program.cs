@@ -17,6 +17,12 @@ using Microsoft.OpenApi.Models;
 using System.Security.Claims;
 using System.Text;
 using System.Threading.RateLimiting;
+using cpms_API.BackgroundServices;
+using cpms_API.Health;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.HttpOverrides;
+using System.Net;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -36,6 +42,22 @@ builder.Services.AddControllers();
 builder.Services.Configure<ApiBehaviorOptions>(options =>
 {
     options.SuppressModelStateInvalidFilter = false;
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var errors = context.ModelState
+            .Where(x => x.Value?.Errors.Count > 0)
+            .ToDictionary(x => x.Key, x => x.Value!.Errors.Select(e =>
+                string.IsNullOrWhiteSpace(e.ErrorMessage) ? "The supplied value is invalid." : e.ErrorMessage).ToArray());
+        return new BadRequestObjectResult(new cpms_Application.Response.ApiResponse()
+            .SetBadRequest(result: errors, message: "Request validation failed."));
+    };
+});
+
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    foreach (var value in builder.Configuration.GetSection("ReverseProxy:KnownProxies").Get<string[]>() ?? Array.Empty<string>())
+        if (IPAddress.TryParse(value, out var address)) options.KnownProxies.Add(address);
 });
 
 // Kích hoạt tính năng tự động validate đầu vào của FluentValidation trên Controller
@@ -48,11 +70,13 @@ builder.Services.AddValidatorsFromAssemblyContaining<MapperConfigurationsProfile
 // ======================================================
 // DATABASE CONFIGURATION
 // ======================================================
-builder.Services.AddDbContext<AppDbContext>(options =>
+builder.Services.AddScoped<AuditSaveChangesInterceptor>();
+builder.Services.AddDbContext<AppDbContext>((serviceProvider, options) =>
 {
     var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
     options.UseSqlServer(connectionString, b => b.MigrationsAssembly("cpms_Infrastructure")); // 🚀 ƯU TIÊN: Chỉ định rõ Assembly chứa Migration để tránh lỗi Command-line
 
+    options.AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>());
     options.ConfigureWarnings(warnings =>
         warnings.Ignore(CoreEventId.NavigationBaseIncludeIgnored));
 });
@@ -102,24 +126,16 @@ builder.Services
                 var account = await db.UserAccounts.AsNoTracking().SingleOrDefaultAsync(x => x.Id == userId);
                 if (account == null || account.IsEmailVerified != true ||
                     !string.Equals(account.Role.ToString(), roleValue, StringComparison.OrdinalIgnoreCase))
+                {
                     context.Fail("The account is inactive or its authorization has changed. Sign in again.");
+                    return;
+                }
+                var passwordVersion = context.Principal?.FindFirst("pwd")?.Value;
+                if (!long.TryParse(passwordVersion, out var issuedPasswordTicks) || issuedPasswordTicks != account.PasswordChangedAt.Ticks)
+                    context.Fail("The password changed after this token was issued. Sign in again.");
             }
         };
     });
-
-builder.Services.AddRateLimiter(options =>
-{
-    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.AddPolicy("auth", context => RateLimitPartition.GetFixedWindowLimiter(
-        partitionKey: $"{context.Connection.RemoteIpAddress}:{context.Request.Path}",
-        factory: _ => new FixedWindowRateLimiterOptions
-        {
-            PermitLimit = 5,
-            Window = TimeSpan.FromMinutes(1),
-            QueueLimit = 0,
-            AutoReplenishment = true
-        }));
-});
 
 // ======================================================
 // SWAGGER / OPENAPI
@@ -176,6 +192,12 @@ builder.Services.AddScoped<ITaskService, TaskService>();
 builder.Services.AddScoped<IProgressReportService, ProgressReportService>();
 builder.Services.AddScoped<IMaterialRequestService, MaterialRequestService>();
 builder.Services.AddScoped<IWarehouseTransferService, WarehouseTransferService>();
+builder.Services.AddHostedService<ProjectStatusWorker>();
+builder.Services.AddHostedService<EmailOutboxWorker>();
+builder.Services.AddHostedService<AuthRateLimitCleanupWorker>();
+builder.Services.AddHealthChecks()
+    .AddCheck<DatabaseHealthCheck>("database", tags: ["ready"])
+    .AddCheck<SmtpHealthCheck>("smtp", tags: ["ready"]);
 
 
 // ======================================================
@@ -201,6 +223,7 @@ var app = builder.Build();
 // 💡 Lưu ý: Đặt Middleware Custom trước để bắt lỗi toàn cục cho pipeline
 app.UseMiddleware<ExceptionMiddleware>();
 app.UseMiddleware<ValidationMiddleware>();
+app.UseForwardedHeaders();
 
 if (app.Environment.IsDevelopment())
 {
@@ -210,11 +233,30 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseCors("Frontend");
-app.UseRateLimiter();
+app.UseMiddleware<DistributedAuthRateLimitMiddleware>();
 
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+    ResponseWriter = async (context, report) =>
+    {
+        context.Response.ContentType = "application/json";
+        await context.Response.WriteAsJsonAsync(new
+        {
+            status = report.Status.ToString(),
+            checks = report.Entries.Select(entry => new
+            {
+                name = entry.Key,
+                status = entry.Value.Status.ToString(),
+                description = entry.Value.Description
+            })
+        });
+    }
+});
 
 app.Run();

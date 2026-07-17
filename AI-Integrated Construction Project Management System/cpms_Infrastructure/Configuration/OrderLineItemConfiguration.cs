@@ -18,10 +18,13 @@ namespace cpms_Infrastructure.Configuration
             builder.Property(oli => oli.UnitPrice).HasColumnType("decimal(18,2)");
             builder.Property(oli => oli.Quantity).HasColumnType("decimal(18,4)");
             builder.Property(oli => oli.ReceivedQuantity).HasColumnType("decimal(18,4)").HasDefaultValue(0);
+            builder.Property(oli => oli.DamagedQuantity).HasColumnType("decimal(18,4)").HasDefaultValue(0);
+            builder.Property(oli => oli.MissingQuantity).HasColumnType("decimal(18,4)").HasDefaultValue(0);
             builder.ToTable(t =>
             {
                 t.HasCheckConstraint("CK_OrderLineItems_Quantity", "[Quantity] > 0");
                 t.HasCheckConstraint("CK_OrderLineItems_ReceivedQuantity", "[ReceivedQuantity] >= 0 AND [ReceivedQuantity] <= [Quantity]");
+                t.HasCheckConstraint("CK_OrderLineItems_DeliveryAccounting", "[DamagedQuantity] >= 0 AND [MissingQuantity] >= 0 AND [ReceivedQuantity] + [DamagedQuantity] + [MissingQuantity] <= [Quantity]");
             });
 
             builder.Property(oli => oli.CreatedDate).HasDefaultValueSql("GETUTCDATE()");

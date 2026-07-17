@@ -17,6 +17,9 @@ namespace cpms_Domain.Models
         public decimal ReservedQuantity { get; set; }
         public decimal OnOrderQuantity { get; set; }
         public decimal ReorderLevel { get; set; }
+        public decimal QuarantineQuantity { get; set; }
+        public decimal AverageUnitCost { get; set; }
+        public decimal InventoryValue { get; private set; }
         public DateTime UpdatedAt { get; set; }
         public byte[] RowVersion { get; set; } = null!;
 

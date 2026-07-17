@@ -33,11 +33,11 @@ namespace cpms_API.Controllers
         public async Task<IActionResult> GetById(int id) => ToResult(await _service.GetByIdAsync(id));
 
         [HttpPut("{id:int}/approve")]
-        [Authorize(Roles = "WAREHOUSE_MANAGER")]
+        [Authorize(Roles = "ADMIN,WAREHOUSE_MANAGER")]
         public async Task<IActionResult> Approve(int id) => ToResult(await _service.ApproveAsync(id));
 
         [HttpPut("{id:int}/reject")]
-        [Authorize(Roles = "WAREHOUSE_MANAGER")]
+        [Authorize(Roles = "ADMIN,WAREHOUSE_MANAGER")]
         public async Task<IActionResult> Reject(int id) => ToResult(await _service.RejectAsync(id));
 
         [HttpPost("{id:int}/ship")]

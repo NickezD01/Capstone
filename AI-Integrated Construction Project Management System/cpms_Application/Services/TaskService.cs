@@ -42,7 +42,7 @@ namespace cpms_Application.Services
                     await _uow.RollbackTransactionAsync();
                     return response.SetNotFound($"Dự án với ID = {request.ProjectId} không tồn tại trong hệ thống.");
                 }
-                if (project.Status == ProjectStatus.COMPLETED)
+                if (project.Status is ProjectStatus.COMPLETED or ProjectStatus.CANCELLED)
                 {
                     await _uow.RollbackTransactionAsync();
                     return response.SetConflict(message: "Completed projects cannot accept new tasks.");
@@ -70,10 +70,10 @@ namespace cpms_Application.Services
 
                 // 2. Kiểm tra nhân sự được giao việc có tồn tại hay không
                 var user = await _uow.UserAccounts.GetAsync(u => u.Id == request.AssignedToUserID);
-                if (user == null || user.IsEmailVerified != true)
+                if (user == null || user.IsEmailVerified != true || user.Role != Role.WORKER)
                 {
                     await _uow.RollbackTransactionAsync();
-                    return response.SetBadRequest(message: "The assigned user must exist and have a verified email.");
+                    return response.SetBadRequest(message: "The assigned user must be a verified worker.");
                 }
 
                 // 3. Map dữ liệu cơ bản và cấu hình mặc định cho Task mới
@@ -113,7 +113,7 @@ namespace cpms_Application.Services
                             var candidates = await _uow.MaterialVariants.GetAllAsync(v => v.MaterialId == matRequest.MaterialId && v.IsActive);
                             variant = candidates.Count == 1 ? candidates[0] : null;
                         }
-                        if (variant == null)
+                        if (variant == null || !variant.IsActive)
                         {
                             await _uow.RollbackTransactionAsync();
                             return response.SetBadRequest(message: "Material variant does not exist.");
@@ -214,6 +214,85 @@ namespace cpms_Application.Services
                 return apiResponse.SetApiResponse(System.Net.HttpStatusCode.InternalServerError, false, "Unable to retrieve material requirements.");
             }
         }
+
+        public async Task<ApiResponse> GetAssignedTasksAsync()
+        {
+            var user = _claimService.GetUserClaim();
+            var tasks = await _uow.TaskItems.GetAllAsync(
+                t => t.AssignedToUserID == user.Id,
+                query => query.Include(t => t.AssignedToUser)
+                    .Include(t => t.MaterialRequirements)
+                    .ThenInclude(r => r.Variant)
+                    .ThenInclude(v => v.Material));
+            return new ApiResponse().SetOk(_mapper.Map<List<TaskResponse>>(tasks));
+        }
+
+        public async Task<ApiResponse> UpdateTaskAsync(int taskId, UpdateTaskRequest request)
+        {
+            var task = await _uow.TaskItems.GetByIdAsync(taskId);
+            if (task == null) return new ApiResponse().SetNotFound("Task not found.");
+            var project = await _uow.Projects.GetByIdAsync(task.ProjectId);
+            var user = _claimService.GetUserClaim();
+            if (project == null || project.PMUserID != user.Id || !string.Equals(user.Role, Role.PM.ToString(), StringComparison.OrdinalIgnoreCase))
+                return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Only the owning project manager may update this task.");
+            if (project.Status is ProjectStatus.COMPLETED or ProjectStatus.CANCELLED)
+                return new ApiResponse().SetConflict("Closed projects cannot accept task changes.");
+            if (!MatchesRowVersion(task.RowVersion, request.RowVersion))
+                return new ApiResponse().SetConflict("Task changed. Reload and retry.");
+            if (request.BaselineStart < project.BaselineStart || request.BaselineEnd > project.BaselineEnd)
+                return new ApiResponse().SetBadRequest("Task dates must stay inside the project baseline.");
+            var assignee = await _uow.UserAccounts.GetByIdAsync(request.AssignedToUserID);
+            if (assignee == null || assignee.IsEmailVerified != true || assignee.Role != Role.WORKER)
+                return new ApiResponse().SetBadRequest("The assignee must be a verified worker.");
+            var otherTasks = await _uow.TaskItems.GetAllAsync(t => t.ProjectId == project.ProjectId && t.TaskId != taskId);
+            if (project.TotalProjectBudget > 0 && otherTasks.Sum(t => t.PlannedBudget) + request.PlannedBudget > project.TotalProjectBudget)
+                return new ApiResponse().SetConflict("Total planned task budgets cannot exceed the project budget.");
+
+            try
+            {
+                task.UpdatePlan(request.PhaseName, request.TaskName, request.AssignedToUserID,
+                    request.PlannedBudget, request.BaselineStart, request.BaselineEnd);
+                await _uow.SaveChangeAsync();
+                return new ApiResponse().SetOk("Task updated.");
+            }
+            catch (InvalidOperationException ex)
+            {
+                return new ApiResponse().SetConflict(ex.Message);
+            }
+        }
+
+        public async Task<ApiResponse> ChangeTaskStatusAsync(int taskId, string action, TaskLifecycleRequest request)
+        {
+            var task = await _uow.TaskItems.GetByIdAsync(taskId);
+            if (task == null) return new ApiResponse().SetNotFound("Task not found.");
+            var project = await _uow.Projects.GetByIdAsync(task.ProjectId);
+            var user = _claimService.GetUserClaim();
+            if (project == null || project.PMUserID != user.Id || !string.Equals(user.Role, Role.PM.ToString(), StringComparison.OrdinalIgnoreCase))
+                return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Only the owning project manager may change this task.");
+            if (project.Status is ProjectStatus.COMPLETED or ProjectStatus.CANCELLED)
+                return new ApiResponse().SetConflict("Tasks in a closed project cannot change state.");
+            if (!MatchesRowVersion(task.RowVersion, request.RowVersion))
+                return new ApiResponse().SetConflict("Task changed. Reload and retry.");
+            try
+            {
+                switch (action.Trim().ToLowerInvariant())
+                {
+                    case "cancel": task.Cancel(); break;
+                    case "reject": task.Reject(); break;
+                    case "reopen": task.Reopen(); break;
+                    default: return new ApiResponse().SetBadRequest("Supported task actions are cancel, reject, and reopen.");
+                }
+                await _uow.SaveChangeAsync();
+                return new ApiResponse().SetOk(new { task.TaskId, Status = task.Status.ToString() });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return new ApiResponse().SetConflict(ex.Message);
+            }
+        }
+
+        private static bool MatchesRowVersion(byte[] current, string supplied) =>
+            !string.IsNullOrWhiteSpace(supplied) && Convert.ToBase64String(current).Equals(supplied, StringComparison.Ordinal);
 
         private async Task<bool> CanReadProjectAsync(Project project)
         {

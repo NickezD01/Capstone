@@ -20,6 +20,7 @@ namespace cpms_Application.Response.Tasks
         public string Status { get; set; } = null!;
         public DateTime BaselineStart { get; set; }
         public DateTime BaselineEnd { get; set; }
+        public string RowVersion { get; set; } = string.Empty;
         public List<TaskMaterialResponse> MaterialRequirements { get; set; } = new List<TaskMaterialResponse>();
     }
     public class TaskMaterialResponse

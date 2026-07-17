@@ -8,16 +8,19 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace cpms_Application.Services
 {
     public class EmailService : IEmailService
     {
         private readonly EmailSettings _settings;
+        private readonly ILogger<EmailService> _logger;
 
-        public EmailService(AppSetting appSettings)
+        public EmailService(AppSetting appSettings, ILogger<EmailService> logger)
         {
             _settings = appSettings.Email;
+            _logger = logger;
         }
 
         public async Task<ApiResponse> SendNotiMail(string recievedUser, string emailContent)
@@ -47,8 +50,10 @@ namespace cpms_Application.Services
                 }
                 return new ApiResponse().SetOk("Mail Sent!");
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                _logger.LogError(ex, "SMTP notification delivery failed via {Host}:{Port} to {Recipient}",
+                    _settings.SmtpHost, _settings.SmtpPort, recievedUser);
                 return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.ServiceUnavailable, false, "Unable to send email.");
             }
         }
@@ -81,8 +86,10 @@ namespace cpms_Application.Services
                 }
                 return new ApiResponse().SetOk("Mail Sent!");
             }
-            catch (Exception)
+            catch (Exception ex)
             {
+                _logger.LogError(ex, "SMTP verification delivery failed via {Host}:{Port} to {Recipient}",
+                    _settings.SmtpHost, _settings.SmtpPort, recievedUser);
                 return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.ServiceUnavailable, false, "Unable to send email.");
             }
         }

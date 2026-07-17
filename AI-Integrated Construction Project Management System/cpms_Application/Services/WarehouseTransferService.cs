@@ -96,15 +96,24 @@ namespace cpms_Application.Services
         public Task<ApiResponse> ApproveAsync(int transferId) => MutateAsync(transferId, WarehouseTransferStatuses.Requested,
             async (transfer, user) =>
             {
-                if (!IsManagerOf(user, transfer.DestinationWarehouse)) return Forbidden("Only the destination warehouse manager may approve this transfer.");
-                if (transfer.RequestedByUserId == user.Id) return Conflict("The transfer creator cannot approve the same transfer.");
+                if (!IsAdmin(user) && !IsManagerOf(user, transfer.DestinationWarehouse)) return Forbidden("Only the destination warehouse manager or an administrator may approve this transfer.");
+                if (!IsAdmin(user) && transfer.RequestedByUserId == user.Id) return Conflict("The transfer creator cannot approve the same transfer.");
                 foreach (var item in transfer.Items)
                 {
                     var inventory = await _uow.Inventories.GetAsync(x => x.WarehouseId == transfer.SourceWarehouseId && x.VariantId == item.VariantId);
-                    if (inventory == null || !InventoryQuantityRules.CanReserve(inventory.QuantityOnHand, inventory.ReservedQuantity, item.RequestedQuantity))
+                    if (inventory == null || !InventoryQuantityRules.CanReserve(inventory.QuantityOnHand, inventory.ReservedQuantity, inventory.QuarantineQuantity, item.RequestedQuantity))
                         return Conflict($"Insufficient available source stock for transfer item {item.TransferItemId}.");
                     inventory.ReservedQuantity += item.RequestedQuantity;
                     inventory.UpdatedAt = DateTime.UtcNow;
+                    await _uow.TransferInventoryReservations.AddAsync(new TransferInventoryReservation
+                    {
+                        TransferId = transfer.TransferId,
+                        TransferItemId = item.TransferItemId,
+                        InventoryId = inventory.InventoryId,
+                        Quantity = item.RequestedQuantity,
+                        Status = TransferReservationStatuses.Active,
+                        CreatedAt = DateTime.UtcNow
+                    });
                 }
                 transfer.Status = WarehouseTransferStatuses.Approved;
                 transfer.ApprovedByUserId = user.Id;
@@ -115,8 +124,8 @@ namespace cpms_Application.Services
         public Task<ApiResponse> RejectAsync(int transferId) => MutateAsync(transferId, WarehouseTransferStatuses.Requested,
             (transfer, user) =>
             {
-                if (!IsManagerOf(user, transfer.DestinationWarehouse)) return Task.FromResult<ApiResponse?>(Forbidden("Only the destination warehouse manager may reject this transfer."));
-                if (transfer.RequestedByUserId == user.Id) return Task.FromResult<ApiResponse?>(Conflict("The transfer creator cannot reject the same transfer."));
+                if (!IsAdmin(user) && !IsManagerOf(user, transfer.DestinationWarehouse)) return Task.FromResult<ApiResponse?>(Forbidden("Only the destination warehouse manager or an administrator may reject this transfer."));
+                if (!IsAdmin(user) && transfer.RequestedByUserId == user.Id) return Task.FromResult<ApiResponse?>(Conflict("The transfer creator cannot reject the same transfer."));
                 transfer.Status = WarehouseTransferStatuses.Rejected;
                 return Task.FromResult<ApiResponse?>(null);
             });
@@ -136,7 +145,7 @@ namespace cpms_Application.Services
                 foreach (var item in transfer.Items)
                 {
                     var inventory = await _uow.Inventories.GetAsync(x => x.WarehouseId == transfer.SourceWarehouseId && x.VariantId == item.VariantId);
-                    if (inventory == null || !InventoryQuantityRules.CanIssue(inventory.QuantityOnHand, inventory.ReservedQuantity, item.RequestedQuantity))
+                    if (inventory == null || !InventoryQuantityRules.CanIssue(inventory.QuantityOnHand, inventory.ReservedQuantity, inventory.QuarantineQuantity, item.RequestedQuantity))
                         return await Rollback(Conflict($"Reserved source stock is unavailable for transfer item {item.TransferItemId}."));
                     sourceInventory[item.VariantId] = inventory;
                 }
@@ -149,6 +158,27 @@ namespace cpms_Application.Services
                     inventory.ReservedQuantity -= item.RequestedQuantity;
                     inventory.UpdatedAt = DateTime.UtcNow;
                     item.ShippedQuantity = item.RequestedQuantity;
+                    item.UnitCost = inventory.AverageUnitCost;
+                    var reservation = await _uow.TransferInventoryReservations.GetAsync(x =>
+                        x.TransferItemId == item.TransferItemId && x.Status == TransferReservationStatuses.Active);
+                    if (reservation == null)
+                    {
+                        await _uow.TransferInventoryReservations.AddAsync(new TransferInventoryReservation
+                        {
+                            TransferId = transfer.TransferId,
+                            TransferItemId = item.TransferItemId,
+                            InventoryId = inventory.InventoryId,
+                            Quantity = item.RequestedQuantity,
+                            Status = TransferReservationStatuses.Consumed,
+                            CreatedAt = transfer.ApprovedAt ?? DateTime.UtcNow,
+                            ResolvedAt = DateTime.UtcNow
+                        });
+                    }
+                    else
+                    {
+                        reservation.Status = TransferReservationStatuses.Consumed;
+                        reservation.ResolvedAt = DateTime.UtcNow;
+                    }
                     await _uow.InventoryTransactions.AddAsync(NewTransaction(inventory, InventoryTransactionTypes.TransferOut,
                         -item.RequestedQuantity, before, inventory.QuantityOnHand, transfer.TransferId, user.Id, transfer.Note));
                 }
@@ -199,23 +229,26 @@ namespace cpms_Application.Services
                             Quantity = x.ShippedQuantity - x.ReceivedQuantity
                         }).ToList();
 
-                if (receipts.Count == 0 || receipts.Any(x => x.Quantity <= 0) ||
+                if (receipts.Count == 0 || receipts.Any(x => x.Quantity < 0 || x.DamagedQuantity < 0 || x.LostQuantity < 0 ||
+                        x.Quantity + x.DamagedQuantity + x.LostQuantity <= 0) ||
                     receipts.Select(x => x.TransferItemId).Distinct().Count() != receipts.Count)
                     return await Rollback(BadRequest("Receipt items must be unique and quantities must be positive."));
 
-                var validated = new List<(WarehouseTransferItem Item, decimal Quantity)>();
+                var validated = new List<(WarehouseTransferItem Item, ReceiveWarehouseTransferItemRequest Receipt)>();
                 foreach (var receipt in receipts)
                 {
                     var item = transfer.Items.SingleOrDefault(x => x.TransferItemId == receipt.TransferItemId);
                     if (item == null) return await Rollback(BadRequest("Receipt contains an item outside this transfer."));
-                    if (item.ReceivedQuantity + receipt.Quantity > item.ShippedQuantity)
+                    if (item.ReceivedQuantity + item.DamagedQuantity + item.LostQuantity +
+                        receipt.Quantity + receipt.DamagedQuantity + receipt.LostQuantity > item.ShippedQuantity)
                         return await Rollback(BadRequest($"Receipt exceeds shipped quantity for item {item.TransferItemId}."));
-                    validated.Add((item, receipt.Quantity));
+                    validated.Add((item, receipt));
                 }
 
                 var destinationInventory = new Dictionary<int, InventoryRecord>();
                 foreach (var entry in validated)
                 {
+                    if (entry.Receipt.Quantity <= 0) continue;
                     var inventory = await _uow.Inventories.GetAsync(x => x.WarehouseId == transfer.DestinationWarehouseId && x.VariantId == entry.Item.VariantId);
                     if (inventory == null)
                     {
@@ -234,21 +267,30 @@ namespace cpms_Application.Services
 
                 foreach (var entry in validated)
                 {
+                    entry.Item.DamagedQuantity += entry.Receipt.DamagedQuantity;
+                    entry.Item.LostQuantity += entry.Receipt.LostQuantity;
+                    if (entry.Receipt.Quantity <= 0) continue;
                     var inventory = destinationInventory[entry.Item.VariantId];
                     var before = inventory.QuantityOnHand;
-                    inventory.QuantityOnHand += entry.Quantity;
+                    var after = before + entry.Receipt.Quantity;
+                    inventory.AverageUnitCost = after == 0 ? 0 :
+                        ((before * inventory.AverageUnitCost) + (entry.Receipt.Quantity * entry.Item.UnitCost)) / after;
+                    inventory.QuantityOnHand = after;
                     inventory.UpdatedAt = DateTime.UtcNow;
-                    entry.Item.ReceivedQuantity += entry.Quantity;
+                    entry.Item.ReceivedQuantity += entry.Receipt.Quantity;
                     await _uow.InventoryTransactions.AddAsync(NewTransaction(inventory, InventoryTransactionTypes.TransferIn,
-                        entry.Quantity, before, inventory.QuantityOnHand, transfer.TransferId, user.Id, transfer.Note));
+                        entry.Receipt.Quantity, before, inventory.QuantityOnHand, transfer.TransferId, user.Id, transfer.Note,
+                        entry.Item.UnitCost));
                 }
 
                 transfer.ReceivedByUserId = user.Id;
                 transfer.ModifiedDate = DateTime.UtcNow;
                 transfer.ModifiedBy = user.Id;
-                if (transfer.Items.All(x => x.ShippedQuantity > 0 && x.ReceivedQuantity == x.ShippedQuantity))
+                if (transfer.Items.All(x => x.ShippedQuantity > 0 && x.ReceivedQuantity + x.DamagedQuantity + x.LostQuantity == x.ShippedQuantity))
                 {
-                    transfer.Status = WarehouseTransferStatuses.Received;
+                    transfer.Status = transfer.Items.Any(x => x.DamagedQuantity > 0 || x.LostQuantity > 0)
+                        ? WarehouseTransferStatuses.ClosedWithVariance
+                        : WarehouseTransferStatuses.Received;
                     transfer.ReceivedAt = DateTime.UtcNow;
                 }
 
@@ -294,6 +336,12 @@ namespace cpms_Application.Services
                             return await Rollback(Conflict("Reserved transfer stock is inconsistent. Reload and retry."));
                         inventory.ReservedQuantity -= item.RequestedQuantity;
                         inventory.UpdatedAt = DateTime.UtcNow;
+                        var reservation = await _uow.TransferInventoryReservations.GetAsync(x =>
+                            x.TransferItemId == item.TransferItemId && x.Status == TransferReservationStatuses.Active);
+                        if (reservation == null)
+                            return await Rollback(Conflict("Transfer reservation ledger is missing or already resolved."));
+                        reservation.Status = TransferReservationStatuses.Released;
+                        reservation.ResolvedAt = DateTime.UtcNow;
                     }
                 }
                 transfer.Status = WarehouseTransferStatuses.Cancelled;
@@ -360,7 +408,7 @@ namespace cpms_Application.Services
         }
 
         private static InventoryTransaction NewTransaction(InventoryRecord inventory, string type, decimal quantity,
-            decimal before, decimal after, int transferId, int userId, string? note) => new()
+            decimal before, decimal after, int transferId, int userId, string? note, decimal? unitCost = null) => new()
             {
                 InventoryId = inventory.InventoryId,
                 WarehouseId = inventory.WarehouseId,
@@ -374,6 +422,8 @@ namespace cpms_Application.Services
                 Note = note,
                 PerformedByUserId = userId,
                 TransactionDate = DateTime.UtcNow
+                ,UnitCost = unitCost ?? inventory.AverageUnitCost
+                ,TotalValue = Math.Abs(quantity) * (unitCost ?? inventory.AverageUnitCost)
             };
 
         private static WarehouseTransferResponse Map(WarehouseTransfer transfer) => new()
@@ -405,6 +455,9 @@ namespace cpms_Application.Services
                 RequestedQuantity = x.RequestedQuantity,
                 ShippedQuantity = x.ShippedQuantity,
                 ReceivedQuantity = x.ReceivedQuantity
+                ,DamagedQuantity = x.DamagedQuantity
+                ,LostQuantity = x.LostQuantity
+                ,UnitCost = x.UnitCost
             }).ToList()
         };
 

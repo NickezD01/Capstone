@@ -33,10 +33,15 @@ namespace cpms_Infrastructure.Configuration
             builder.Property(ir => ir.ReservedQuantity).HasColumnType("decimal(18,4)").HasDefaultValue(0);
             builder.Property(ir => ir.OnOrderQuantity).HasColumnType("decimal(18,4)").HasDefaultValue(0);
             builder.Property(ir => ir.ReorderLevel).HasColumnType("decimal(18,4)").HasDefaultValue(0);
+            builder.Property(ir => ir.QuarantineQuantity).HasColumnType("decimal(18,4)").HasDefaultValue(0);
+            builder.Property(ir => ir.AverageUnitCost).HasColumnType("decimal(18,4)").HasDefaultValue(0);
+            builder.Property(ir => ir.InventoryValue)
+                   .HasColumnType("decimal(38,8)")
+                   .HasComputedColumnSql("[QuantityOnHand] * [AverageUnitCost]", stored: true);
             builder.Property(ir => ir.UpdatedAt).HasDefaultValueSql("GETUTCDATE()");
             builder.Property(ir => ir.AvailableQuantity)
                    .HasColumnType("decimal(19,4)")
-                   .HasComputedColumnSql("[QuantityOnHand] - [ReservedQuantity]", stored: true);
+                   .HasComputedColumnSql("[QuantityOnHand] - [ReservedQuantity] - [QuarantineQuantity]", stored: true);
             builder.Property(ir => ir.RowVersion).IsRowVersion();
 
             builder.HasIndex(ir => new { ir.WarehouseId, ir.VariantId })
@@ -45,7 +50,7 @@ namespace cpms_Infrastructure.Configuration
             builder.ToTable(t =>
             {
                 t.HasCheckConstraint("CK_InventoryRecords_QuantityOnHand", "[QuantityOnHand] >= 0");
-                t.HasCheckConstraint("CK_InventoryRecords_ReservedQuantity", "[ReservedQuantity] >= 0 AND [ReservedQuantity] <= [QuantityOnHand]");
+                t.HasCheckConstraint("CK_InventoryRecords_ReservedQuantity", "[ReservedQuantity] >= 0 AND [QuarantineQuantity] >= 0 AND [ReservedQuantity] + [QuarantineQuantity] <= [QuantityOnHand]");
                 t.HasCheckConstraint("CK_InventoryRecords_OnOrderQuantity", "[OnOrderQuantity] >= 0");
                 t.HasCheckConstraint("CK_InventoryRecords_ReorderLevel", "[ReorderLevel] >= 0");
             });

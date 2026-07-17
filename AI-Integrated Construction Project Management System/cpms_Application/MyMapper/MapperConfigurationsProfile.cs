@@ -44,6 +44,7 @@ namespace cpms_Application.MyMapper
             // === PROJECTS ===
             CreateMap<CreateProjectRequest, Project>();
             CreateMap<Project, ProjectResponse>()
+    .ForMember(dest => dest.RowVersion, opt => opt.MapFrom(src => Convert.ToBase64String(src.RowVersion)))
     .ForMember(dest => dest.Status,
         opt => opt.MapFrom(src => src.Status.ToString()))
 
@@ -55,6 +56,9 @@ namespace cpms_Application.MyMapper
 
     .ForMember(dest => dest.TotalTasks,
         opt => opt.MapFrom(src => src.Tasks.Count))
+
+    .ForMember(dest => dest.ActualCost,
+        opt => opt.MapFrom(src => src.Tasks.Sum(task => task.ActualCost)))
 
     .ForMember(dest => dest.TotalAIAlerts,
         opt => opt.MapFrom(src => src.AIAlerts.Count));
@@ -132,6 +136,7 @@ namespace cpms_Application.MyMapper
 
             CreateMap<TaskItem, TaskResponse>()
                 .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.Status.ToString()))
+                .ForMember(dest => dest.RowVersion, opt => opt.MapFrom(src => Convert.ToBase64String(src.RowVersion)))
                 .ForMember(dest => dest.AssignedToUserName, opt => opt.MapFrom(src => src.AssignedToUser != null ? $"{src.AssignedToUser.LastName} {src.AssignedToUser.FirstName}".Trim() : string.Empty))
                 .ForMember(dest => dest.MaterialRequirements, opt => opt.MapFrom(src => src.MaterialRequirements));
 
@@ -145,6 +150,8 @@ namespace cpms_Application.MyMapper
             // === PROGRESS REPORTS ===
             CreateMap<SubmitProgressReportRequest, ProgressReport>();
             CreateMap<ProgressReport, ProgressReportResponse>()
+                .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.Status.ToString()))
+                .ForMember(dest => dest.RowVersion, opt => opt.MapFrom(src => Convert.ToBase64String(src.RowVersion)))
                 .ForMember(dest => dest.TaskName, opt => opt.MapFrom(src => src.Task != null ? src.Task.TaskName : null))
                 .ForMember(dest => dest.ReportedByName, opt => opt.MapFrom(src => src.Reporter != null ? $"{src.Reporter.LastName} {src.Reporter.FirstName}".Trim() : string.Empty));
 

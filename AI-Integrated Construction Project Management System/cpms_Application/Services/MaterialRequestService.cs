@@ -6,6 +6,7 @@ using cpms_Application.Response.MaterialRequest;
 using cpms_Domain.Models;
 using cpms_Domain;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Cryptography;
 
 namespace cpms_Application.Services
 {
@@ -28,10 +29,14 @@ namespace cpms_Application.Services
             if (!IsRole(user, Role.PM)) return Forbidden("Only project managers may create material requests.");
             if (request.Items == null || request.Items.Count == 0)
                 return new ApiResponse().SetBadRequest(message: "At least one material item is required.");
+            if (!request.TaskId.HasValue)
+                return new ApiResponse().SetBadRequest(message: "TaskId is required so every request remains capped by an approved task material plan.");
 
             var project = await _uow.Projects.GetByIdAsync(request.ProjectId);
             if (project == null) return new ApiResponse().SetNotFound(message: "Project not found.");
             if (project.PMUserID != user.Id) return Forbidden("You may only create requests for a project you manage.");
+            if (project.Status is ProjectStatus.COMPLETED or ProjectStatus.CANCELLED)
+                return new ApiResponse().SetConflict(message: "Closed projects cannot accept material requests.");
             if (request.TaskId.HasValue)
             {
                 var task = await _uow.TaskItems.GetByIdAsync(request.TaskId.Value);
@@ -200,7 +205,7 @@ namespace cpms_Application.Services
                     if (approved == 0) continue;
 
                     var inventory = await _uow.Inventories.GetAsync(i => i.WarehouseId == decision.WarehouseId && i.VariantId == item.VariantId);
-                    if (inventory == null || !InventoryQuantityRules.CanReserve(inventory.QuantityOnHand, inventory.ReservedQuantity, approved))
+                    if (inventory == null || !InventoryQuantityRules.CanReserve(inventory.QuantityOnHand, inventory.ReservedQuantity, inventory.QuarantineQuantity, approved))
                     { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: $"Insufficient available inventory for request item {item.ItemId}."); }
                     inventory.ReservedQuantity += approved;
                     inventory.UpdatedAt = DateTime.UtcNow;
@@ -217,7 +222,9 @@ namespace cpms_Application.Services
                 }
 
                 request.WarehouseId = decision.WarehouseId;
-                request.Status = MaterialRequestStatuses.Approved;
+                request.Status = request.Requisitions.Any(i => i.ApprovedQuantity < i.Quantity)
+                    ? MaterialRequestStatuses.PartiallyApproved
+                    : MaterialRequestStatuses.Approved;
                 request.ApprovedByUserId = user.Id;
                 request.ApprovedAt = DateTime.UtcNow;
                 request.DecisionNote = decision.DecisionNote;
@@ -266,11 +273,13 @@ namespace cpms_Application.Services
             try
             {
                 var request = await _uow.MaterialRequests.GetAsync(r => r.RequestId == requestId,
-                    q => q.Include(r => r.Warehouse).Include(r => r.Requisitions).Include(r => r.Reservations).ThenInclude(r => r.InventoryRecord));
+                    q => q.Include(r => r.Project).Include(r => r.Warehouse).Include(r => r.Requisitions).Include(r => r.Reservations).ThenInclude(r => r.InventoryRecord));
                 if (request == null) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetNotFound(message: "Material request not found."); }
                 if (request.Warehouse == null || request.Warehouse.ManagerId != user.Id)
                 { await _uow.RollbackTransactionAsync(); return Forbidden("You may only issue from a warehouse you manage."); }
-                if (request.Status != MaterialRequestStatuses.Approved)
+                if (request.Project.Status is ProjectStatus.CANCELLED or ProjectStatus.COMPLETED)
+                { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict("Inventory cannot be issued to a closed project."); }
+                if (request.Status != MaterialRequestStatuses.Approved && request.Status != MaterialRequestStatuses.PartiallyApproved)
                 { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "Only approved requests can be issued."); }
                 var active = request.Reservations.Where(r => r.Status == InventoryReservationStatuses.Active).ToList();
                 if (active.Count == 0) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "No active reservations exist for this request."); }
@@ -278,7 +287,7 @@ namespace cpms_Application.Services
                 foreach (var reservation in active)
                 {
                     var inventory = reservation.InventoryRecord;
-                    if (!InventoryQuantityRules.CanIssue(inventory.QuantityOnHand, inventory.ReservedQuantity, reservation.Quantity))
+                    if (!InventoryQuantityRules.CanIssue(inventory.QuantityOnHand, inventory.ReservedQuantity, inventory.QuarantineQuantity, reservation.Quantity))
                     { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "Reserved inventory is no longer available."); }
                     var before = inventory.QuantityOnHand;
                     inventory.QuantityOnHand -= reservation.Quantity;
@@ -303,7 +312,9 @@ namespace cpms_Application.Services
                         TransactionDate = DateTime.UtcNow
                     });
                 }
-                request.Status = MaterialRequestStatuses.Issued;
+                request.Status = request.Requisitions.Any(i => i.IssuedQuantity < i.Quantity)
+                    ? MaterialRequestStatuses.PartiallyIssued
+                    : MaterialRequestStatuses.Issued;
                 await _uow.SaveChangeAsync();
                 await _uow.CommitTransactionAsync();
                 return await GetRequestByIdAsync(requestId);
@@ -332,7 +343,7 @@ namespace cpms_Application.Services
                 if (request == null) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetNotFound(message: "Material request not found."); }
                 if (request.Warehouse == null || request.Warehouse.ManagerId != user.Id)
                 { await _uow.RollbackTransactionAsync(); return Forbidden("You may only release reservations from a warehouse you manage."); }
-                if (request.Status != MaterialRequestStatuses.Approved)
+                if (request.Status != MaterialRequestStatuses.Approved && request.Status != MaterialRequestStatuses.PartiallyApproved)
                 { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "Only approved requests can be released."); }
                 foreach (var reservation in request.Reservations.Where(r => r.Status == InventoryReservationStatuses.Active))
                 {
@@ -356,6 +367,66 @@ namespace cpms_Application.Services
                 await _uow.RollbackTransactionAsync();
                 return InternalError("Unable to release reservations.");
             }
+        }
+
+        public async Task<ApiResponse> UpdatePendingRequestAsync(int requestId, UpdatePendingMaterialRequest update)
+        {
+            var user = _claimService.GetUserClaim();
+            if (!IsRole(user, Role.PM)) return Forbidden("Only project managers may edit material requests.");
+            if (update.Items.Count == 0 || update.Items.Any(i => i.Quantity <= 0))
+                return new ApiResponse().SetBadRequest(message: "Every request item must have a positive quantity.");
+
+            await _uow.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            try
+            {
+                var request = await _uow.MaterialRequests.GetAsync(r => r.RequestId == requestId,
+                    q => q.Include(r => r.Project).Include(r => r.Requisitions));
+                if (request == null) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetNotFound(message: "Material request not found."); }
+                if (request.Project.PMUserID != user.Id) { await _uow.RollbackTransactionAsync(); return Forbidden("You may only edit requests for a project you manage."); }
+                if (request.Status != MaterialRequestStatuses.Pending) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "Only pending requests can be edited."); }
+                if (!MatchesRowVersion(request.RowVersion, update.RowVersion)) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "The request was changed by another user. Reload and retry."); }
+                if (update.Items.Select(i => i.ItemId).Distinct().Count() != request.Requisitions.Count ||
+                    update.Items.Any(i => request.Requisitions.All(r => r.ItemId != i.ItemId)))
+                { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetBadRequest(message: "Editing must include each existing request item exactly once."); }
+
+                var planned = await _uow.TaskMaterialRequirements.GetAllAsync(r => r.TaskId == request.TaskId);
+                var previouslyIssued = await _uow.MaterialRequisitions.GetAllAsync(r =>
+                    r.MaterialRequest.TaskId == request.TaskId && r.MaterialRequest.RequestId != requestId && r.IssuedQuantity > 0,
+                    q => q.Include(r => r.MaterialRequest));
+                var issuedByVariant = previouslyIssued.GroupBy(r => r.VariantId).ToDictionary(g => g.Key, g => g.Sum(x => x.IssuedQuantity));
+
+                foreach (var item in request.Requisitions)
+                {
+                    var replacement = update.Items.Single(i => i.ItemId == item.ItemId);
+                    var cap = planned.SingleOrDefault(p => p.VariantId == item.VariantId)?.GrossQuantityRequired ?? 0;
+                    var remaining = Math.Max(0, cap - issuedByVariant.GetValueOrDefault(item.VariantId));
+                    if (replacement.Quantity > remaining) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: $"Quantity for variant {item.VariantId} exceeds the remaining task plan of {remaining}."); }
+                    item.Quantity = replacement.Quantity;
+                    item.NeededByDate = replacement.NeededByDate;
+                    item.Note = replacement.Note;
+                }
+                request.RequestNote = update.RequestNote;
+                await _uow.SaveChangeAsync();
+                await _uow.CommitTransactionAsync();
+                return await GetRequestByIdAsync(requestId);
+            }
+            catch (DbUpdateConcurrencyException) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "The request changed while it was being edited. Reload and retry."); }
+            catch { await _uow.RollbackTransactionAsync(); throw; }
+        }
+
+        public async Task<ApiResponse> CancelPendingRequestAsync(int requestId, CancelMaterialRequest cancellation)
+        {
+            var user = _claimService.GetUserClaim();
+            if (!IsRole(user, Role.PM)) return Forbidden("Only project managers may cancel material requests.");
+            var request = await _uow.MaterialRequests.GetAsync(r => r.RequestId == requestId, q => q.Include(r => r.Project));
+            if (request == null) return new ApiResponse().SetNotFound(message: "Material request not found.");
+            if (request.Project.PMUserID != user.Id) return Forbidden("You may only cancel requests for a project you manage.");
+            if (request.Status != MaterialRequestStatuses.Pending) return new ApiResponse().SetConflict(message: "Only pending requests can be cancelled by the project manager.");
+            if (!MatchesRowVersion(request.RowVersion, cancellation.RowVersion)) return new ApiResponse().SetConflict(message: "The request was changed by another user. Reload and retry.");
+            request.Status = MaterialRequestStatuses.Cancelled;
+            request.DecisionNote = cancellation.Reason;
+            await _uow.SaveChangeAsync();
+            return await GetRequestByIdAsync(requestId);
         }
 
         public async Task<ApiResponse> GetRequestByIdAsync(int requestId)
@@ -422,5 +493,8 @@ namespace cpms_Application.Services
         private static ApiResponse Forbidden(string message) => new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, message);
         private static ApiResponse InternalError(string message) =>
             new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.InternalServerError, false, message);
+        private static bool MatchesRowVersion(byte[] current, string supplied) =>
+            current.Length == 0 || (!string.IsNullOrWhiteSpace(supplied) &&
+                CryptographicOperations.FixedTimeEquals(current, Convert.FromBase64String(supplied)));
     }
 }

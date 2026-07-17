@@ -5,12 +5,9 @@ namespace cpms_API.Middleware
     public class ValidationMiddleware
     {
         private readonly RequestDelegate _next;
-        private readonly ILogger<ExceptionMiddleware> _logger;
-
-        public ValidationMiddleware(RequestDelegate next, ILogger<ExceptionMiddleware> logger)
+        public ValidationMiddleware(RequestDelegate next)
         {
             _next = next;
-            _logger = logger;
         }
 
         public async Task Invoke(HttpContext context)
@@ -22,11 +19,6 @@ namespace cpms_API.Middleware
             catch (ValidationException ex)
             {
                 await HandleValidationExceptionAsync(context, ex);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex.Message);
-                throw;
             }
         }
 
@@ -41,8 +33,10 @@ namespace cpms_API.Middleware
             {
                 statusCode = 400,
                 isSuccess = false,
-                errorMessage = "Validation failed", // You can modify this message or customize it further
-                result = (object?)null // You can customize the result field as needed
+                errorMessage = "Validation failed",
+                result = exception.Errors
+                    .GroupBy(error => error.PropertyName)
+                    .ToDictionary(group => group.Key, group => group.Select(error => error.ErrorMessage).Distinct().ToArray())
             };
 
             // Serialize and return the custom error response

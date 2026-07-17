@@ -63,6 +63,13 @@ namespace cpms_Infrastructure.Repositories
             return await _db.AsNoTracking().ToListAsync();
         }
 
+        public async Task<List<T>> GetAllIgnoringQueryFiltersAsync(Expression<Func<T, bool>>? filter)
+        {
+            IQueryable<T> query = _db.IgnoreQueryFilters().AsNoTracking();
+            if (filter != null) query = query.Where(filter);
+            return await query.ToListAsync();
+        }
+
         public async Task<T> GetAsync(System.Linq.Expressions.Expression<Func<T, bool>> filter)
         {
 #nullable disable
@@ -88,7 +95,7 @@ namespace cpms_Infrastructure.Repositories
             {
                 _db.Remove(existing);
             }
-            else throw new Exception();
+            else throw new cpms_Application.CustomExceptions.NotFoundException($"{typeof(T).Name} with key '{id}' was not found.");
         }
 
         public async Task AddRangeAsync(List<T> entities)

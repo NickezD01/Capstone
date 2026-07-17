@@ -28,6 +28,39 @@ namespace cpms_Domain.Models
         public virtual Project Project { get; set; } = null!;
         public virtual ICollection<ProgressReport> ProgressReports { get; set; } = new List<ProgressReport>();
         public virtual ICollection<TaskMaterialRequirement> MaterialRequirements { get; set; } = new List<TaskMaterialRequirement>();
+
+        public void UpdatePlan(string phaseName, string taskName, int assigneeId, decimal plannedBudget,
+            DateTime baselineStart, DateTime baselineEnd)
+        {
+            if (Status is TaskStatus.COMPLETED or TaskStatus.CANCELLED)
+                throw new InvalidOperationException("A closed task cannot be edited.");
+            if (plannedBudget < 0 || baselineEnd < baselineStart) throw new ArgumentException("Task plan is invalid.");
+            PhaseName = phaseName.Trim();
+            TaskName = taskName.Trim();
+            AssignedToUserID = assigneeId;
+            PlannedBudget = plannedBudget;
+            BaselineStart = baselineStart;
+            BaselineEnd = baselineEnd;
+        }
+
+        public void Cancel()
+        {
+            if (Status == TaskStatus.COMPLETED) throw new InvalidOperationException("A completed task cannot be cancelled.");
+            Status = TaskStatus.CANCELLED;
+        }
+
+        public void Reject()
+        {
+            if (Status != TaskStatus.PENDING) throw new InvalidOperationException("Only a pending task can be rejected.");
+            Status = TaskStatus.REJECTED;
+        }
+
+        public void Reopen()
+        {
+            if (Status is not (TaskStatus.REJECTED or TaskStatus.CANCELLED))
+                throw new InvalidOperationException("Only a rejected or cancelled task can be reopened.");
+            Status = TaskStatus.PENDING;
+        }
     }
 
     public enum TaskStatus
@@ -36,6 +69,7 @@ namespace cpms_Domain.Models
         ACTIVE, // Legacy database value; new progress updates use IN_PROGRESS.
         IN_PROGRESS,
         COMPLETED,
-        REJECTED
+        REJECTED,
+        CANCELLED
     }
 }

@@ -17,6 +17,8 @@ namespace cpms_Application.Response.OrderLineItem
         public string Unit { get; set; } = null!;        // Đơn vị tính
         public decimal Quantity { get; set; }
         public decimal ReceivedQuantity { get; set; }
+        public decimal DamagedQuantity { get; set; }
+        public decimal MissingQuantity { get; set; }
         public decimal UnitPrice { get; set; }
         public decimal SubTotal => Quantity * UnitPrice; // Tính toán sẵn ở mức DTO
     }

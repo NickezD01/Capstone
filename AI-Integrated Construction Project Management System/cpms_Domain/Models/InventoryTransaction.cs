@@ -15,6 +15,12 @@ namespace cpms_Domain.Models
         public string? Note { get; set; }
         public int PerformedByUserId { get; set; }
         public DateTime TransactionDate { get; set; }
+        public decimal? UnitCost { get; set; }
+        public decimal? TotalValue { get; set; }
+        public string? LotNumber { get; set; }
+        public string? BatchNumber { get; set; }
+        public string? SerialNumber { get; set; }
+        public DateTime? ExpiryDate { get; set; }
 
         public virtual InventoryRecord InventoryRecord { get; set; } = null!;
         public virtual MaterialVariant Variant { get; set; } = null!;
@@ -30,5 +36,6 @@ namespace cpms_Domain.Models
         public const string Adjustment = "ADJUSTMENT";
         public const string TransferOut = "TRANSFER_OUT";
         public const string TransferIn = "TRANSFER_IN";
+        public const string PhysicalCount = "PHYSICAL_COUNT";
     }
 }
