@@ -95,12 +95,26 @@ namespace cpms_Application.Services
             ApiResponse apiResponse = new ApiResponse();
             try
             {
+                if (!Enum.IsDefined(updateUserRoleRequest.Role))
+                    return apiResponse.SetBadRequest(message: "Invalid account role.");
                 // Tìm customer theo ID
                 var customer = await _unitOfWork.UserAccounts.GetAsync(s => s.Id == Id);
                 if (customer == null)
                 {
                     return apiResponse.SetNotFound("Customer not found!");
                 }
+
+                if (customer.Role == cpms_Domain.Models.Role.ADMIN && updateUserRoleRequest.Role != cpms_Domain.Models.Role.ADMIN)
+                {
+                    var admins = await _unitOfWork.UserAccounts.GetAllAsync(x => x.Role == cpms_Domain.Models.Role.ADMIN);
+                    if (admins.Count <= 1) return apiResponse.SetConflict(message: "The last administrator cannot be demoted.");
+                }
+                if (customer.Role == cpms_Domain.Models.Role.WAREHOUSE_MANAGER && updateUserRoleRequest.Role != cpms_Domain.Models.Role.WAREHOUSE_MANAGER &&
+                    await _unitOfWork.Warehouses.GetAsync(x => x.ManagerId == customer.Id) != null)
+                    return apiResponse.SetConflict(message: "Reassign this user's warehouses before changing their role.");
+                if (customer.Role == cpms_Domain.Models.Role.PM && updateUserRoleRequest.Role != cpms_Domain.Models.Role.PM &&
+                    await _unitOfWork.Projects.GetAsync(x => x.PMUserID == customer.Id) != null)
+                    return apiResponse.SetConflict(message: "Reassign this user's projects before changing their role.");
 
                 // Cập nhật Role
                 _mapper.Map(updateUserRoleRequest, customer);

@@ -10,6 +10,7 @@ namespace cpms_Application.Request.ProgressReport
     {
         public int TaskId { get; set; }
         public decimal ProgressIncrement { get; set; }
+        public decimal ActualCostIncrement { get; set; }
         public string? Notes { get; set; }
         public string? SitePhotoUrl { get; set; }
     }

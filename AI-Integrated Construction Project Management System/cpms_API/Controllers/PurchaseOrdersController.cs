@@ -50,7 +50,7 @@ namespace cpms_API.Controllers
 
         // PUT: api/PurchaseOrders/{id}/approve
         [HttpPut("{id}/approve")]
-        [Authorize(Roles = "WAREHOUSE_MANAGER")]
+        [Authorize(Roles = "ADMIN,PM")]
         public async Task<IActionResult> Approve(int id)
         {
             var result = await _poService.ApprovePurchaseOrderAsync(id);
@@ -60,7 +60,7 @@ namespace cpms_API.Controllers
         // PUT: api/PurchaseOrders/{id}/reject
         // 🚀 BỔ SUNG: Endpoint xử lý từ chối đơn mua hàng công trình
         [HttpPut("{id}/reject")]
-        [Authorize(Roles = "WAREHOUSE_MANAGER")]
+        [Authorize(Roles = "ADMIN,PM")]
         public async Task<IActionResult> Reject(int id)
         {
             var result = await _poService.RejectPurchaseOrderAsync(id);

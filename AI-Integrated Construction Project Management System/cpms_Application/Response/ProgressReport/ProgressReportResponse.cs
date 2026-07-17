@@ -15,6 +15,7 @@ namespace cpms_Application.Response.ProgressReport
         public string ReportedByName { get; set; } = null!;
         public DateTime ReportDate { get; set; }
         public decimal ProgressIncrement { get; set; }
+        public decimal ActualCostIncrement { get; set; }
         public string? Notes { get; set; }
         public string? SitePhotoUrl { get; set; }
     }

@@ -70,6 +70,7 @@ namespace cpms_Application.MyMapper
             // Mappings cho PO Detail
             CreateMap<PurchaseOrder, PurchaseOrderResponse>()
                 .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.Status.ToString()))
+                .ForMember(dest => dest.RowVersion, opt => opt.MapFrom(src => Convert.ToBase64String(src.RowVersion)))
                 .ForMember(dest => dest.Currency, opt => opt.MapFrom(src => src.Project != null ? src.Project.Currency : "VND"))
                 .ForMember(dest => dest.WarehouseName, opt => opt.MapFrom(src => src.Warehouse != null ? src.Warehouse.WarehouseName : string.Empty))
                 .ForMember(dest => dest.Items, opt => opt.MapFrom(src => src.OrderLineItems));
@@ -152,6 +153,7 @@ namespace cpms_Application.MyMapper
                 .ForMember(dest => dest.Requisitions, opt => opt.MapFrom(src => src.Items));
 
             CreateMap<cpms_Domain.Models.MaterialRequest, MaterialRequestResponse>()
+                .ForMember(dest => dest.RowVersion, opt => opt.MapFrom(src => Convert.ToBase64String(src.RowVersion)))
                 .ForMember(dest => dest.RequestedByName, opt => opt.MapFrom(src =>
                     src.Requester != null
                         ? $"{src.Requester.LastName} {src.Requester.FirstName}".Trim()

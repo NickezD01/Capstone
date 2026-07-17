@@ -34,7 +34,7 @@ public class WarehouseTransferWorkflowTests
     [InlineData(10, 6, 5)]
     public async Task ApprovalRejectsMoreThanAvailableOrReservedStock(decimal onHand, decimal reserved, decimal requested)
     {
-        var (service, uow) = CreateTransferService(managerId: 10, status: WarehouseTransferStatuses.Requested, requested: requested);
+        var (service, uow) = CreateTransferService(managerId: 20, status: WarehouseTransferStatuses.Requested, requested: requested);
         uow.InventoryRecords.Add(new InventoryRecord { InventoryId = 1, WarehouseId = 1, VariantId = 1, QuantityOnHand = onHand, ReservedQuantity = reserved });
 
         var response = await service.ApproveAsync(1);
@@ -46,7 +46,7 @@ public class WarehouseTransferWorkflowTests
     [Fact]
     public async Task ApprovalReservesStockAndCancellationReleasesIt()
     {
-        var (service, uow) = CreateTransferService(managerId: 10, requested: 4);
+        var (service, uow) = CreateTransferService(managerId: 20, requested: 4);
         var source = new InventoryRecord { InventoryId = 1, WarehouseId = 1, VariantId = 1, QuantityOnHand = 10, ReservedQuantity = 2 };
         uow.InventoryRecords.Add(source);
 
@@ -54,7 +54,8 @@ public class WarehouseTransferWorkflowTests
         Assert.True(approved.IsSuccess);
         Assert.Equal(6, source.ReservedQuantity);
 
-        var cancelled = await service.CancelAsync(1);
+        var sourceService = new WarehouseTransferService(uow, new FakeClaimService(10, Role.WAREHOUSE_MANAGER));
+        var cancelled = await sourceService.CancelAsync(1);
         Assert.True(cancelled.IsSuccess);
         Assert.Equal(2, source.ReservedQuantity);
         Assert.Equal(WarehouseTransferStatuses.Cancelled, uow.TransferRecords.Single().Status);
@@ -106,7 +107,7 @@ public class WarehouseTransferWorkflowTests
         var (unauthorized, _) = CreateTransferService(managerId: 99, status: WarehouseTransferStatuses.Requested);
         Assert.Equal(HttpStatusCode.Forbidden, (await unauthorized.ApproveAsync(1)).StatusCode);
 
-        var (invalidState, _) = CreateTransferService(managerId: 10, status: WarehouseTransferStatuses.InTransit);
+        var (invalidState, _) = CreateTransferService(managerId: 20, status: WarehouseTransferStatuses.InTransit);
         Assert.Equal(HttpStatusCode.Conflict, (await invalidState.ApproveAsync(1)).StatusCode);
     }
 
@@ -173,7 +174,7 @@ public class WarehouseTransferWorkflowTests
     public async Task MrpCountsOnlyThisProjectsOpenOrders()
     {
         var uow = CreateMrpUnitOfWork(grossRequired: 20, onHand: 0, reserved: 0);
-        var ownPo = new PurchaseOrder { PoId = 1, ProjectId = 1, WarehouseId = 1, Status = PurchaseOrderStatus.PENDING };
+        var ownPo = new PurchaseOrder { PoId = 1, ProjectId = 1, WarehouseId = 1, Status = PurchaseOrderStatus.APPROVED };
         var otherPo = new PurchaseOrder { PoId = 2, ProjectId = 2, WarehouseId = 1, Status = PurchaseOrderStatus.APPROVED };
         uow.PurchaseOrderRecords.AddRange(new[] { ownPo, otherPo });
         uow.OrderLineRecords.AddRange(new[]
@@ -189,6 +190,60 @@ public class WarehouseTransferWorkflowTests
         var item = Assert.Single(Assert.IsType<List<MRPCalculationResponse>>(response.Result));
         Assert.Equal(12, item.OnOrderQuantity);
         Assert.Equal(8, item.NetQuantityRequired);
+    }
+
+    [Fact]
+    public async Task MrpDoesNotTreatPendingPurchaseOrdersAsIncomingSupply()
+    {
+        var uow = CreateMrpUnitOfWork(grossRequired: 20, onHand: 0, reserved: 0);
+        var pendingPo = new PurchaseOrder { PoId = 1, ProjectId = 1, WarehouseId = 1, Status = PurchaseOrderStatus.PENDING };
+        uow.PurchaseOrderRecords.Add(pendingPo);
+        uow.OrderLineRecords.Add(new OrderLineItem
+        {
+            LineItemId = 1,
+            PurchaseOrder = pendingPo,
+            PoId = 1,
+            VariantId = 1,
+            Quantity = 12
+        });
+
+        var response = await new ProjectService(uow, null!, new FakeClaimService(1, Role.PM))
+            .CalculateMRPForProjectAsync(1, 1);
+
+        var item = Assert.Single(Assert.IsType<List<MRPCalculationResponse>>(response.Result));
+        Assert.Equal(0, item.OnOrderQuantity);
+        Assert.Equal(20, item.NetQuantityRequired);
+    }
+
+    [Fact]
+    public async Task MrpDoesNotApplyCompletedTaskIssuesToIncompleteTaskDemand()
+    {
+        var uow = CreateMrpUnitOfWork(grossRequired: 20, onHand: 0, reserved: 0);
+        var completedRequest = new MaterialRequest
+        {
+            RequestId = 1,
+            ProjectId = 1,
+            TaskId = 2,
+            Status = MaterialRequestStatuses.Issued
+        };
+        uow.RequestRecords.Add(completedRequest);
+        uow.RequisitionRecords.Add(new MaterialRequisition
+        {
+            ItemId = 1,
+            RequestId = 1,
+            MaterialRequest = completedRequest,
+            VariantId = 1,
+            IssuedQuantity = 20,
+            Quantity = 20,
+            ApprovedQuantity = 20
+        });
+
+        var response = await new ProjectService(uow, null!, new FakeClaimService(1, Role.PM))
+            .CalculateMRPForProjectAsync(1, 1);
+
+        var item = Assert.Single(Assert.IsType<List<MRPCalculationResponse>>(response.Result));
+        Assert.Equal(0, item.IssuedToProjectTasks);
+        Assert.Equal(20, item.NetQuantityRequired);
     }
 
     private static TestUnitOfWork CreateMrpUnitOfWork(decimal grossRequired, decimal onHand, decimal reserved)

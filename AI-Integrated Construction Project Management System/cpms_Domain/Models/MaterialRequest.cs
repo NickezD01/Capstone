@@ -19,6 +19,7 @@ namespace cpms_Domain.Models
         public int? ApprovedByUserId { get; set; }
         public DateTime? ApprovedAt { get; set; }
         public string? DecisionNote { get; set; }
+        public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 
         // Navigation Properties
         public virtual Project Project { get; set; } = null!;

@@ -9,6 +9,16 @@ namespace cpms_Application.Request.Warehouse
         public string? RowVersion { get; set; }
     }
 
+    public class InventoryReturnRequest
+    {
+        public int WarehouseId { get; set; }
+        public int VariantId { get; set; }
+        public decimal Quantity { get; set; }
+        public int? MaterialRequestId { get; set; }
+        public string? Note { get; set; }
+        public string? RowVersion { get; set; }
+    }
+
     public class ReceivePurchaseOrderRequest
     {
         public string? Note { get; set; }

@@ -21,6 +21,7 @@ namespace cpms_Application.Response.MaterialRequest
         public int? ApprovedByUserId { get; set; }
         public DateTime? ApprovedAt { get; set; }
         public string? DecisionNote { get; set; }
+        public string RowVersion { get; set; } = string.Empty;
         public List<MaterialRequisitionDetailResponse> Items { get; set; } = new List<MaterialRequisitionDetailResponse>();
     }
 

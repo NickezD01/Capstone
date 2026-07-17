@@ -19,35 +19,35 @@ namespace cpms_API.Controllers
         public async Task<IActionResult> GetUserProfileAsync()
         {
             var resposne = await _service.GetUserProfileAsync();
-            return resposne.IsSuccess ? Ok(resposne) : BadRequest(resposne);
+            return StatusCode((int)resposne.StatusCode, resposne);
         }
         [Authorize]
         [HttpPut("UpdateUserProfile")]
         public async Task<IActionResult> UpdateUserProfileAsync(UpdateUserRequest updateUserRequest)
         {
             var result = await _service.UpdateUserProfileAsync(updateUserRequest);
-            return result.IsSuccess ? Ok(result) : BadRequest(result);
+            return StatusCode((int)result.StatusCode, result);
         }
         [Authorize(Roles = "ADMIN")]
         [HttpGet("GetAllAccountAsync")]
         public async Task<IActionResult> GetAllAccountAsync()
         {
             var resposne = await _service.GetAllAccountAsync();
-            return resposne.IsSuccess ? Ok(resposne) : BadRequest(resposne);
+            return StatusCode((int)resposne.StatusCode, resposne);
         }
         [Authorize]
         [HttpGet("GetUserId")]
         public async Task<IActionResult> GetUserId()
         {
             var result = await _service.GetUserIdAsync();
-            return result.IsSuccess ? Ok(result) : BadRequest(result);
+            return StatusCode((int)result.StatusCode, result);
         }
         [Authorize(Roles = "ADMIN")]
         [HttpPut("UpdateUserRoleProfile/{customerId}")]
         public async Task<IActionResult> UpdateUserRole(int customerId, UpdateUserRoleRequest request)
         {
             var resposne = await _service.UpdateUserRoleProfileAsync(customerId, request);
-            return resposne.IsSuccess ? Ok(resposne) : BadRequest(resposne);
+            return StatusCode((int)resposne.StatusCode, resposne);
         }
 
         [Authorize(Roles = "ADMIN")]
@@ -55,7 +55,7 @@ namespace cpms_API.Controllers
         public async Task<IActionResult> CountUser()
         {
             var resposne = await _service.CountUser();
-            return resposne.IsSuccess ? Ok(resposne) : BadRequest(resposne);
+            return StatusCode((int)resposne.StatusCode, resposne);
         }
         
     }

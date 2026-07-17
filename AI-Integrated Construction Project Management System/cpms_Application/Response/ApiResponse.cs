@@ -34,6 +34,8 @@ namespace cpms_Application.Response
             return this;
         }
 
+        public ApiResponse SetNotFound(string message) => SetNotFound(result: null, message: message);
+
         public ApiResponse SetBadRequest(object? result = null, string? message = null)
         {
             IsSuccess = false;
@@ -46,6 +48,8 @@ namespace cpms_Application.Response
             return this;
         }
 
+        public ApiResponse SetBadRequest(string message) => SetBadRequest(result: null, message: message);
+
         public ApiResponse SetConflict(object? result = null, string? message = null)
         {
             IsSuccess = false;
@@ -54,6 +58,8 @@ namespace cpms_Application.Response
             Result = result;
             return this;
         }
+
+        public ApiResponse SetConflict(string message) => SetConflict(result: null, message: message);
 
         public ApiResponse SetApiResponse(HttpStatusCode statusCode, bool isSuccess, string? message = null, object? result = null)
         {

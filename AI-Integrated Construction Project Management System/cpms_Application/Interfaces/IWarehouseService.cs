@@ -16,6 +16,7 @@ namespace cpms_Application.Interfaces
         Task<ApiResponse> GetWarehouseInventoryAsync(int warehouseId);
         Task<ApiResponse> GetInventoryAsync(int warehouseId, int variantId);
         Task<ApiResponse> AdjustInventoryAsync(InventoryAdjustmentRequest request);
+        Task<ApiResponse> ReturnInventoryAsync(InventoryReturnRequest request);
         Task<ApiResponse> GetTransactionsAsync(int? warehouseId, int? variantId);
     }
 }

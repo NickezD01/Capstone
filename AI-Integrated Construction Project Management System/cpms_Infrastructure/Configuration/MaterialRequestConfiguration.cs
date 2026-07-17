@@ -20,6 +20,7 @@ namespace cpms_Infrastructure.Configuration
             builder.Property(mr => mr.RequestDate).HasDefaultValueSql("GETUTCDATE()");
             builder.Property(mr => mr.RequestNote).HasMaxLength(1000);
             builder.Property(mr => mr.DecisionNote).HasMaxLength(1000);
+            builder.Property(mr => mr.RowVersion).IsRowVersion();
 
             builder.Property(mr => mr.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
             builder.Property(mr => mr.IsDeleted).HasDefaultValue(false);

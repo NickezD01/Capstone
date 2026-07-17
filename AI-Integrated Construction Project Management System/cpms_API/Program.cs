@@ -14,6 +14,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using System.Security.Claims;
 using System.Text;
 using System.Threading.RateLimiting;
 
@@ -72,7 +73,7 @@ builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        options.RequireHttpsMetadata = false;
+        options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
         options.SaveToken = true;
         options.TokenValidationParameters = new TokenValidationParameters
         {
@@ -84,6 +85,25 @@ builder.Services
             ValidAudience = configuration.SecretToken.Audience,
             ValidateLifetime = true,
             ClockSkew = TimeSpan.Zero
+        };
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = async context =>
+            {
+                var userIdValue = context.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                var roleValue = context.Principal?.FindFirst(ClaimTypes.Role)?.Value;
+                if (!int.TryParse(userIdValue, out var userId))
+                {
+                    context.Fail("The token does not contain a valid user identifier.");
+                    return;
+                }
+
+                var db = context.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
+                var account = await db.UserAccounts.AsNoTracking().SingleOrDefaultAsync(x => x.Id == userId);
+                if (account == null || account.IsEmailVerified != true ||
+                    !string.Equals(account.Role.ToString(), roleValue, StringComparison.OrdinalIgnoreCase))
+                    context.Fail("The account is inactive or its authorization has changed. Sign in again.");
+            }
         };
     });
 
@@ -163,9 +183,13 @@ builder.Services.AddScoped<IWarehouseTransferService, WarehouseTransferService>(
 // ======================================================
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
+    var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
+    options.AddPolicy("Frontend", policy =>
     {
-        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
+        if (builder.Environment.IsDevelopment())
+            policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
+        else if (allowedOrigins.Length > 0)
+            policy.WithOrigins(allowedOrigins).AllowAnyMethod().AllowAnyHeader();
     });
 });
 
@@ -175,8 +199,8 @@ var app = builder.Build();
 // HTTP REQUEST PIPELINE (MIDDLEWARES)
 // ======================================================
 // 💡 Lưu ý: Đặt Middleware Custom trước để bắt lỗi toàn cục cho pipeline
-app.UseMiddleware<ValidationMiddleware>();
 app.UseMiddleware<ExceptionMiddleware>();
+app.UseMiddleware<ValidationMiddleware>();
 
 if (app.Environment.IsDevelopment())
 {
@@ -185,7 +209,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-app.UseCors("AllowAll");
+app.UseCors("Frontend");
 app.UseRateLimiter();
 
 app.UseAuthentication();

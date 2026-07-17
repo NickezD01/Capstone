@@ -20,6 +20,7 @@ namespace cpms_Infrastructure.Configuration
             builder.Property(t => t.PlannedBudget).HasColumnType("decimal(18,2)").HasDefaultValue(0.00);
             builder.Property(t => t.ActualCost).HasColumnType("decimal(18,2)").HasDefaultValue(0.00);
             builder.Property(t => t.ActualProgressPct).HasColumnType("decimal(5,2)").HasDefaultValue(0.00);
+            builder.Property(t => t.RowVersion).IsRowVersion();
 
             builder.Property(t => t.Status)
                    .HasMaxLength(30)

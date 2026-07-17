@@ -41,6 +41,14 @@ namespace cpms_API.Controllers
             return StatusCode((int)response.StatusCode, response);
         }
 
+        [HttpPost("inventory/return")]
+        [Authorize(Roles = "WAREHOUSE_MANAGER")]
+        public async Task<IActionResult> ReturnInventory([FromBody] InventoryReturnRequest request)
+        {
+            var response = await _warehouseService.ReturnInventoryAsync(request);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
         [HttpGet("inventory/transactions")]
         [Authorize(Roles = "ADMIN,WAREHOUSE_MANAGER")]
         public async Task<IActionResult> GetTransactions([FromQuery] int? warehouseId, [FromQuery] int? variantId)

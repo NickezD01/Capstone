@@ -24,6 +24,7 @@ namespace cpms_Domain.Models
         public int? ApprovedByUserId { get; set; }
         public DateTime? ApprovedAt { get; set; }
         public string? Note { get; set; }
+        public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 
         public virtual Project Project { get; set; } = null!;
         public virtual Supplier Supplier { get; set; } = null!;

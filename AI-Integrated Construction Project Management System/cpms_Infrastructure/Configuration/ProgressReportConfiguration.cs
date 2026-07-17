@@ -14,6 +14,7 @@ namespace cpms_Infrastructure.Configuration
 
             builder.Property(pr => pr.SitePhotoUrl).HasMaxLength(500);
             builder.Property(pr => pr.ProgressIncrement).HasColumnType("decimal(5,2)").HasDefaultValue(0.00); // Thêm định dạng decimal cho % tiến độ
+            builder.Property(pr => pr.ActualCostIncrement).HasColumnType("decimal(18,2)").HasDefaultValue(0.00);
             builder.Property(pr => pr.Notes).HasMaxLength(2000);
 
             builder.Property(pr => pr.CreatedDate).HasDefaultValueSql("GETUTCDATE()");

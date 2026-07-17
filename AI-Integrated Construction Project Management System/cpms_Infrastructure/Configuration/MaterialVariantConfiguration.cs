@@ -23,7 +23,7 @@ namespace cpms_Infrastructure.Configuration
             builder.Property(v => v.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
             builder.Property(v => v.IsDeleted).HasDefaultValue(false);
             builder.HasIndex(v => v.SKU).IsUnique().HasFilter("[SKU] IS NOT NULL AND [IsDeleted] = 0");
-            builder.HasQueryFilter(v => !v.IsDeleted);
+            builder.HasQueryFilter(v => !v.IsDeleted && !v.Material.IsDeleted);
         }
     }
 }

@@ -51,9 +51,22 @@ namespace cpms_Application.Services
             if (resolved.GroupBy(x => x.VariantId).Any(g => g.Count() > 1))
                 return new ApiResponse().SetBadRequest(message: "A material variant may only appear once per request.");
 
-            await _uow.BeginTransactionAsync();
+            await _uow.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             try
             {
+                if (request.TaskId.HasValue)
+                {
+                    var existingActiveRequest = await _uow.MaterialRequests.GetAsync(r =>
+                        r.TaskId == request.TaskId.Value &&
+                        (r.Status == MaterialRequestStatuses.Pending ||
+                         r.Status == MaterialRequestStatuses.Approved ||
+                         r.Status == MaterialRequestStatuses.Issued));
+                    if (existingActiveRequest != null)
+                    {
+                        await _uow.RollbackTransactionAsync();
+                        return new ApiResponse().SetConflict(message: "This task already has an active or issued material request.");
+                    }
+                }
                 var entity = new MaterialRequest
                 {
                     ProjectId = request.ProjectId,
@@ -353,9 +366,12 @@ namespace cpms_Application.Services
                   .Include(r => r.Warehouse)
                   .Include(r => r.Requisitions).ThenInclude(i => i.Variant).ThenInclude(v => v.Material);
 
-        private async Task<MaterialVariant?> ResolveVariantAsync(int variantId, int legacyMaterialId) =>
-            variantId != 0 ? await _uow.MaterialVariants.GetByIdAsync(variantId)
-                : await _uow.MaterialVariants.GetAsync(v => v.MaterialId == legacyMaterialId && v.IsActive);
+        private async Task<MaterialVariant?> ResolveVariantAsync(int variantId, int legacyMaterialId)
+        {
+            if (variantId != 0) return await _uow.MaterialVariants.GetByIdAsync(variantId);
+            var candidates = await _uow.MaterialVariants.GetAllAsync(v => v.MaterialId == legacyMaterialId && v.IsActive);
+            return candidates.Count == 1 ? candidates[0] : null;
+        }
 
         private static bool IsRole(ClaimDTO claim, Role role) => string.Equals(claim.Role, role.ToString(), StringComparison.OrdinalIgnoreCase);
         private static bool CanReadRequest(ClaimDTO claim, MaterialRequest request) =>

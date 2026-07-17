@@ -13,6 +13,7 @@ namespace cpms_Domain.Models
         public int ReportedByUserId { get; set; }
         public DateTime ReportDate { get; set; }
         public decimal ProgressIncrement { get; set; }
+        public decimal ActualCostIncrement { get; set; }
         public string? Notes { get; set; }
         public string? SitePhotoUrl { get; set; }
 

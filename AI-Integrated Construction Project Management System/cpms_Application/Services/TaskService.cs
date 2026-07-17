@@ -42,6 +42,11 @@ namespace cpms_Application.Services
                     await _uow.RollbackTransactionAsync();
                     return response.SetNotFound($"Dự án với ID = {request.ProjectId} không tồn tại trong hệ thống.");
                 }
+                if (project.Status == ProjectStatus.COMPLETED)
+                {
+                    await _uow.RollbackTransactionAsync();
+                    return response.SetConflict(message: "Completed projects cannot accept new tasks.");
+                }
                 var currentUser = _claimService.GetUserClaim();
                 if (!string.Equals(currentUser.Role, Role.PM.ToString(), StringComparison.OrdinalIgnoreCase) || project.PMUserID != currentUser.Id)
                 {
@@ -51,10 +56,10 @@ namespace cpms_Application.Services
 
                 // 2. Kiểm tra nhân sự được giao việc có tồn tại hay không
                 var user = await _uow.UserAccounts.GetAsync(u => u.Id == request.AssignedToUserID);
-                if (user == null)
+                if (user == null || user.IsEmailVerified != true)
                 {
                     await _uow.RollbackTransactionAsync();
-                    return response.SetNotFound($"Nhân sự được giao việc với ID = {request.AssignedToUserID} không tồn tại.");
+                    return response.SetBadRequest(message: "The assigned user must exist and have a verified email.");
                 }
 
                 // 3. Map dữ liệu cơ bản và cấu hình mặc định cho Task mới
@@ -83,15 +88,26 @@ namespace cpms_Application.Services
                         return response.SetBadRequest("A material variant may only appear once per task.");
                     }
                     // Tối ưu hóa: Thu thập toàn bộ MaterialId cần kiểm tra để truy vấn DB một lần duy nhất
+                    var resolvedVariantIds = new HashSet<int>();
                     foreach (var matRequest in request.Materials)
                     {
-                        var variant = matRequest.VariantId != 0
-                            ? await _uow.MaterialVariants.GetByIdAsync(matRequest.VariantId)
-                            : await _uow.MaterialVariants.GetAsync(v => v.MaterialId == matRequest.MaterialId && v.IsActive);
+                        MaterialVariant? variant;
+                        if (matRequest.VariantId != 0)
+                            variant = await _uow.MaterialVariants.GetByIdAsync(matRequest.VariantId);
+                        else
+                        {
+                            var candidates = await _uow.MaterialVariants.GetAllAsync(v => v.MaterialId == matRequest.MaterialId && v.IsActive);
+                            variant = candidates.Count == 1 ? candidates[0] : null;
+                        }
                         if (variant == null)
                         {
                             await _uow.RollbackTransactionAsync();
                             return response.SetBadRequest(message: "Material variant does not exist.");
+                        }
+                        if (!resolvedVariantIds.Add(variant.VariantId))
+                        {
+                            await _uow.RollbackTransactionAsync();
+                            return response.SetBadRequest(message: "A resolved material variant may only appear once per task.");
                         }
 
                         // Khởi tạo thực thể liên kết Task và Vật tư

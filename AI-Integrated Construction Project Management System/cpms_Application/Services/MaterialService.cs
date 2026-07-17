@@ -65,18 +65,25 @@ namespace cpms_Application.Services
 
         public async Task<ApiResponse> DeleteMaterialAsync(int id)
         {
-            var material = await _uow.Materials.GetByIdAsync(id);
+            var material = await _uow.Materials.GetAsync(m => m.MaterialId == id, q => q.Include(m => m.Variants));
             if (material == null) return new ApiResponse().SetNotFound(message: $"Material with ID {id} not found.");
             material.IsActive = false;
             material.IsDeleted = true;
             material.ModifiedDate = DateTime.UtcNow;
+            foreach (var variant in material.Variants)
+            {
+                variant.IsActive = false;
+                variant.IsDeleted = true;
+                variant.ModifiedDate = DateTime.UtcNow;
+            }
             await _uow.SaveChangeAsync();
             return new ApiResponse().SetOk("Material deactivated successfully.");
         }
 
         public async Task<ApiResponse> CreateVariantAsync(MaterialVariantRequest request)
         {
-            if (await _uow.Materials.GetByIdAsync(request.MaterialId) == null)
+            var material = await _uow.Materials.GetByIdAsync(request.MaterialId);
+            if (material == null || !material.IsActive)
                 return new ApiResponse().SetBadRequest(message: "Material does not exist.");
             if (string.IsNullOrWhiteSpace(request.VariantName) || string.IsNullOrWhiteSpace(request.Unit))
                 return new ApiResponse().SetBadRequest(message: "VariantName and Unit are required.");

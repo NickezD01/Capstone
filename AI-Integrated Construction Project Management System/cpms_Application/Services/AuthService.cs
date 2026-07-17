@@ -248,12 +248,6 @@ namespace cpms_Application.Services
             await _unitOfWork.BeginTransactionAsync();
             try
             {
-                var previousCodes = await _unitOfWork.EmailVerifications.GetAllAsync(x => x.UserId == user.Id && !x.IsUsed);
-                foreach (var previousCode in previousCodes)
-                {
-                    previousCode.IsUsed = true;
-                    _unitOfWork.EmailVerifications.Update(previousCode);
-                }
                 await _unitOfWork.EmailVerifications.AddAsync(new EmailVerification
                 {
                     UserId = user.Id,
@@ -284,7 +278,7 @@ namespace cpms_Application.Services
         }
 
         private static string BuildVerificationEmail(string? firstName, string code) =>
-            $"Dear {firstName},<br/>Please use the following verification code to validate your email: <strong>{code}</strong>.<br/>The code will expire in 30 minutes.";
+            $"Dear {System.Net.WebUtility.HtmlEncode(firstName)},<br/>Please use the following verification code to validate your email: <strong>{code}</strong>.<br/>The code will expire in 30 minutes.";
 
         private string GenerateVerificationCode()
         {

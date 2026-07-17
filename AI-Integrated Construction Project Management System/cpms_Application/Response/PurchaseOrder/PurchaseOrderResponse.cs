@@ -25,6 +25,7 @@ namespace cpms_Application.Response.PurchaseOrder
         public int? ApprovedByUserId { get; set; }
         public DateTime? ApprovedAt { get; set; }
         public string? Note { get; set; }
+        public string RowVersion { get; set; } = string.Empty;
 
         public List<OrderLineItemResponse> Items { get; set; } = new();
     }

@@ -17,6 +17,7 @@ namespace cpms_Infrastructure.Configuration
             builder.HasKey(po => po.PoId);
             builder.Property(po => po.TotalAmount).HasColumnType("decimal(18,2)");
             builder.Property(po => po.Note).HasMaxLength(1000);
+            builder.Property(po => po.RowVersion).IsRowVersion();
 
             builder.Property(po => po.Status)
                    .HasMaxLength(30)

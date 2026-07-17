@@ -31,6 +31,20 @@ public class EfModelTests
         using var context = CreateContext();
         var property = context.Model.FindEntityType(typeof(ProgressReport))!.FindProperty(nameof(ProgressReport.ProgressIncrement))!;
         Assert.Equal("decimal(5,2)", property.GetColumnType());
+        var costProperty = context.Model.FindEntityType(typeof(ProgressReport))!.FindProperty(nameof(ProgressReport.ActualCostIncrement))!;
+        Assert.Equal("decimal(18,2)", costProperty.GetColumnType());
+    }
+
+    [Fact]
+    public void MutableWorkflowRoots_HaveRowVersionConcurrency()
+    {
+        using var context = CreateContext();
+        foreach (var type in new[] { typeof(TaskItem), typeof(MaterialRequest), typeof(PurchaseOrder) })
+        {
+            var rowVersion = context.Model.FindEntityType(type)!.FindProperty("RowVersion");
+            Assert.NotNull(rowVersion);
+            Assert.True(rowVersion!.IsConcurrencyToken);
+        }
     }
 
     [Fact]

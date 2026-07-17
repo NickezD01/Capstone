@@ -22,6 +22,7 @@ namespace cpms_Domain.Models
         public DateTime BaselineEnd { get; set; }
         public decimal ActualProgressPct { get; set; } // 🚀 SỬA: Chuyển sang decimal để đồng bộ tỷ lệ phần trăm (0.00 -> 100.00)
         public TaskStatus Status { get; set; } = TaskStatus.PENDING;
+        public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 
         // Navigation Properties
         public virtual Project Project { get; set; } = null!;

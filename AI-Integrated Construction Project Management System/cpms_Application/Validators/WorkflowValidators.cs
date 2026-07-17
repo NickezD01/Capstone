@@ -1,7 +1,13 @@
 using cpms_Application.Request.Material;
 using cpms_Application.Request.MaterialRequest;
 using cpms_Application.Request.ProgressReport;
+using cpms_Application.Request.Project;
 using cpms_Application.Request.PurchaseOrder;
+using cpms_Application.Request.Category;
+using cpms_Application.Request.Supplier;
+using cpms_Application.Request.SupplierCatalog;
+using cpms_Application.Request.User;
+using cpms_Application.Request.UserAccount;
 using cpms_Application.Request.Warehouse;
 using cpms_Application.Request.WarehouseTransfer;
 using cpms_Application.Request.Tasks;
@@ -9,6 +15,114 @@ using FluentValidation;
 
 namespace cpms_Application.Validators
 {
+    public class UserRegisterRequestValidator : AbstractValidator<UserRegisterRequest>
+    {
+        public UserRegisterRequestValidator()
+        {
+            RuleFor(x => x.Email).NotEmpty().EmailAddress().MaximumLength(150);
+            RuleFor(x => x.Password).NotEmpty().MinimumLength(10).MaximumLength(128)
+                .Matches("[A-Z]").WithMessage("Password must contain an uppercase letter.")
+                .Matches("[a-z]").WithMessage("Password must contain a lowercase letter.")
+                .Matches("[0-9]").WithMessage("Password must contain a number.");
+            RuleFor(x => x.ConfirmPassword).Equal(x => x.Password).WithMessage("Passwords do not match.");
+            RuleFor(x => x.FirstName).NotEmpty().MaximumLength(100);
+            RuleFor(x => x.LastName).NotEmpty().MaximumLength(100);
+        }
+    }
+
+    public class LoginRequestValidator : AbstractValidator<LoginRequest>
+    {
+        public LoginRequestValidator()
+        {
+            RuleFor(x => x.UserEmail).NotEmpty().EmailAddress().MaximumLength(150);
+            RuleFor(x => x.Password).NotEmpty().MaximumLength(128);
+        }
+    }
+
+    public class UpdateUserRoleRequestValidator : AbstractValidator<UpdateUserRoleRequest>
+    {
+        public UpdateUserRoleRequestValidator() => RuleFor(x => x.Role).IsInEnum();
+    }
+
+    public class CreateProjectRequestValidator : AbstractValidator<CreateProjectRequest>
+    {
+        public CreateProjectRequestValidator()
+        {
+            RuleFor(x => x.ProjectName).NotEmpty().MaximumLength(200);
+            RuleFor(x => x.Address).MaximumLength(500);
+            RuleFor(x => x.PMUserID).GreaterThan(0);
+            RuleFor(x => x.TotalProjectBudget).GreaterThanOrEqualTo(0);
+            RuleFor(x => x.BaselineEnd).GreaterThanOrEqualTo(x => x.BaselineStart);
+        }
+    }
+
+    public class AdjustBudgetRequestValidator : AbstractValidator<AdjustBudgetRequest>
+    {
+        public AdjustBudgetRequestValidator()
+        {
+            RuleFor(x => x.ProjectId).GreaterThan(0);
+            RuleFor(x => x.Amount).NotEqual(0);
+            RuleFor(x => x.Reason).NotEmpty().MaximumLength(1000);
+        }
+    }
+
+    public class CreateCategoryRequestValidator : AbstractValidator<CreateCategoryRequest>
+    {
+        public CreateCategoryRequestValidator() => RuleFor(x => x.CategoryName).NotEmpty().MaximumLength(150);
+    }
+
+    public class CreateSupplierRequestValidator : AbstractValidator<CreateSupplierRequest>
+    {
+        public CreateSupplierRequestValidator()
+        {
+            RuleFor(x => x.CompanyName).NotEmpty().MaximumLength(200);
+            RuleFor(x => x.ContactEmail).EmailAddress().MaximumLength(150).When(x => !string.IsNullOrWhiteSpace(x.ContactEmail));
+            RuleFor(x => x.ContactPhone).MaximumLength(20);
+        }
+    }
+
+    public class CreateWarehouseRequestValidator : AbstractValidator<CreateWarehouseRequest>
+    {
+        public CreateWarehouseRequestValidator()
+        {
+            RuleFor(x => x.ManagerId).GreaterThan(0);
+            RuleFor(x => x.WarehouseName).NotEmpty().MaximumLength(250);
+            RuleFor(x => x.Location).NotEmpty().MaximumLength(500);
+        }
+    }
+
+    public class CreateCatalogRequestValidator : AbstractValidator<CreateCatalogRequest>
+    {
+        public CreateCatalogRequestValidator()
+        {
+            RuleFor(x => x.SupplierId).GreaterThan(0);
+            RuleFor(x => x).Must(x => x.VariantId > 0 || x.MaterialId > 0).WithMessage("VariantId is required.");
+            RuleFor(x => x.SupplierSku).MaximumLength(100);
+            RuleFor(x => x.UnitPrice).GreaterThanOrEqualTo(0);
+            RuleFor(x => x.MinimumOrderQuantity).GreaterThanOrEqualTo(0);
+            RuleFor(x => x.LeadTimeDays).GreaterThanOrEqualTo(0);
+        }
+    }
+
+    public class MaterialRequestValidator : AbstractValidator<cpms_Application.Request.Material.MaterialRequest>
+    {
+        public MaterialRequestValidator()
+        {
+            RuleFor(x => x.MaterialName).NotEmpty().MaximumLength(200);
+            RuleFor(x => x.DefaultUnit).NotEmpty().MaximumLength(50);
+            RuleFor(x => x.CategoryId).GreaterThan(0);
+        }
+    }
+
+    public class UpdateMaterialRequestValidator : AbstractValidator<UpdateMaterialRequest>
+    {
+        public UpdateMaterialRequestValidator()
+        {
+            RuleFor(x => x.MaterialName).NotEmpty().MaximumLength(200);
+            RuleFor(x => x.DefaultUnit).NotEmpty().MaximumLength(50);
+        }
+    }
+
     public class MaterialVariantRequestValidator : AbstractValidator<MaterialVariantRequest>
     {
         public MaterialVariantRequestValidator()
@@ -81,6 +195,7 @@ namespace cpms_Application.Validators
         {
             RuleFor(x => x.TaskId).GreaterThan(0);
             RuleFor(x => x.ProgressIncrement).GreaterThan(0).LessThanOrEqualTo(100).PrecisionScale(5, 2, true);
+            RuleFor(x => x.ActualCostIncrement).GreaterThanOrEqualTo(0).PrecisionScale(18, 2, true);
             RuleFor(x => x.Notes).MaximumLength(2000);
             RuleFor(x => x.SitePhotoUrl).MaximumLength(500);
         }
@@ -93,6 +208,18 @@ namespace cpms_Application.Validators
             RuleFor(x => x.WarehouseId).GreaterThan(0);
             RuleFor(x => x.VariantId).GreaterThan(0);
             RuleFor(x => x.QuantityDelta).NotEqual(0);
+            RuleFor(x => x.Note).MaximumLength(1000);
+        }
+    }
+
+    public class InventoryReturnRequestValidator : AbstractValidator<InventoryReturnRequest>
+    {
+        public InventoryReturnRequestValidator()
+        {
+            RuleFor(x => x.WarehouseId).GreaterThan(0);
+            RuleFor(x => x.VariantId).GreaterThan(0);
+            RuleFor(x => x.Quantity).GreaterThan(0);
+            RuleFor(x => x.MaterialRequestId).GreaterThan(0).When(x => x.MaterialRequestId.HasValue);
             RuleFor(x => x.Note).MaximumLength(1000);
         }
     }

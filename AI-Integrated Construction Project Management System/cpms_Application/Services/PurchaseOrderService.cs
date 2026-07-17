@@ -150,13 +150,15 @@ namespace cpms_Application.Services
         public async Task<ApiResponse> ApprovePurchaseOrderAsync(int poId)
         {
             var user = _claimService.GetUserClaim();
-            if (!IsWarehouseManager(user)) return Forbidden("Only warehouse managers may approve purchase orders.");
+            if (!IsPurchaseOrderApproverRole(user)) return Forbidden("Only administrators or project managers may approve purchase orders.");
             await _uow.BeginTransactionAsync();
             try
             {
-                var po = await _uow.PurchaseOrders.GetAsync(p => p.PoId == poId, q => q.Include(p => p.Warehouse).Include(p => p.OrderLineItems));
+                var po = await _uow.PurchaseOrders.GetAsync(p => p.PoId == poId,
+                    q => q.Include(p => p.Project).Include(p => p.Warehouse).Include(p => p.OrderLineItems));
                 if (po == null) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetNotFound(message: "Purchase order not found."); }
-                if (po.Warehouse.ManagerId != user.Id) { await _uow.RollbackTransactionAsync(); return Forbidden("You may only approve purchase orders for a warehouse you manage."); }
+                if (!CanApprovePurchaseOrder(user, po)) { await _uow.RollbackTransactionAsync(); return Forbidden("You may only approve purchase orders for a project you manage."); }
+                if (po.UserAccountId == user.Id) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "The purchase-order creator cannot approve the same order."); }
                 if (po.Status != PurchaseOrderStatus.PENDING) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "Only pending purchase orders can be approved."); }
 
                 foreach (var line in po.OrderLineItems)
@@ -192,10 +194,11 @@ namespace cpms_Application.Services
         public async Task<ApiResponse> RejectPurchaseOrderAsync(int poId)
         {
             var user = _claimService.GetUserClaim();
-            if (!IsWarehouseManager(user)) return Forbidden("Only warehouse managers may reject purchase orders.");
-            var po = await _uow.PurchaseOrders.GetAsync(p => p.PoId == poId, q => q.Include(p => p.Warehouse));
+            if (!IsPurchaseOrderApproverRole(user)) return Forbidden("Only administrators or project managers may reject purchase orders.");
+            var po = await _uow.PurchaseOrders.GetAsync(p => p.PoId == poId, q => q.Include(p => p.Project));
             if (po == null) return new ApiResponse().SetNotFound(message: "Purchase order not found.");
-            if (po.Warehouse.ManagerId != user.Id) return Forbidden("You may only reject purchase orders for a warehouse you manage.");
+            if (!CanApprovePurchaseOrder(user, po)) return Forbidden("You may only reject purchase orders for a project you manage.");
+            if (po.UserAccountId == user.Id) return new ApiResponse().SetConflict(message: "The purchase-order creator cannot reject the same order.");
             if (po.Status != PurchaseOrderStatus.PENDING) return new ApiResponse().SetConflict(message: "Only pending purchase orders can be rejected.");
             po.Status = PurchaseOrderStatus.REJECTED;
             await _uow.SaveChangeAsync();
@@ -281,6 +284,12 @@ namespace cpms_Application.Services
         }
 
         private static bool IsWarehouseManager(ClaimDTO claim) => string.Equals(claim.Role, Role.WAREHOUSE_MANAGER.ToString(), StringComparison.OrdinalIgnoreCase);
+        private static bool IsPurchaseOrderApproverRole(ClaimDTO claim) =>
+            string.Equals(claim.Role, Role.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(claim.Role, Role.PM.ToString(), StringComparison.OrdinalIgnoreCase);
+        private static bool CanApprovePurchaseOrder(ClaimDTO claim, PurchaseOrder order) =>
+            string.Equals(claim.Role, Role.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase) ||
+            (string.Equals(claim.Role, Role.PM.ToString(), StringComparison.OrdinalIgnoreCase) && order.Project.PMUserID == claim.Id);
         private static ApiResponse Forbidden(string message) => new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, message);
     }
 }

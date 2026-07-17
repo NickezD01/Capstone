@@ -34,15 +34,18 @@ namespace cpms_Application.Services
                 // 1. Lấy ID của kỹ sư đăng nhập từ Token bảo mật
                 var currentUser = _claimService.GetUserClaim();
                 int currentUserId = currentUser.Id;
-                if (!string.Equals(currentUser.Role, Role.PM.ToString(), StringComparison.OrdinalIgnoreCase))
-                    return response.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Only project managers may submit progress reports.");
-
                 // 2. Kiểm tra đầu việc (TaskItem) có tồn tại không
                 var task = await _uow.TaskItems.GetAsync(t => t.TaskId == request.TaskId);
                 if (task == null) return response.SetNotFound("Đầu việc không tồn tại.");
-                var project = await _uow.Projects.GetByIdAsync(task.ProjectId);
-                if (project == null || project.PMUserID != currentUserId)
-                    return response.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You may only report progress for a project you manage.");
+                var project = await _uow.Projects.GetAsync(p => p.ProjectId == task.ProjectId,
+                    query => query.Include(p => p.Tasks));
+                if (project == null)
+                    return response.SetNotFound("Project not found.");
+                var isOwningPm = string.Equals(currentUser.Role, Role.PM.ToString(), StringComparison.OrdinalIgnoreCase) &&
+                                 project.PMUserID == currentUserId;
+                var isAssignee = task.AssignedToUserID == currentUserId;
+                if (!isOwningPm && !isAssignee)
+                    return response.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Only the project manager or assigned user may report task progress.");
 
                 // 🛑 CHECK VALIDATION: Lượng tăng thêm phải lớn hơn 0 (Kiểu int)
                 decimal progressIncrement = request.ProgressIncrement;
@@ -74,6 +77,7 @@ namespace cpms_Application.Services
 
                 // 5. LOGIC CỘNG DỒN: Tiến độ cũ (decimal/int) + Lượng nhập mới tăng thêm (int)
                 task.ActualProgressPct += progressIncrement;
+                task.ActualCost += request.ActualCostIncrement;
 
                 // 6. TỰ ĐỘNG ĐỔI TRẠNG THÁI TASK KHI CHẠM 100%
                 if (task.ActualProgressPct >= 100)
@@ -85,16 +89,28 @@ namespace cpms_Application.Services
                     task.Status = DomainTaskStatus.ACTIVE;
                 }
 
+                if (project.Tasks.Count > 0 && project.Tasks.All(x => x.Status == DomainTaskStatus.COMPLETED))
+                    project.Status = ProjectStatus.COMPLETED;
+                else if (DateTime.UtcNow > project.BaselineEnd)
+                    project.Status = ProjectStatus.DELAYED;
+                else
+                    project.Status = ProjectStatus.IN_PROGRESS;
+
                 // 7. Lưu tất cả thay đổi xuống Database và commit transaction
                 await _uow.SaveChangeAsync();
                 await _uow.CommitTransactionAsync();
                 transactionStarted = false;
 
-                return response.SetOk($"Gửi báo cáo thành công! Đã cộng thêm {progressIncrement}%. Tiến độ hiện tại của đầu việc đạt {task.ActualProgressPct}% ({task.Status}).");
+                return response.SetOk($"Progress updated by {progressIncrement}%. Current progress is {task.ActualProgressPct}% ({task.Status}); actual cost is {task.ActualCost}.");
             }
             catch (ArgumentNullException)
             {
                 return response.SetApiResponse(System.Net.HttpStatusCode.Unauthorized, false, "Authenticated user claims are missing.");
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                if (transactionStarted) await _uow.RollbackTransactionAsync();
+                return response.SetConflict(message: "Task progress changed while this report was being saved. Reload and retry.");
             }
             catch (Exception)
             {
@@ -116,7 +132,8 @@ namespace cpms_Application.Services
                 var isAdmin = string.Equals(currentUser.Role, Role.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase);
                 var isOwner = string.Equals(currentUser.Role, Role.PM.ToString(), StringComparison.OrdinalIgnoreCase) &&
                               project.PMUserID == currentUser.Id;
-                if (!isAdmin && !isOwner)
+                var isAssignee = task.AssignedToUserID == currentUser.Id;
+                if (!isAdmin && !isOwner && !isAssignee)
                     return response.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You do not have access to this task's progress reports.");
                 var reports = await _uow.ProgressReports.GetAllAsync(
                     filter: r => r.TaskId == taskId,

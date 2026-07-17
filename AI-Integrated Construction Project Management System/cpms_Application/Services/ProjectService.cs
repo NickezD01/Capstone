@@ -154,8 +154,11 @@ namespace cpms_Application.Services
         {
             var apiResponse = new ApiResponse();
 
+            const long maxWordSize = 10 * 1024 * 1024;
             if (file == null || file.Length == 0)
                 return apiResponse.SetBadRequest("Vui lòng tải lên một file Word (.docx) hợp lệ.");
+            if (file.Length > maxWordSize || !string.Equals(Path.GetExtension(file.FileName), ".docx", StringComparison.OrdinalIgnoreCase))
+                return apiResponse.SetBadRequest(message: "The project import must be a .docx file no larger than 10 MB.");
 
             // Áp dụng Giao dịch (Transaction) để bảo vệ dữ liệu khi bóc tách file
             await _unitOfWork.BeginTransactionAsync();
@@ -229,6 +232,11 @@ namespace cpms_Application.Services
                     await _unitOfWork.RollbackTransactionAsync();
                     return apiResponse.SetBadRequest("File văn bản sai cấu trúc hoặc trống. Không tìm thấy dòng chứa tiêu đề 'Tên dự án:'.");
                 }
+                if (projectName.Length > 200 || address.Length > 500 || totalBudget < 0 || baselineEnd < baselineStart)
+                {
+                    await _unitOfWork.RollbackTransactionAsync();
+                    return apiResponse.SetBadRequest(message: "The imported project contains invalid lengths, a negative budget, or an invalid baseline date range.");
+                }
 
                 var project = new Project
                 {
@@ -282,9 +290,14 @@ namespace cpms_Application.Services
                 if (project == null || !string.Equals(currentUser.Role, Role.PM.ToString(), StringComparison.OrdinalIgnoreCase) || project.PMUserID != currentUser.Id)
                     return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You may only edit planned materials for a project you manage.");
 
-                var variant = request.VariantId != 0
-                    ? await _unitOfWork.MaterialVariants.GetByIdAsync(request.VariantId)
-                    : await _unitOfWork.MaterialVariants.GetAsync(v => v.MaterialId == request.MaterialId && v.IsActive);
+                MaterialVariant? variant;
+                if (request.VariantId != 0)
+                    variant = await _unitOfWork.MaterialVariants.GetByIdAsync(request.VariantId);
+                else
+                {
+                    var candidates = await _unitOfWork.MaterialVariants.GetAllAsync(v => v.MaterialId == request.MaterialId && v.IsActive);
+                    variant = candidates.Count == 1 ? candidates[0] : null;
+                }
                 if (variant == null)
                     return apiResponse.SetNotFound(message: "Material variant not found.");
 
@@ -384,8 +397,13 @@ namespace cpms_Application.Services
                 if (!requirementsList.Any())
                     return apiResponse.SetOk(new List<MRPCalculationResponse>());
 
+                var activeTaskIds = requirementsList.Select(r => r.TaskId).Distinct().ToList();
+
                 var issuedItems = await _unitOfWork.MaterialRequisitions.GetAllAsync(
-                    filter: r => r.MaterialRequest.ProjectId == projectId && r.IssuedQuantity > 0,
+                    filter: r => r.MaterialRequest.ProjectId == projectId &&
+                                 r.MaterialRequest.TaskId.HasValue &&
+                                 activeTaskIds.Contains(r.MaterialRequest.TaskId.Value) &&
+                                 r.IssuedQuantity > 0,
                     include: query => query.Include(r => r.MaterialRequest));
                 var issuedByVariant = issuedItems
                     .GroupBy(r => r.VariantId)
@@ -402,8 +420,7 @@ namespace cpms_Application.Services
 
                 var projectOpenOrderLines = await _unitOfWork.OrderLineItems.GetAllAsync(
                     filter: line => line.PurchaseOrder.ProjectId == projectId &&
-                                    (line.PurchaseOrder.Status == PurchaseOrderStatus.PENDING ||
-                                     line.PurchaseOrder.Status == PurchaseOrderStatus.APPROVED) &&
+                                    line.PurchaseOrder.Status == PurchaseOrderStatus.APPROVED &&
                                     line.ReceivedQuantity < line.Quantity &&
                                     (!warehouseId.HasValue || line.PurchaseOrder.WarehouseId == warehouseId.Value),
                     include: query => query.Include(line => line.PurchaseOrder));

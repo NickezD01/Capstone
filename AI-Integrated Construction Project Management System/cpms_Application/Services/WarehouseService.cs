@@ -29,8 +29,9 @@ namespace cpms_Application.Services
             if (!string.Equals(user.Role, Role.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase)) return Forbidden("Only administrators may create warehouses.");
             var warehouse = _mapper.Map<Warehouse>(request);
             warehouse.ManagerId = request.ManagerId > 0 ? request.ManagerId : user.Id;
-            if (await _uow.UserAccounts.GetByIdAsync(warehouse.ManagerId) == null)
-                return new ApiResponse().SetBadRequest(message: "Warehouse manager does not exist.");
+            var manager = await _uow.UserAccounts.GetByIdAsync(warehouse.ManagerId);
+            if (manager == null || manager.Role != Role.WAREHOUSE_MANAGER)
+                return new ApiResponse().SetBadRequest(message: "Warehouse manager must be an active WAREHOUSE_MANAGER account.");
             await _uow.Warehouses.AddAsync(warehouse);
             await _uow.SaveChangeAsync();
             return new ApiResponse().SetOk("Warehouse created successfully.");
@@ -148,6 +149,78 @@ namespace cpms_Application.Services
                 (!variantId.HasValue || t.VariantId == variantId.Value) &&
                 (isAdmin || t.Warehouse.ManagerId == user.Id));
             return new ApiResponse().SetOk(_mapper.Map<List<InventoryTransactionResponse>>(transactions.OrderByDescending(t => t.TransactionDate)));
+        }
+
+        public async Task<ApiResponse> ReturnInventoryAsync(InventoryReturnRequest request)
+        {
+            var user = _claimService.GetUserClaim();
+            if (!IsWarehouseManager(user)) return Forbidden("Only warehouse managers may record inventory returns.");
+            var warehouse = await _uow.Warehouses.GetByIdAsync(request.WarehouseId);
+            if (warehouse == null) return new ApiResponse().SetNotFound(message: "Warehouse not found.");
+            if (warehouse.ManagerId != user.Id) return Forbidden("You may only return inventory to a warehouse you manage.");
+            if (await _uow.MaterialVariants.GetByIdAsync(request.VariantId) == null)
+                return new ApiResponse().SetBadRequest(message: "Material variant not found or inactive.");
+            if (request.MaterialRequestId.HasValue && await _uow.MaterialRequests.GetByIdAsync(request.MaterialRequestId.Value) == null)
+                return new ApiResponse().SetBadRequest(message: "Referenced material request was not found.");
+
+            await _uow.BeginTransactionAsync();
+            try
+            {
+                var inventory = await _uow.Inventories.GetAsync(x => x.WarehouseId == request.WarehouseId && x.VariantId == request.VariantId);
+                if (inventory == null)
+                {
+                    inventory = new InventoryRecord
+                    {
+                        WarehouseId = request.WarehouseId,
+                        VariantId = request.VariantId,
+                        UpdatedAt = DateTime.UtcNow,
+                        CreatedBy = user.Id
+                    };
+                    await _uow.Inventories.AddAsync(inventory);
+                    await _uow.SaveChangeAsync();
+                }
+                else if (!string.IsNullOrWhiteSpace(request.RowVersion) &&
+                         !Convert.ToBase64String(inventory.RowVersion).Equals(request.RowVersion, StringComparison.Ordinal))
+                    return await Rollback(new ApiResponse().SetConflict(message: "Inventory has changed. Reload and retry."));
+
+                var before = inventory.QuantityOnHand;
+                inventory.QuantityOnHand += request.Quantity;
+                inventory.UpdatedAt = DateTime.UtcNow;
+                await _uow.InventoryTransactions.AddAsync(new InventoryTransaction
+                {
+                    InventoryId = inventory.InventoryId,
+                    WarehouseId = inventory.WarehouseId,
+                    VariantId = inventory.VariantId,
+                    TransactionType = InventoryTransactionTypes.Return,
+                    Quantity = request.Quantity,
+                    QuantityBefore = before,
+                    QuantityAfter = inventory.QuantityOnHand,
+                    ReferenceId = request.MaterialRequestId,
+                    ReferenceType = request.MaterialRequestId.HasValue ? "MATERIAL_REQUEST" : "MANUAL_RETURN",
+                    Note = request.Note,
+                    PerformedByUserId = user.Id,
+                    TransactionDate = DateTime.UtcNow
+                });
+                await _uow.SaveChangeAsync();
+                await _uow.CommitTransactionAsync();
+                return await GetInventoryAsync(request.WarehouseId, request.VariantId);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                await _uow.RollbackTransactionAsync();
+                return new ApiResponse().SetConflict(message: "Inventory changed while recording the return. Reload and retry.");
+            }
+            catch (Exception)
+            {
+                await _uow.RollbackTransactionAsync();
+                return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.InternalServerError, false, "Unable to record inventory return.");
+            }
+        }
+
+        private async Task<ApiResponse> Rollback(ApiResponse response)
+        {
+            await _uow.RollbackTransactionAsync();
+            return response;
         }
 
         private static ApiResponse Forbidden(string message) => new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, message);

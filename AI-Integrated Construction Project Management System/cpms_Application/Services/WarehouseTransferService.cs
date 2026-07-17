@@ -96,7 +96,8 @@ namespace cpms_Application.Services
         public Task<ApiResponse> ApproveAsync(int transferId) => MutateAsync(transferId, WarehouseTransferStatuses.Requested,
             async (transfer, user) =>
             {
-                if (!IsManagerOf(user, transfer.SourceWarehouse)) return Forbidden("Only the source warehouse manager may approve this transfer.");
+                if (!IsManagerOf(user, transfer.DestinationWarehouse)) return Forbidden("Only the destination warehouse manager may approve this transfer.");
+                if (transfer.RequestedByUserId == user.Id) return Conflict("The transfer creator cannot approve the same transfer.");
                 foreach (var item in transfer.Items)
                 {
                     var inventory = await _uow.Inventories.GetAsync(x => x.WarehouseId == transfer.SourceWarehouseId && x.VariantId == item.VariantId);
@@ -114,7 +115,8 @@ namespace cpms_Application.Services
         public Task<ApiResponse> RejectAsync(int transferId) => MutateAsync(transferId, WarehouseTransferStatuses.Requested,
             (transfer, user) =>
             {
-                if (!IsManagerOf(user, transfer.SourceWarehouse)) return Task.FromResult<ApiResponse?>(Forbidden("Only the source warehouse manager may reject this transfer."));
+                if (!IsManagerOf(user, transfer.DestinationWarehouse)) return Task.FromResult<ApiResponse?>(Forbidden("Only the destination warehouse manager may reject this transfer."));
+                if (transfer.RequestedByUserId == user.Id) return Task.FromResult<ApiResponse?>(Conflict("The transfer creator cannot reject the same transfer."));
                 transfer.Status = WarehouseTransferStatuses.Rejected;
                 return Task.FromResult<ApiResponse?>(null);
             });

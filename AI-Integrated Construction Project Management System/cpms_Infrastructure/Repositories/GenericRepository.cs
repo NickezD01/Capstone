@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Query;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -30,7 +31,7 @@ namespace cpms_Infrastructure.Repositories
         public async Task<List<T>> GetAllAsync(System.Linq.Expressions.Expression<Func<T, bool>>? filter,
                                                Func<IQueryable<T>, IIncludableQueryable<T, object>>? include = null,
                                                int pageIndex = 1,
-                                               int pageSize = 5)
+                                               int pageSize = 0)
         {
             // Ép EF Core đọc trực tiếp từ Database mới nhất, không lấy từ bộ nhớ đệm Tracking
             IQueryable<T> query = _db.AsNoTracking();
@@ -43,6 +44,11 @@ namespace cpms_Infrastructure.Repositories
             if (include != null)
             {
                 query = include(query);
+            }
+            if (pageSize > 0)
+            {
+                pageIndex = Math.Max(1, pageIndex);
+                query = query.Skip((pageIndex - 1) * pageSize).Take(pageSize);
             }
             return await query.ToListAsync();
         }
@@ -77,9 +83,7 @@ namespace cpms_Infrastructure.Repositories
 
         public async Task RemoveByIdAsync(object id)
         {
-#nullable disable
-            T existing = await _db.FindAsync(id);
-#nullable restore
+            T? existing = await GetByIdAsync(id);
             if (existing != null)
             {
                 _db.Remove(existing);
@@ -99,7 +103,22 @@ namespace cpms_Infrastructure.Repositories
 
         public async Task<T?> GetByIdAsync(object id)
         {
-            return await _db.FindAsync(id);
+            var entityType = _context.Model.FindEntityType(typeof(T))
+                ?? throw new InvalidOperationException($"Entity type {typeof(T).Name} is not part of the EF model.");
+            var key = entityType.FindPrimaryKey()
+                ?? throw new InvalidOperationException($"Entity type {typeof(T).Name} does not have a primary key.");
+            if (key.Properties.Count != 1)
+                throw new NotSupportedException("Generic ID lookup supports only single-column primary keys.");
+
+            var keyProperty = key.Properties[0];
+            var keyType = keyProperty.ClrType;
+            var convertedId = id.GetType() == keyType ? id : Convert.ChangeType(id, Nullable.GetUnderlyingType(keyType) ?? keyType);
+            var parameter = Expression.Parameter(typeof(T), "entity");
+            var property = Expression.Call(typeof(EF), nameof(EF.Property), new[] { keyType }, parameter,
+                Expression.Constant(keyProperty.Name));
+            var predicate = Expression.Lambda<Func<T, bool>>(
+                Expression.Equal(property, Expression.Constant(convertedId, keyType)), parameter);
+            return await _db.FirstOrDefaultAsync(predicate);
         }
 
         public void Update(T entity)
