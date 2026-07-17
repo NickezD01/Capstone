@@ -155,17 +155,43 @@ namespace cpms_Application.Services
         {
             var user = _claimService.GetUserClaim();
             if (!IsWarehouseManager(user)) return Forbidden("Only warehouse managers may record inventory returns.");
+            if (request.MaterialRequestId <= 0)
+                return new ApiResponse().SetBadRequest(message: "MaterialRequestId is required. Use inventory adjustment for unlinked stock corrections.");
             var warehouse = await _uow.Warehouses.GetByIdAsync(request.WarehouseId);
             if (warehouse == null) return new ApiResponse().SetNotFound(message: "Warehouse not found.");
             if (warehouse.ManagerId != user.Id) return Forbidden("You may only return inventory to a warehouse you manage.");
-            if (await _uow.MaterialVariants.GetByIdAsync(request.VariantId) == null)
+            var variant = await _uow.MaterialVariants.GetByIdAsync(request.VariantId);
+            if (variant == null || !variant.IsActive)
                 return new ApiResponse().SetBadRequest(message: "Material variant not found or inactive.");
-            if (request.MaterialRequestId.HasValue && await _uow.MaterialRequests.GetByIdAsync(request.MaterialRequestId.Value) == null)
-                return new ApiResponse().SetBadRequest(message: "Referenced material request was not found.");
 
-            await _uow.BeginTransactionAsync();
+            await _uow.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             try
             {
+                var materialRequest = await _uow.MaterialRequests.GetAsync(
+                    x => x.RequestId == request.MaterialRequestId,
+                    query => query.Include(x => x.Requisitions));
+                if (materialRequest == null)
+                    return await Rollback(new ApiResponse().SetBadRequest(message: "Referenced material request was not found."));
+                if (materialRequest.Status != MaterialRequestStatuses.Issued)
+                    return await Rollback(new ApiResponse().SetConflict(message: "Only issued material requests can be returned."));
+                if (materialRequest.WarehouseId != request.WarehouseId)
+                    return await Rollback(new ApiResponse().SetBadRequest(message: "The material request was issued from a different warehouse."));
+
+                var requestItem = materialRequest.Requisitions.SingleOrDefault(x => x.VariantId == request.VariantId);
+                if (requestItem == null || requestItem.IssuedQuantity <= 0)
+                    return await Rollback(new ApiResponse().SetBadRequest(message: "The selected variant was not issued by this material request."));
+
+                var previousReturns = await _uow.InventoryTransactions.GetAllAsync(x =>
+                    x.TransactionType == InventoryTransactionTypes.Return &&
+                    x.ReferenceType == "MATERIAL_REQUEST" &&
+                    x.ReferenceId == materialRequest.RequestId &&
+                    x.WarehouseId == request.WarehouseId &&
+                    x.VariantId == request.VariantId);
+                var remainingReturnable = requestItem.IssuedQuantity - previousReturns.Sum(x => x.Quantity);
+                if (request.Quantity > remainingReturnable)
+                    return await Rollback(new ApiResponse().SetConflict(
+                        message: $"Return quantity exceeds the remaining returnable quantity of {Math.Max(0, remainingReturnable)}."));
+
                 var inventory = await _uow.Inventories.GetAsync(x => x.WarehouseId == request.WarehouseId && x.VariantId == request.VariantId);
                 if (inventory == null)
                 {
@@ -195,8 +221,8 @@ namespace cpms_Application.Services
                     Quantity = request.Quantity,
                     QuantityBefore = before,
                     QuantityAfter = inventory.QuantityOnHand,
-                    ReferenceId = request.MaterialRequestId,
-                    ReferenceType = request.MaterialRequestId.HasValue ? "MATERIAL_REQUEST" : "MANUAL_RETURN",
+                    ReferenceId = materialRequest.RequestId,
+                    ReferenceType = "MATERIAL_REQUEST",
                     Note = request.Note,
                     PerformedByUserId = user.Id,
                     TransactionDate = DateTime.UtcNow

@@ -2,6 +2,7 @@
 using cpms_Application.Interfaces;
 using cpms_Application.Request.Supplier;
 using cpms_Application.Response;
+using cpms_Application.Response.Supplier;
 using cpms_Domain.Models;
 using System;
 using System.Collections.Generic;
@@ -33,7 +34,7 @@ namespace cpms_Application.Services
         public async Task<ApiResponse> GetAllSuppliersAsync()
         {
             var suppliers = await _uow.Suppliers.GetAllAsync(null);
-            return new ApiResponse().SetOk(suppliers);
+            return new ApiResponse().SetOk(_mapper.Map<List<SupplierResponse>>(suppliers));
         }
     }
 }

@@ -86,7 +86,7 @@ namespace cpms_Application.Services
                 }
                 else if (task.ActualProgressPct > 0)
                 {
-                    task.Status = DomainTaskStatus.ACTIVE;
+                    task.Status = DomainTaskStatus.IN_PROGRESS;
                 }
 
                 if (project.Tasks.Count > 0 && project.Tasks.All(x => x.Status == DomainTaskStatus.COMPLETED))

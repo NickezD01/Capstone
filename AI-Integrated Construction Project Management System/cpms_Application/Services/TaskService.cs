@@ -31,7 +31,7 @@ namespace cpms_Application.Services
         public async Task<ApiResponse> CreateTaskAsync(CreateTaskRequest request)
         {
             var response = new ApiResponse();
-            await _uow.BeginTransactionAsync();
+            await _uow.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             try
             {
                 // 1. Kiểm tra xem dự án (Project) có tồn tại thực tế hay không
@@ -46,6 +46,20 @@ namespace cpms_Application.Services
                 {
                     await _uow.RollbackTransactionAsync();
                     return response.SetConflict(message: "Completed projects cannot accept new tasks.");
+                }
+                if (request.BaselineStart < project.BaselineStart || request.BaselineEnd > project.BaselineEnd)
+                {
+                    await _uow.RollbackTransactionAsync();
+                    return response.SetBadRequest(message: "Task baseline dates must stay within the project baseline period.");
+                }
+                if (project.TotalProjectBudget > 0)
+                {
+                    var existingTasks = await _uow.TaskItems.GetAllAsync(t => t.ProjectId == request.ProjectId);
+                    if (existingTasks.Sum(t => t.PlannedBudget) + request.PlannedBudget > project.TotalProjectBudget)
+                    {
+                        await _uow.RollbackTransactionAsync();
+                        return response.SetConflict(message: "Total planned task budgets cannot exceed the project budget.");
+                    }
                 }
                 var currentUser = _claimService.GetUserClaim();
                 if (!string.Equals(currentUser.Role, Role.PM.ToString(), StringComparison.OrdinalIgnoreCase) || project.PMUserID != currentUser.Id)

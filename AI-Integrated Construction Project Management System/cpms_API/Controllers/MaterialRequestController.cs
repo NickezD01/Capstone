@@ -57,6 +57,7 @@ namespace cpms_API.Controllers
 
         [HttpPut("{requestId}/reserve")]
         [Authorize(Roles = "WAREHOUSE_MANAGER")]
+        [Obsolete("Approval already reserves inventory. Use PUT /api/MaterialRequest/{requestId}/approve.")]
         public async Task<IActionResult> ReserveRequest(int requestId, [FromBody] ApproveMaterialRequest request)
         {
             var response = await _materialRequestService.ApproveRequestAsync(requestId, request);

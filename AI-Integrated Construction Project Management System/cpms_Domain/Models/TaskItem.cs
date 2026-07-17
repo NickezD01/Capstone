@@ -33,8 +33,8 @@ namespace cpms_Domain.Models
     public enum TaskStatus
     {
         PENDING,
-        ACTIVE,
-        IN_PROGRESS, // 🚀 BỔ SUNG: Khớp với chữ 'IN_PROGRESS' dưới Database của bạn
+        ACTIVE, // Legacy database value; new progress updates use IN_PROGRESS.
+        IN_PROGRESS,
         COMPLETED,
         REJECTED
     }

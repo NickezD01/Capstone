@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace cpms_Application.Request.Warehouse
 {
     public class InventoryAdjustmentRequest
@@ -14,7 +16,8 @@ namespace cpms_Application.Request.Warehouse
         public int WarehouseId { get; set; }
         public int VariantId { get; set; }
         public decimal Quantity { get; set; }
-        public int? MaterialRequestId { get; set; }
+        [Required]
+        public int MaterialRequestId { get; set; }
         public string? Note { get; set; }
         public string? RowVersion { get; set; }
     }

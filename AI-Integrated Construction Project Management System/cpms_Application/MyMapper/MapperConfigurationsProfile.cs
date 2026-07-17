@@ -21,6 +21,7 @@ using cpms_Application.Response.UserAccount;
 using cpms_Application.Response.Warehouse;
 using cpms_Application.Response.PurchaseOrder;      // Bổ sung namespace chứa PurchaseOrderResponse
 using cpms_Application.Response.OrderLineItem;     // Bổ sung namespace chứa OrderLineItemResponse
+using cpms_Application.Response.Supplier;
 using cpms_Domain.Models;
 using System;
 using System.Collections.Generic;
@@ -115,6 +116,7 @@ namespace cpms_Application.MyMapper
             CreateMap<Category, CategoryResponse>()
                 .ForMember(dest => dest.TotalMaterials, opt => opt.MapFrom(src => src.Materials != null ? src.Materials.Count : 0));
             CreateMap<CreateSupplierRequest, Supplier>();
+            CreateMap<Supplier, SupplierResponse>();
             CreateMap<CreateCatalogRequest, SupplierCatalog>();
 
             // === TASKS ===

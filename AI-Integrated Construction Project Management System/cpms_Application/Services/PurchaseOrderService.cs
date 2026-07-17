@@ -32,6 +32,8 @@ namespace cpms_Application.Services
             var user = _claimService.GetUserClaim();
             if (!IsWarehouseManager(user)) return Forbidden("Only warehouse managers may create purchase orders.");
             if (request.Items == null || request.Items.Count == 0) return new ApiResponse().SetBadRequest(message: "At least one order item is required.");
+            if (request.ExpectedDeliveryDate.HasValue && request.ExpectedDeliveryDate.Value.Date < DateTime.UtcNow.Date)
+                return new ApiResponse().SetBadRequest(message: "ExpectedDeliveryDate cannot be in the past.");
             var linkedRequestItemIds = request.Items.Where(x => x.RequestItemId.HasValue).Select(x => x.RequestItemId!.Value).ToList();
             if (linkedRequestItemIds.Distinct().Count() != linkedRequestItemIds.Count)
                 return new ApiResponse().SetBadRequest(message: "A material request item may only appear once per purchase order.");
@@ -85,6 +87,8 @@ namespace cpms_Application.Services
                     }
                     resolved.Add((item, variant.VariantId, catalog.UnitPrice));
                 }
+                if (resolved.GroupBy(x => x.VariantId).Any(g => g.Count() > 1))
+                    return await Abort(new ApiResponse().SetBadRequest(message: "A material variant may only appear once per purchase order."));
 
                 var total = resolved.Sum(x => x.Item.Quantity * x.UnitPrice);
                 if (project.TotalProjectBudget > 0)

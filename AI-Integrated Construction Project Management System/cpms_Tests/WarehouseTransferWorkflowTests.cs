@@ -331,7 +331,8 @@ internal class FakeRepository<T> : IGenericRepository<T> where T : class
 
     private static PropertyInfo? KeyProperty() => typeof(T).GetProperties().FirstOrDefault(p =>
         p.Name is "Id" or "WarehouseId" or "VariantId" or "InventoryId" or "TransferId" or "TransferItemId" or
-        "ProjectId" or "ItemId" or "TransactionId" or "TaskId" or "PoId" or "LineItemId");
+        "ProjectId" or "ItemId" or "TransactionId" or "TaskId" or "PoId" or "LineItemId" or "RequestId" or
+        "SupplierId" or "CatalogId" or "ReportId" or "ReservationId");
     private void AssignIdentity(T entity)
     {
         var key = KeyProperty();
@@ -357,6 +358,10 @@ internal sealed class FakePurchaseOrderRepository : FakeRepository<PurchaseOrder
 internal sealed class FakeOrderLineRepository : FakeRepository<OrderLineItem>, IOrderLineItemRepository { public FakeOrderLineRepository(List<OrderLineItem> data) : base(data) { } }
 internal sealed class FakeUserAccountRepository : FakeRepository<UserAccount>, IUserAccountRepository { public FakeUserAccountRepository(List<UserAccount> data) : base(data) { } }
 internal sealed class FakeEmailVerificationRepository : FakeRepository<EmailVerification>, IEmailVerificationRepository { public FakeEmailVerificationRepository(List<EmailVerification> data) : base(data) { } }
+internal sealed class FakeTaskItemRepository : FakeRepository<TaskItem>, ITaskItemRepository { public FakeTaskItemRepository(List<TaskItem> data) : base(data) { } }
+internal sealed class FakeProgressReportRepository : FakeRepository<ProgressReport>, IProgressReportRepository { public FakeProgressReportRepository(List<ProgressReport> data) : base(data) { } }
+internal sealed class FakeSupplierRepository : FakeRepository<Supplier>, ISupplierRepository { public FakeSupplierRepository(List<Supplier> data) : base(data) { } }
+internal sealed class FakeSupplierCatalogRepository : FakeRepository<SupplierCatalog>, ISupplierCatalogRepository { public FakeSupplierCatalogRepository(List<SupplierCatalog> data) : base(data) { } }
 
 internal sealed class TestUnitOfWork : IUnitOfWork
 {
@@ -375,6 +380,10 @@ internal sealed class TestUnitOfWork : IUnitOfWork
     public List<OrderLineItem> OrderLineRecords { get; } = new();
     public List<UserAccount> UserAccountRecords { get; } = new();
     public List<EmailVerification> EmailVerificationRecords { get; } = new();
+    public List<TaskItem> TaskRecords { get; } = new();
+    public List<ProgressReport> ProgressReportRecords { get; } = new();
+    public List<Supplier> SupplierRecords { get; } = new();
+    public List<SupplierCatalog> SupplierCatalogRecords { get; } = new();
 
     public IWarehouseRepository Warehouses { get; }
     public IInventoryRepository Inventories { get; }
@@ -403,16 +412,20 @@ internal sealed class TestUnitOfWork : IUnitOfWork
         OrderLineItems = new FakeOrderLineRepository(OrderLineRecords);
         UserAccounts = new FakeUserAccountRepository(UserAccountRecords);
         EmailVerifications = new FakeEmailVerificationRepository(EmailVerificationRecords);
+        TaskItems = new FakeTaskItemRepository(TaskRecords);
+        ProgressReports = new FakeProgressReportRepository(ProgressReportRecords);
+        Suppliers = new FakeSupplierRepository(SupplierRecords);
+        SupplierCatalogs = new FakeSupplierCatalogRepository(SupplierCatalogRecords);
     }
 
     public IUserAccountRepository UserAccounts { get; }
     public IRefreshTokenRepository RefreshTokens => null!;
     public IEmailVerificationRepository EmailVerifications { get; }
-    public ITaskItemRepository TaskItems => null!;
-    public IProgressReportRepository ProgressReports => null!;
+    public ITaskItemRepository TaskItems { get; }
+    public IProgressReportRepository ProgressReports { get; }
     public IMaterialRepository Materials => null!;
-    public ISupplierRepository Suppliers => null!;
-    public ISupplierCatalogRepository SupplierCatalogs => null!;
+    public ISupplierRepository Suppliers { get; }
+    public ISupplierCatalogRepository SupplierCatalogs { get; }
     public ISupplierMetricRepository SupplierMetrics => null!;
     public ICategoryRepository Categories => null!;
     public IMaterialRequestRepository MaterialRequests { get; }

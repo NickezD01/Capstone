@@ -59,17 +59,40 @@ namespace cpms_Application.Services
                     var existingActiveRequest = await _uow.MaterialRequests.GetAsync(r =>
                         r.TaskId == request.TaskId.Value &&
                         (r.Status == MaterialRequestStatuses.Pending ||
-                         r.Status == MaterialRequestStatuses.Approved ||
-                         r.Status == MaterialRequestStatuses.Issued));
+                         r.Status == MaterialRequestStatuses.Approved));
                     if (existingActiveRequest != null)
                     {
                         await _uow.RollbackTransactionAsync();
-                        return new ApiResponse().SetConflict(message: "This task already has an active or issued material request.");
+                        return new ApiResponse().SetConflict(message: "This task already has a pending or approved material request.");
+                    }
+
+                    var plannedRequirements = await _uow.TaskMaterialRequirements.GetAllAsync(r => r.TaskId == request.TaskId.Value);
+                    var issuedItems = await _uow.MaterialRequisitions.GetAllAsync(r =>
+                        r.MaterialRequest.TaskId == request.TaskId.Value && r.IssuedQuantity > 0,
+                        q => q.Include(r => r.MaterialRequest));
+                    var issuedByVariant = issuedItems.GroupBy(r => r.VariantId)
+                        .ToDictionary(g => g.Key, g => g.Sum(r => r.IssuedQuantity));
+
+                    foreach (var entry in resolved)
+                    {
+                        var planned = plannedRequirements.SingleOrDefault(r => r.VariantId == entry.VariantId);
+                        if (planned == null)
+                        {
+                            await _uow.RollbackTransactionAsync();
+                            return new ApiResponse().SetBadRequest(message: $"Variant {entry.VariantId} is not planned for this task.");
+                        }
+                        var remaining = Math.Max(0, planned.GrossQuantityRequired - issuedByVariant.GetValueOrDefault(entry.VariantId));
+                        if (entry.Item.Quantity > remaining)
+                        {
+                            await _uow.RollbackTransactionAsync();
+                            return new ApiResponse().SetConflict(message: $"Requested quantity for variant {entry.VariantId} exceeds the remaining task requirement of {remaining}.");
+                        }
                     }
                 }
                 var entity = new MaterialRequest
                 {
                     ProjectId = request.ProjectId,
+                    Project = project,
                     TaskId = request.TaskId,
                     WarehouseId = request.WarehouseId,
                     RequestedBy = user.Id,
@@ -110,14 +133,30 @@ namespace cpms_Application.Services
             if (task.MaterialRequirements.Count == 0)
                 return new ApiResponse().SetBadRequest(message: "Task has no planned material requirements.");
 
+            var issuedItems = await _uow.MaterialRequisitions.GetAllAsync(r =>
+                r.MaterialRequest.TaskId == taskId && r.IssuedQuantity > 0,
+                q => q.Include(r => r.MaterialRequest));
+            var issuedByVariant = issuedItems.GroupBy(r => r.VariantId)
+                .ToDictionary(g => g.Key, g => g.Sum(r => r.IssuedQuantity));
+            var remainingItems = task.MaterialRequirements
+                .Select(r => new
+                {
+                    Requirement = r,
+                    Remaining = Math.Max(0, r.GrossQuantityRequired - issuedByVariant.GetValueOrDefault(r.VariantId))
+                })
+                .Where(x => x.Remaining > 0)
+                .ToList();
+            if (remainingItems.Count == 0)
+                return new ApiResponse().SetConflict(message: "All planned material quantities for this task have already been issued.");
+
             return await CreateRequestAsync(new CreateMaterialRequest
             {
                 ProjectId = task.ProjectId,
                 TaskId = taskId,
-                Items = task.MaterialRequirements.Select(r => new MaterialItemRequest
+                Items = remainingItems.Select(x => new MaterialItemRequest
                 {
-                    VariantId = r.VariantId,
-                    Quantity = r.GrossQuantityRequired,
+                    VariantId = x.Requirement.VariantId,
+                    Quantity = x.Remaining,
                     NeededByDate = task.BaselineStart
                 }).ToList()
             });

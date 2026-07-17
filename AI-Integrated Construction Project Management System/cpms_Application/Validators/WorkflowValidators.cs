@@ -179,6 +179,9 @@ namespace cpms_Application.Validators
             RuleFor(x => x.SupplierId).GreaterThan(0);
             RuleFor(x => x.WarehouseId).GreaterThan(0);
             RuleFor(x => x.Note).MaximumLength(1000);
+            RuleFor(x => x.ExpectedDeliveryDate)
+                .Must(date => !date.HasValue || date.Value.Date >= DateTime.UtcNow.Date)
+                .WithMessage("ExpectedDeliveryDate cannot be in the past.");
             RuleFor(x => x.Items).NotEmpty();
             RuleForEach(x => x.Items).ChildRules(item =>
             {
@@ -219,7 +222,7 @@ namespace cpms_Application.Validators
             RuleFor(x => x.WarehouseId).GreaterThan(0);
             RuleFor(x => x.VariantId).GreaterThan(0);
             RuleFor(x => x.Quantity).GreaterThan(0);
-            RuleFor(x => x.MaterialRequestId).GreaterThan(0).When(x => x.MaterialRequestId.HasValue);
+            RuleFor(x => x.MaterialRequestId).GreaterThan(0).WithMessage("MaterialRequestId is required for a material return.");
             RuleFor(x => x.Note).MaximumLength(1000);
         }
     }

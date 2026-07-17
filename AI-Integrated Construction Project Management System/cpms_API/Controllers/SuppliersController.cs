@@ -25,10 +25,11 @@ namespace cpms_API.Controllers
         }
 
         [HttpGet]
+        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
         public async Task<IActionResult> GetAll()
         {
             var response = await _supplierService.GetAllSuppliersAsync();
-            return Ok(response);
+            return StatusCode((int)response.StatusCode, response);
         }
     }
 }
