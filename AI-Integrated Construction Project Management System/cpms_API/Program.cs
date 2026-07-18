@@ -117,6 +117,7 @@ builder.Services.AddSwaggerGen(options =>
 // ======================================================
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient<ITeamsMeetingClient, TeamsMeetingClient>();
+builder.Services.AddHttpClient<IGoogleAIClient, GoogleAIClient>();
 builder.Services.AddAutoMapper(typeof(MapperConfigurationsProfile).Assembly);
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
@@ -130,6 +131,7 @@ builder.Services.AddScoped<IUserAccountService, UserAccountService>();
 builder.Services.AddScoped<IProjectService, ProjectService>();
 builder.Services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
 builder.Services.AddScoped<ISupplierService, SupplierService>();
+builder.Services.AddScoped<ISupplierRecommendationService, SupplierRecommendationService>();
 builder.Services.AddScoped<ICatalogService, CatalogService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<IMaterialService, MaterialService>();

@@ -19,6 +19,7 @@ namespace cpms_Infrastructure.Configuration
             builder.Property(s => s.CompanyName).IsRequired().HasMaxLength(200);
             builder.Property(s => s.ContactEmail).HasMaxLength(150);
             builder.Property(s => s.ContactPhone).HasMaxLength(20);
+            builder.Property(s => s.Address).HasMaxLength(500);
         }
     }
 }

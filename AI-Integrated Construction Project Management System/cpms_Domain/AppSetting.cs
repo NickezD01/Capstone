@@ -13,6 +13,7 @@ namespace cpms_Domain
         public string AllowedHosts { get; set; }
         public SecretToken SecretToken { get; set; }
         public TeamsGraph TeamsGraph { get; set; } = new TeamsGraph();
+        public GoogleAI GoogleAI { get; set; } = new GoogleAI();
     }
     public class ConnectionStrings
     {
@@ -42,5 +43,11 @@ namespace cpms_Domain
         public string? ClientId { get; set; }
         public string? ClientSecret { get; set; }
         public string? OrganizerUserId { get; set; }
+    }
+
+    public class GoogleAI
+    {
+        public string? ApiKey { get; set; }
+        public string Model { get; set; } = "gemini-3.5-flash";
     }
 }
