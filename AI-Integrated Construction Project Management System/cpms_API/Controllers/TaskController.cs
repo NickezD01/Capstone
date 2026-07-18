@@ -47,6 +47,7 @@ namespace cpms_API.Controllers
         }
 
         [HttpGet("assigned")]
+        [Authorize(Roles = "PM")]
         public async Task<IActionResult> GetAssignedTasks()
         {
             var response = await _taskService.GetAssignedTasksAsync();

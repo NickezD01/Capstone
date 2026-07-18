@@ -68,16 +68,9 @@ namespace cpms_Application.Services
                     return response.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You may only create tasks for a project you manage.");
                 }
 
-                // 2. Kiểm tra nhân sự được giao việc có tồn tại hay không
-                var user = await _uow.UserAccounts.GetAsync(u => u.Id == request.AssignedToUserID);
-                if (user == null || user.IsEmailVerified != true || user.Role != Role.WORKER)
-                {
-                    await _uow.RollbackTransactionAsync();
-                    return response.SetBadRequest(message: "The assigned user must be a verified worker.");
-                }
-
-                // 3. Map dữ liệu cơ bản và cấu hình mặc định cho Task mới
+                // 2. Map dữ liệu cơ bản và cấu hình mặc định cho Task mới
                 var taskItem = _mapper.Map<TaskItem>(request);
+                taskItem.AssignedToUserID = currentUser.Id;
                 taskItem.ActualCost = 0;
                 taskItem.ActualProgressPct = 0;
                 taskItem.Status = DomainTaskStatus.PENDING;
@@ -241,16 +234,13 @@ namespace cpms_Application.Services
                 return new ApiResponse().SetConflict("Task changed. Reload and retry.");
             if (request.BaselineStart < project.BaselineStart || request.BaselineEnd > project.BaselineEnd)
                 return new ApiResponse().SetBadRequest("Task dates must stay inside the project baseline.");
-            var assignee = await _uow.UserAccounts.GetByIdAsync(request.AssignedToUserID);
-            if (assignee == null || assignee.IsEmailVerified != true || assignee.Role != Role.WORKER)
-                return new ApiResponse().SetBadRequest("The assignee must be a verified worker.");
             var otherTasks = await _uow.TaskItems.GetAllAsync(t => t.ProjectId == project.ProjectId && t.TaskId != taskId);
             if (project.TotalProjectBudget > 0 && otherTasks.Sum(t => t.PlannedBudget) + request.PlannedBudget > project.TotalProjectBudget)
                 return new ApiResponse().SetConflict("Total planned task budgets cannot exceed the project budget.");
 
             try
             {
-                task.UpdatePlan(request.PhaseName, request.TaskName, request.AssignedToUserID,
+                task.UpdatePlan(request.PhaseName, request.TaskName, user.Id,
                     request.PlannedBudget, request.BaselineStart, request.BaselineEnd);
                 await _uow.SaveChangeAsync();
                 return new ApiResponse().SetOk("Task updated.");
