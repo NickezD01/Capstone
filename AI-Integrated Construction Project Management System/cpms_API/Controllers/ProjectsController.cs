@@ -72,12 +72,20 @@ namespace cpms_API.Controllers
             return StatusCode((int)response.StatusCode, response);
         }
 
-        // GET: api/projects/{projectId}/calculate-mrp
-        [HttpGet("{projectId}/calculate-mrp")]
+        // Creates and stores a versioned MRP planning snapshot.
+        [HttpPost("{projectId}/mrp-runs")]
         [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
         public async Task<IActionResult> CalculateMRPForProject(int projectId, [FromQuery] int? warehouseId)
         {
             var response = await _projectService.CalculateMRPForProjectAsync(projectId, warehouseId);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpGet("{projectId}/mrp-runs/latest")]
+        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
+        public async Task<IActionResult> GetLatestMRPForProject(int projectId, [FromQuery] int warehouseId)
+        {
+            var response = await _projectService.GetLatestMRPForProjectAsync(projectId, warehouseId);
             return StatusCode((int)response.StatusCode, response);
         }
         [HttpPost("adjust-budget")]

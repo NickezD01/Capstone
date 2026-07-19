@@ -11,7 +11,9 @@ namespace cpms_Application.Interfaces
     public interface IWarehouseService
     {
         Task<ApiResponse> CreateWarehouseAsync(CreateWarehouseRequest request);
+        Task<ApiResponse> UpdateWarehouseAsync(int warehouseId, UpdateWarehouseRequest request);
         Task<ApiResponse> GetAllWarehousesAsync();
+        Task<ApiResponse> GetWarehouseByIdAsync(int warehouseId);
 
         Task<ApiResponse> GetWarehouseInventoryAsync(int warehouseId);
         Task<ApiResponse> GetInventoryAsync(int warehouseId, int variantId);

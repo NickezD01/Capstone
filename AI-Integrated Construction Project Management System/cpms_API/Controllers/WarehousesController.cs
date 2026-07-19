@@ -25,6 +25,14 @@ namespace cpms_API.Controllers
             return StatusCode((int)response.StatusCode, response);
         }
 
+        [HttpPut("{warehouseId:int}")]
+        [Authorize(Roles = "ADMIN")]
+        public async Task<IActionResult> Update(int warehouseId, [FromBody] UpdateWarehouseRequest request)
+        {
+            var response = await _warehouseService.UpdateWarehouseAsync(warehouseId, request);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
         [HttpGet("{warehouseId}/inventory/{variantId}")]
         [Authorize(Roles = "ADMIN,WAREHOUSE_MANAGER")]
         public async Task<IActionResult> GetInventory(int warehouseId, int variantId)
@@ -126,6 +134,14 @@ namespace cpms_API.Controllers
         public async Task<IActionResult> GetAll()
         {
             var response = await _warehouseService.GetAllWarehousesAsync();
+            return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpGet("{id:int}")]
+        [Authorize(Roles = "ADMIN,WAREHOUSE_MANAGER")]
+        public async Task<IActionResult> GetById(int id)
+        {
+            var response = await _warehouseService.GetWarehouseByIdAsync(id);
             return StatusCode((int)response.StatusCode, response);
         }
 

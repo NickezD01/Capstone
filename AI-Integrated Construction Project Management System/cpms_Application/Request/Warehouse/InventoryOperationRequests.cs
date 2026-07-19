@@ -35,6 +35,7 @@ namespace cpms_Application.Request.Warehouse
     public class ReceivePurchaseOrderRequest
     {
         public string? Note { get; set; }
+        public string? RowVersion { get; set; }
         public bool IsFinalDelivery { get; set; }
         public List<ReceivePurchaseOrderItemRequest> Items { get; set; } = new();
     }

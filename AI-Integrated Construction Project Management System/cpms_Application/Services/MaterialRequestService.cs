@@ -35,36 +35,53 @@ namespace cpms_Application.Services
             var project = await _uow.Projects.GetByIdAsync(request.ProjectId);
             if (project == null) return new ApiResponse().SetNotFound(message: "Project not found.");
             if (project.PMUserID != user.Id) return Forbidden("You may only create requests for a project you manage.");
-            if (project.Status is ProjectStatus.COMPLETED or ProjectStatus.CANCELLED)
-                return new ApiResponse().SetConflict(message: "Closed projects cannot accept material requests.");
+            if (project.Status is ProjectStatus.COMPLETED or ProjectStatus.CANCELLED or ProjectStatus.PAUSED)
+                return new ApiResponse().SetConflict(message: "Paused or closed projects cannot accept new material requests.");
             if (request.TaskId.HasValue)
             {
                 var task = await _uow.TaskItems.GetByIdAsync(request.TaskId.Value);
                 if (task == null || task.ProjectId != request.ProjectId)
                     return new ApiResponse().SetBadRequest(message: "Task does not belong to the selected project.");
+                if (task.Status is cpms_Domain.Models.TaskStatus.COMPLETED or cpms_Domain.Models.TaskStatus.CANCELLED or cpms_Domain.Models.TaskStatus.REJECTED)
+                    return new ApiResponse().SetConflict(message: "Closed tasks cannot accept material requests.");
             }
+            if (request.WarehouseId.HasValue && await _uow.Warehouses.GetByIdAsync(request.WarehouseId.Value) == null)
+                return new ApiResponse().SetBadRequest(message: "Assigned warehouse does not exist.");
 
-            var resolved = new List<(MaterialItemRequest Item, int VariantId)>();
+            var resolved = new List<(MaterialItemRequest Item, MaterialVariant Variant)>();
             foreach (var item in request.Items)
             {
                 if (item.Quantity <= 0) return new ApiResponse().SetBadRequest(message: "Requested quantity must be greater than zero.");
                 var variant = await ResolveVariantAsync(item.VariantId, item.MaterialId);
                 if (variant == null || !variant.IsActive)
                     return new ApiResponse().SetBadRequest(message: "One or more material variants do not exist or are inactive.");
-                resolved.Add((item, variant.VariantId));
+                resolved.Add((item, variant));
             }
-            if (resolved.GroupBy(x => x.VariantId).Any(g => g.Count() > 1))
+            if (resolved.GroupBy(x => x.Variant.VariantId).Any(g => g.Count() > 1))
                 return new ApiResponse().SetBadRequest(message: "A material variant may only appear once per request.");
 
             await _uow.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             try
             {
+                var currentProject = await _uow.Projects.GetByIdAsync(request.ProjectId);
+                if (currentProject == null)
+                {
+                    await _uow.RollbackTransactionAsync();
+                    return new ApiResponse().SetNotFound(message: "Project not found.");
+                }
+                if (currentProject.Status is ProjectStatus.COMPLETED or ProjectStatus.CANCELLED or ProjectStatus.PAUSED)
+                {
+                    await _uow.RollbackTransactionAsync();
+                    return new ApiResponse().SetConflict(message: "Paused or closed projects cannot accept new material requests.");
+                }
                 if (request.TaskId.HasValue)
                 {
                     var existingActiveRequest = await _uow.MaterialRequests.GetAsync(r =>
                         r.TaskId == request.TaskId.Value &&
                         (r.Status == MaterialRequestStatuses.Pending ||
-                         r.Status == MaterialRequestStatuses.Approved));
+                         r.Status == MaterialRequestStatuses.Approved ||
+                         r.Status == MaterialRequestStatuses.PartiallyApproved ||
+                         r.Status == MaterialRequestStatuses.PartiallyIssued));
                     if (existingActiveRequest != null)
                     {
                         await _uow.RollbackTransactionAsync();
@@ -75,29 +92,36 @@ namespace cpms_Application.Services
                     var issuedItems = await _uow.MaterialRequisitions.GetAllAsync(r =>
                         r.MaterialRequest.TaskId == request.TaskId.Value && r.IssuedQuantity > 0,
                         q => q.Include(r => r.MaterialRequest));
+                    var returnedItems = await _uow.MaterialReturns.GetAllAsync(r =>
+                        r.MaterialRequest.TaskId == request.TaskId.Value,
+                        q => q.Include(r => r.MaterialRequest));
                     var issuedByVariant = issuedItems.GroupBy(r => r.VariantId)
                         .ToDictionary(g => g.Key, g => g.Sum(r => r.IssuedQuantity));
+                    var returnedByVariant = returnedItems.GroupBy(r => r.VariantId)
+                        .ToDictionary(g => g.Key, g => g.Sum(r => r.Quantity));
 
                     foreach (var entry in resolved)
                     {
-                        var planned = plannedRequirements.SingleOrDefault(r => r.VariantId == entry.VariantId);
+                        var planned = plannedRequirements.SingleOrDefault(r => r.VariantId == entry.Variant.VariantId);
                         if (planned == null)
                         {
                             await _uow.RollbackTransactionAsync();
-                            return new ApiResponse().SetBadRequest(message: $"Variant {entry.VariantId} is not planned for this task.");
+                            return new ApiResponse().SetBadRequest(message: $"Variant {entry.Variant.VariantId} is not planned for this task.");
                         }
-                        var remaining = Math.Max(0, planned.GrossQuantityRequired - issuedByVariant.GetValueOrDefault(entry.VariantId));
+                        var netIssued = Math.Max(0,
+                            issuedByVariant.GetValueOrDefault(entry.Variant.VariantId) - returnedByVariant.GetValueOrDefault(entry.Variant.VariantId));
+                        var remaining = Math.Max(0, planned.GrossQuantityRequired - netIssued);
                         if (entry.Item.Quantity > remaining)
                         {
                             await _uow.RollbackTransactionAsync();
-                            return new ApiResponse().SetConflict(message: $"Requested quantity for variant {entry.VariantId} exceeds the remaining task requirement of {remaining}.");
+                            return new ApiResponse().SetConflict(message: $"Requested quantity for variant {entry.Variant.VariantId} exceeds the remaining task requirement of {remaining}.");
                         }
                     }
                 }
                 var entity = new MaterialRequest
                 {
                     ProjectId = request.ProjectId,
-                    Project = project,
+                    Project = currentProject,
                     TaskId = request.TaskId,
                     WarehouseId = request.WarehouseId,
                     RequestedBy = user.Id,
@@ -110,14 +134,18 @@ namespace cpms_Application.Services
 
                 foreach (var entry in resolved)
                 {
-                    await _uow.MaterialRequisitions.AddAsync(new MaterialRequisition
+                    var requisition = new MaterialRequisition
                     {
                         RequestId = entity.RequestId,
-                        VariantId = entry.VariantId,
+                        MaterialRequest = entity,
+                        VariantId = entry.Variant.VariantId,
+                        Variant = entry.Variant,
                         Quantity = entry.Item.Quantity,
                         NeededByDate = entry.Item.NeededByDate,
                         Note = entry.Item.Note
-                    });
+                    };
+                    entity.Requisitions.Add(requisition);
+                    await _uow.MaterialRequisitions.AddAsync(requisition);
                 }
                 await _uow.SaveChangeAsync();
                 await _uow.CommitTransactionAsync();
@@ -141,13 +169,19 @@ namespace cpms_Application.Services
             var issuedItems = await _uow.MaterialRequisitions.GetAllAsync(r =>
                 r.MaterialRequest.TaskId == taskId && r.IssuedQuantity > 0,
                 q => q.Include(r => r.MaterialRequest));
+            var returnedItems = await _uow.MaterialReturns.GetAllAsync(r =>
+                r.MaterialRequest.TaskId == taskId,
+                q => q.Include(r => r.MaterialRequest));
             var issuedByVariant = issuedItems.GroupBy(r => r.VariantId)
                 .ToDictionary(g => g.Key, g => g.Sum(r => r.IssuedQuantity));
+            var returnedByVariant = returnedItems.GroupBy(r => r.VariantId)
+                .ToDictionary(g => g.Key, g => g.Sum(r => r.Quantity));
             var remainingItems = task.MaterialRequirements
                 .Select(r => new
                 {
                     Requirement = r,
-                    Remaining = Math.Max(0, r.GrossQuantityRequired - issuedByVariant.GetValueOrDefault(r.VariantId))
+                    Remaining = Math.Max(0, r.GrossQuantityRequired - Math.Max(0,
+                        issuedByVariant.GetValueOrDefault(r.VariantId) - returnedByVariant.GetValueOrDefault(r.VariantId)))
                 })
                 .Where(x => x.Remaining > 0)
                 .ToList();
@@ -190,6 +224,16 @@ namespace cpms_Application.Services
                 var request = await _uow.MaterialRequests.GetAsync(r => r.RequestId == requestId,
                     q => q.Include(r => r.Requisitions));
                 if (request == null) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetNotFound(message: "Material request not found."); }
+                if (request.WarehouseId.HasValue && request.WarehouseId.Value != decision.WarehouseId)
+                { await _uow.RollbackTransactionAsync(); return Forbidden("This request is assigned to another warehouse."); }
+                var project = await _uow.Projects.GetByIdAsync(request.ProjectId);
+                if (project == null)
+                { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetNotFound(message: "Project not found."); }
+                if (project.Status is ProjectStatus.COMPLETED or ProjectStatus.CANCELLED or ProjectStatus.PAUSED)
+                { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "Material requests cannot be approved while the project is paused or closed."); }
+                var task = request.TaskId.HasValue ? await _uow.TaskItems.GetByIdAsync(request.TaskId.Value) : null;
+                if (task?.Status is cpms_Domain.Models.TaskStatus.COMPLETED or cpms_Domain.Models.TaskStatus.CANCELLED or cpms_Domain.Models.TaskStatus.REJECTED)
+                { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "Material requests cannot be approved for a closed task."); }
                 if (request.Status != MaterialRequestStatuses.Pending)
                 { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "Only pending requests can be approved."); }
                 if (decision.Items.Select(i => i.ItemId).Distinct().Count() != decision.Items.Count ||
@@ -277,8 +321,14 @@ namespace cpms_Application.Services
                 if (request == null) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetNotFound(message: "Material request not found."); }
                 if (request.Warehouse == null || request.Warehouse.ManagerId != user.Id)
                 { await _uow.RollbackTransactionAsync(); return Forbidden("You may only issue from a warehouse you manage."); }
-                if (request.Project.Status is ProjectStatus.CANCELLED or ProjectStatus.COMPLETED)
-                { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict("Inventory cannot be issued to a closed project."); }
+                if (request.Project.Status is ProjectStatus.CANCELLED or ProjectStatus.COMPLETED or ProjectStatus.PAUSED)
+                { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict("Inventory cannot be issued while the project is paused or closed."); }
+                if (request.TaskId.HasValue)
+                {
+                    var task = await _uow.TaskItems.GetByIdAsync(request.TaskId.Value);
+                    if (task?.Status is cpms_Domain.Models.TaskStatus.COMPLETED or cpms_Domain.Models.TaskStatus.CANCELLED or cpms_Domain.Models.TaskStatus.REJECTED)
+                    { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict("Inventory cannot be issued to a closed task."); }
+                }
                 if (request.Status != MaterialRequestStatuses.Approved && request.Status != MaterialRequestStatuses.PartiallyApproved)
                 { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "Only approved requests can be issued."); }
                 var active = request.Reservations.Where(r => r.Status == InventoryReservationStatuses.Active).ToList();
@@ -308,6 +358,8 @@ namespace cpms_Application.Services
                         QuantityAfter = inventory.QuantityOnHand,
                         ReferenceId = requestId,
                         ReferenceType = "MATERIAL_REQUEST",
+                        UnitCost = inventory.AverageUnitCost,
+                        TotalValue = reservation.Quantity * inventory.AverageUnitCost,
                         PerformedByUserId = user.Id,
                         TransactionDate = DateTime.UtcNow
                     });
@@ -343,8 +395,10 @@ namespace cpms_Application.Services
                 if (request == null) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetNotFound(message: "Material request not found."); }
                 if (request.Warehouse == null || request.Warehouse.ManagerId != user.Id)
                 { await _uow.RollbackTransactionAsync(); return Forbidden("You may only release reservations from a warehouse you manage."); }
-                if (request.Status != MaterialRequestStatuses.Approved && request.Status != MaterialRequestStatuses.PartiallyApproved)
-                { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "Only approved requests can be released."); }
+                if (request.Status != MaterialRequestStatuses.Approved &&
+                    request.Status != MaterialRequestStatuses.PartiallyApproved &&
+                    request.Status != MaterialRequestStatuses.PartiallyIssued)
+                { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "Only approved or partially issued requests can be released."); }
                 foreach (var reservation in request.Reservations.Where(r => r.Status == InventoryReservationStatuses.Active))
                 {
                     reservation.InventoryRecord.ReservedQuantity -= reservation.Quantity;
@@ -393,13 +447,19 @@ namespace cpms_Application.Services
                 var previouslyIssued = await _uow.MaterialRequisitions.GetAllAsync(r =>
                     r.MaterialRequest.TaskId == request.TaskId && r.MaterialRequest.RequestId != requestId && r.IssuedQuantity > 0,
                     q => q.Include(r => r.MaterialRequest));
+                var previouslyReturned = await _uow.MaterialReturns.GetAllAsync(r =>
+                    r.MaterialRequest.TaskId == request.TaskId && r.MaterialRequest.RequestId != requestId,
+                    q => q.Include(r => r.MaterialRequest));
                 var issuedByVariant = previouslyIssued.GroupBy(r => r.VariantId).ToDictionary(g => g.Key, g => g.Sum(x => x.IssuedQuantity));
+                var returnedByVariant = previouslyReturned.GroupBy(r => r.VariantId).ToDictionary(g => g.Key, g => g.Sum(x => x.Quantity));
 
                 foreach (var item in request.Requisitions)
                 {
                     var replacement = update.Items.Single(i => i.ItemId == item.ItemId);
                     var cap = planned.SingleOrDefault(p => p.VariantId == item.VariantId)?.GrossQuantityRequired ?? 0;
-                    var remaining = Math.Max(0, cap - issuedByVariant.GetValueOrDefault(item.VariantId));
+                    var netIssued = Math.Max(0,
+                        issuedByVariant.GetValueOrDefault(item.VariantId) - returnedByVariant.GetValueOrDefault(item.VariantId));
+                    var remaining = Math.Max(0, cap - netIssued);
                     if (replacement.Quantity > remaining) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: $"Quantity for variant {item.VariantId} exceeds the remaining task plan of {remaining}."); }
                     item.Quantity = replacement.Quantity;
                     item.NeededByDate = replacement.NeededByDate;
@@ -435,7 +495,8 @@ namespace cpms_Application.Services
             if (request == null) return new ApiResponse().SetNotFound(message: "Material request not found.");
             if (!CanReadRequest(_claimService.GetUserClaim(), request))
                 return Forbidden("You do not have access to this material request.");
-            return new ApiResponse().SetOk(_mapper.Map<MaterialRequestResponse>(request));
+            var response = await MapResponsesAsync(new[] { request });
+            return new ApiResponse().SetOk(response.Single());
         }
 
         public async Task<ApiResponse> GetAllRequestsAsync()
@@ -451,7 +512,7 @@ namespace cpms_Application.Services
                 _ => r => false
             };
             var requests = await _uow.MaterialRequests.GetAllAsync(accessFilter, RequestIncludes());
-            return new ApiResponse().SetOk(_mapper.Map<List<MaterialRequestResponse>>(requests));
+            return new ApiResponse().SetOk(await MapResponsesAsync(requests));
         }
 
         public async Task<ApiResponse> GetRequestsByProjectAsync(int projectId)
@@ -467,7 +528,7 @@ namespace cpms_Application.Services
                 _ => r => false
             };
             var requests = await _uow.MaterialRequests.GetAllAsync(accessFilter, RequestIncludes());
-            return new ApiResponse().SetOk(_mapper.Map<List<MaterialRequestResponse>>(requests));
+            return new ApiResponse().SetOk(await MapResponsesAsync(requests));
         }
 
         private static Func<IQueryable<MaterialRequest>, Microsoft.EntityFrameworkCore.Query.IIncludableQueryable<MaterialRequest, object>> RequestIncludes() =>
@@ -475,6 +536,69 @@ namespace cpms_Application.Services
                   .Include(r => r.Requester)
                   .Include(r => r.Warehouse)
                   .Include(r => r.Requisitions).ThenInclude(i => i.Variant).ThenInclude(v => v.Material);
+
+        private async Task<List<MaterialRequestResponse>> MapResponsesAsync(IEnumerable<MaterialRequest> requests)
+        {
+            var requestList = requests.ToList();
+            var responses = _mapper.Map<List<MaterialRequestResponse>>(requestList);
+            if (requestList.Count == 0) return responses;
+
+            var requestIds = requestList.Select(r => r.RequestId).ToList();
+            var requestReturns = await _uow.MaterialReturns.GetAllAsync(r => requestIds.Contains(r.MaterialRequestId));
+            var returnedByRequestVariant = requestReturns
+                .GroupBy(r => (r.MaterialRequestId, r.VariantId))
+                .ToDictionary(g => g.Key, g => g.Sum(r => r.Quantity));
+
+            var taskIds = requestList.Where(r => r.TaskId.HasValue).Select(r => r.TaskId!.Value).Distinct().ToList();
+            var plannedByTaskVariant = new Dictionary<(int TaskId, int VariantId), decimal>();
+            var issuedByTaskVariant = new Dictionary<(int TaskId, int VariantId), decimal>();
+            var returnedByTaskVariant = new Dictionary<(int TaskId, int VariantId), decimal>();
+            if (taskIds.Count > 0)
+            {
+                var requirements = await _uow.TaskMaterialRequirements.GetAllAsync(r => taskIds.Contains(r.TaskId));
+                plannedByTaskVariant = requirements
+                    .GroupBy(r => (r.TaskId, r.VariantId))
+                    .ToDictionary(g => g.Key, g => g.Sum(r => r.GrossQuantityRequired));
+
+                var issued = await _uow.MaterialRequisitions.GetAllAsync(r =>
+                    r.MaterialRequest.TaskId.HasValue && taskIds.Contains(r.MaterialRequest.TaskId.Value) && r.IssuedQuantity > 0,
+                    q => q.Include(r => r.MaterialRequest));
+                issuedByTaskVariant = issued
+                    .GroupBy(r => (r.MaterialRequest.TaskId!.Value, r.VariantId))
+                    .ToDictionary(g => g.Key, g => g.Sum(r => r.IssuedQuantity));
+
+                var returned = await _uow.MaterialReturns.GetAllAsync(r =>
+                    r.MaterialRequest.TaskId.HasValue && taskIds.Contains(r.MaterialRequest.TaskId.Value),
+                    q => q.Include(r => r.MaterialRequest));
+                returnedByTaskVariant = returned
+                    .GroupBy(r => (r.MaterialRequest.TaskId!.Value, r.VariantId))
+                    .ToDictionary(g => g.Key, g => g.Sum(r => r.Quantity));
+            }
+
+            var sourceById = requestList.ToDictionary(r => r.RequestId);
+            foreach (var response in responses)
+            {
+                var source = sourceById[response.RequestId];
+                foreach (var item in response.Items)
+                {
+                    item.ReturnedQuantity = returnedByRequestVariant.GetValueOrDefault((response.RequestId, item.VariantId));
+                    item.NetIssuedQuantity = Math.Max(0, item.IssuedQuantity - item.ReturnedQuantity);
+                    item.RemainingRequestQuantity = Math.Max(0, item.Quantity - item.NetIssuedQuantity);
+                    if (!source.TaskId.HasValue)
+                    {
+                        item.RemainingTaskDemand = item.RemainingRequestQuantity;
+                        continue;
+                    }
+
+                    var key = (source.TaskId.Value, item.VariantId);
+                    var taskNetIssued = Math.Max(0,
+                        issuedByTaskVariant.GetValueOrDefault(key) - returnedByTaskVariant.GetValueOrDefault(key));
+                    item.RemainingTaskDemand = Math.Max(0,
+                        plannedByTaskVariant.GetValueOrDefault(key) - taskNetIssued);
+                }
+            }
+            return responses;
+        }
 
         private async Task<MaterialVariant?> ResolveVariantAsync(int variantId, int legacyMaterialId)
         {
@@ -493,8 +617,18 @@ namespace cpms_Application.Services
         private static ApiResponse Forbidden(string message) => new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, message);
         private static ApiResponse InternalError(string message) =>
             new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.InternalServerError, false, message);
-        private static bool MatchesRowVersion(byte[] current, string supplied) =>
-            current.Length == 0 || (!string.IsNullOrWhiteSpace(supplied) &&
-                CryptographicOperations.FixedTimeEquals(current, Convert.FromBase64String(supplied)));
+        private static bool MatchesRowVersion(byte[] current, string supplied)
+        {
+            if (current.Length == 0) return true;
+            if (string.IsNullOrWhiteSpace(supplied)) return false;
+            try
+            {
+                return CryptographicOperations.FixedTimeEquals(current, Convert.FromBase64String(supplied));
+            }
+            catch (FormatException)
+            {
+                return false;
+            }
+        }
     }
 }

@@ -32,10 +32,15 @@ namespace cpms_Application.Response.MaterialRequest
         public int MaterialId { get; set; }
         public string MaterialName { get; set; } = null!;
         public string VariantName { get; set; } = null!;
+        public string? SKU { get; set; }
         public string? Unit { get; set; }
         public decimal Quantity { get; set; }
         public decimal ApprovedQuantity { get; set; }
         public decimal IssuedQuantity { get; set; }
+        public decimal ReturnedQuantity { get; set; }
+        public decimal NetIssuedQuantity { get; set; }
+        public decimal RemainingRequestQuantity { get; set; }
+        public decimal RemainingTaskDemand { get; set; }
         public DateTime NeededByDate { get; set; }
         public string? Note { get; set; }
     }

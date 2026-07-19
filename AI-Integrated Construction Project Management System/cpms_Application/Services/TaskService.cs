@@ -40,7 +40,7 @@ namespace cpms_Application.Services
                 if (project == null)
                 {
                     await _uow.RollbackTransactionAsync();
-                    return response.SetNotFound($"Dự án với ID = {request.ProjectId} không tồn tại trong hệ thống.");
+                    return response.SetNotFound($"Project {request.ProjectId} was not found.");
                 }
                 if (project.Status is ProjectStatus.COMPLETED or ProjectStatus.CANCELLED)
                 {
@@ -54,7 +54,8 @@ namespace cpms_Application.Services
                 }
                 if (project.TotalProjectBudget > 0)
                 {
-                    var existingTasks = await _uow.TaskItems.GetAllAsync(t => t.ProjectId == request.ProjectId);
+                    var existingTasks = await _uow.TaskItems.GetAllAsync(t => t.ProjectId == request.ProjectId &&
+                        t.Status != DomainTaskStatus.CANCELLED && t.Status != DomainTaskStatus.REJECTED);
                     if (existingTasks.Sum(t => t.PlannedBudget) + request.PlannedBudget > project.TotalProjectBudget)
                     {
                         await _uow.RollbackTransactionAsync();
@@ -67,10 +68,12 @@ namespace cpms_Application.Services
                     await _uow.RollbackTransactionAsync();
                     return response.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You may only create tasks for a project you manage.");
                 }
+                var currentAccount = await _uow.UserAccounts.GetByIdAsync(currentUser.Id);
 
                 // 2. Map dữ liệu cơ bản và cấu hình mặc định cho Task mới
                 var taskItem = _mapper.Map<TaskItem>(request);
                 taskItem.AssignedToUserID = currentUser.Id;
+                if (currentAccount != null) taskItem.AssignedToUser = currentAccount;
                 taskItem.ActualCost = 0;
                 taskItem.ActualProgressPct = 0;
                 taskItem.Status = DomainTaskStatus.PENDING;
@@ -121,10 +124,13 @@ namespace cpms_Application.Services
                         var requirement = new TaskMaterialRequirement
                         {
                             TaskId = taskItem.TaskId, // Sử dụng mã TaskId vừa sinh tự động ở trên
+                            TaskItem = taskItem,
                             VariantId = variant.VariantId,
+                            Variant = variant,
                             GrossQuantityRequired = matRequest.GrossQuantityRequired
                         };
 
+                        taskItem.MaterialRequirements.Add(requirement);
                         await _uow.TaskMaterialRequirements.AddAsync(requirement);
                     }
 
@@ -133,7 +139,8 @@ namespace cpms_Application.Services
                 }
 
                 await _uow.CommitTransactionAsync();
-                return response.SetOk("Khởi tạo đầu việc dự án và định mức vật tư thành công!");
+                return response.SetApiResponse(System.Net.HttpStatusCode.Created, true,
+                    result: _mapper.Map<TaskResponse>(taskItem));
             }
             catch (Exception)
             {
@@ -170,6 +177,22 @@ namespace cpms_Application.Services
             }
         }
 
+        public async Task<ApiResponse> GetTaskByIdAsync(int taskId)
+        {
+            var task = await _uow.TaskItems.GetAsync(t => t.TaskId == taskId,
+                query => query.Include(t => t.AssignedToUser)
+                    .Include(t => t.MaterialRequirements)
+                    .ThenInclude(r => r.Variant)
+                    .ThenInclude(v => v.Material));
+            if (task == null) return new ApiResponse().SetNotFound("Task not found.");
+            var project = await _uow.Projects.GetByIdAsync(task.ProjectId);
+            if (project == null) return new ApiResponse().SetNotFound("Project not found.");
+            if (!await CanReadProjectAsync(project))
+                return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false,
+                    "You do not have access to this task.");
+            return new ApiResponse().SetOk(_mapper.Map<TaskResponse>(task));
+        }
+
         public async Task<ApiResponse> GetMaterialRequirementsByProjectIdAsync(int projectId)
         {
             var apiResponse = new ApiResponse();
@@ -178,7 +201,7 @@ namespace cpms_Application.Services
                 // 1. Kiểm tra xem dự án (Project) có tồn tại không
                 var project = await _uow.Projects.GetAsync(p => p.ProjectId == projectId);
                 if (project == null)
-                    return apiResponse.SetNotFound("Dự án không tồn tại.");
+                    return apiResponse.SetNotFound("Project not found.");
                 if (!await CanReadProjectAsync(project))
                     return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You do not have access to this project's material requirements.");
 
@@ -234,9 +257,12 @@ namespace cpms_Application.Services
                 return new ApiResponse().SetConflict("Task changed. Reload and retry.");
             if (request.BaselineStart < project.BaselineStart || request.BaselineEnd > project.BaselineEnd)
                 return new ApiResponse().SetBadRequest("Task dates must stay inside the project baseline.");
-            var otherTasks = await _uow.TaskItems.GetAllAsync(t => t.ProjectId == project.ProjectId && t.TaskId != taskId);
+            var otherTasks = await _uow.TaskItems.GetAllAsync(t => t.ProjectId == project.ProjectId && t.TaskId != taskId &&
+                t.Status != DomainTaskStatus.CANCELLED && t.Status != DomainTaskStatus.REJECTED);
             if (project.TotalProjectBudget > 0 && otherTasks.Sum(t => t.PlannedBudget) + request.PlannedBudget > project.TotalProjectBudget)
                 return new ApiResponse().SetConflict("Total planned task budgets cannot exceed the project budget.");
+            if (request.PlannedBudget < task.ActualCost)
+                return new ApiResponse().SetConflict("Task budget cannot be reduced below its approved actual cost.");
 
             try
             {
@@ -263,9 +289,26 @@ namespace cpms_Application.Services
                 return new ApiResponse().SetConflict("Tasks in a closed project cannot change state.");
             if (!MatchesRowVersion(task.RowVersion, request.RowVersion))
                 return new ApiResponse().SetConflict("Task changed. Reload and retry.");
+            var normalizedAction = action.Trim().ToLowerInvariant();
+            if (normalizedAction is "cancel" or "reject")
+            {
+                var pendingReport = await _uow.ProgressReports.GetAsync(report =>
+                    report.TaskId == taskId && report.Status == ProgressReportStatus.PENDING);
+                if (pendingReport != null)
+                    return new ApiResponse().SetConflict("Approve or reject pending progress reports before closing this task.");
+
+                var openMaterialRequest = await _uow.MaterialRequests.GetAsync(materialRequest =>
+                    materialRequest.TaskId == taskId &&
+                    (materialRequest.Status == MaterialRequestStatuses.Pending ||
+                     materialRequest.Status == MaterialRequestStatuses.Approved ||
+                     materialRequest.Status == MaterialRequestStatuses.PartiallyApproved ||
+                     materialRequest.Status == MaterialRequestStatuses.PartiallyIssued));
+                if (openMaterialRequest != null)
+                    return new ApiResponse().SetConflict("Cancel, reject, release, or finish open material requests before closing this task.");
+            }
             try
             {
-                switch (action.Trim().ToLowerInvariant())
+                switch (normalizedAction)
                 {
                     case "cancel": task.Cancel(); break;
                     case "reject": task.Reject(); break;
@@ -273,7 +316,12 @@ namespace cpms_Application.Services
                     default: return new ApiResponse().SetBadRequest("Supported task actions are cancel, reject, and reopen.");
                 }
                 await _uow.SaveChangeAsync();
-                return new ApiResponse().SetOk(new { task.TaskId, Status = task.Status.ToString() });
+                return new ApiResponse().SetOk(new
+                {
+                    task.TaskId,
+                    Status = task.Status.ToString(),
+                    RowVersion = Convert.ToBase64String(task.RowVersion)
+                });
             }
             catch (InvalidOperationException ex)
             {

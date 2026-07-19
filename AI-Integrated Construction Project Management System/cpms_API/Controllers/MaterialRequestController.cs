@@ -19,7 +19,7 @@ namespace cpms_API.Controllers
             _materialRequestService = materialRequestService;
         }
 
-        // POST: api/materialrequest (Tạo phiếu thủ công/phát sinh + Giữ kho tạm)
+        // Creates a pending request. Inventory is reserved only during warehouse approval.
         [HttpPost]
         [Authorize(Roles = "PM")]
         public async Task<IActionResult> CreateMaterialRequest([FromBody] CreateMaterialRequest request)

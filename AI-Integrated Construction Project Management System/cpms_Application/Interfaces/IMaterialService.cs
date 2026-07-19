@@ -16,6 +16,7 @@ namespace cpms_Application.Interfaces
         Task<ApiResponse> UpdateMaterialAsync(int id, UpdateMaterialRequest request);
         Task<ApiResponse> DeleteMaterialAsync(int id);
         Task<ApiResponse> CreateVariantAsync(MaterialVariantRequest request);
+        Task<ApiResponse> GetVariantByIdAsync(int variantId);
         Task<ApiResponse> GetVariantsByMaterialAsync(int materialId);
         Task<ApiResponse> UpdateVariantAsync(int variantId, MaterialVariantRequest request);
         Task<ApiResponse> DeleteVariantAsync(int variantId);

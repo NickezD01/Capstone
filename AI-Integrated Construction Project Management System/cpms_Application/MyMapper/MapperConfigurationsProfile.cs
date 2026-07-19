@@ -43,8 +43,9 @@ namespace cpms_Application.MyMapper
 
             // === PROJECTS ===
             CreateMap<CreateProjectRequest, Project>();
-            CreateMap<Project, ProjectResponse>()
+  CreateMap<Project, ProjectResponse>()
     .ForMember(dest => dest.RowVersion, opt => opt.MapFrom(src => Convert.ToBase64String(src.RowVersion)))
+    .ForMember(dest => dest.BudgetConfigured, opt => opt.MapFrom(src => src.TotalProjectBudget > 0))
     .ForMember(dest => dest.Status,
         opt => opt.MapFrom(src => src.Status.ToString()))
 
@@ -59,6 +60,30 @@ namespace cpms_Application.MyMapper
 
     .ForMember(dest => dest.ActualCost,
         opt => opt.MapFrom(src => src.Tasks.Sum(task => task.ActualCost)))
+
+    .ForMember(dest => dest.PlannedTaskBudget,
+        opt => opt.MapFrom(src => src.Tasks
+            .Where(task => task.Status != cpms_Domain.Models.TaskStatus.CANCELLED && task.Status != cpms_Domain.Models.TaskStatus.REJECTED)
+            .Sum(task => task.PlannedBudget)))
+
+    .ForMember(dest => dest.ReportedTaskActualCost,
+        opt => opt.MapFrom(src => src.Tasks.Sum(task => task.ActualCost)))
+
+    .ForMember(dest => dest.PurchaseOrderCommittedCost,
+        opt => opt.MapFrom(src => src.PurchaseOrders
+            .Where(order => order.Status != PurchaseOrderStatus.REJECTED && order.Status != PurchaseOrderStatus.CANCELLED)
+            .Sum(order => order.TotalAmount)))
+
+    .ForMember(dest => dest.PurchaseOrderReceivedCost,
+        opt => opt.MapFrom(src => src.PurchaseOrders
+            .Where(order => order.Status != PurchaseOrderStatus.REJECTED && order.Status != PurchaseOrderStatus.CANCELLED)
+            .SelectMany(order => order.OrderLineItems)
+            .Sum(line => line.ReceivedQuantity * line.UnitPrice)))
+
+    .ForMember(dest => dest.RemainingProcurementBudget,
+        opt => opt.MapFrom(src => Math.Max(0, src.TotalProjectBudget - src.PurchaseOrders
+            .Where(order => order.Status != PurchaseOrderStatus.REJECTED && order.Status != PurchaseOrderStatus.CANCELLED)
+            .Sum(order => order.TotalAmount))))
 
     .ForMember(dest => dest.TotalAIAlerts,
         opt => opt.MapFrom(src => src.AIAlerts.Count));
@@ -86,6 +111,12 @@ namespace cpms_Application.MyMapper
                 .ForMember(dest => dest.MaterialId, opt => opt.MapFrom(src => src.Variant.MaterialId))
                 .ForMember(dest => dest.MaterialName, opt => opt.MapFrom(src => src.Variant.Material.MaterialName))
                 .ForMember(dest => dest.VariantName, opt => opt.MapFrom(src => src.Variant.VariantName))
+                .ForMember(dest => dest.SKU, opt => opt.MapFrom(src => src.Variant.SKU))
+                .ForMember(dest => dest.Brand, opt => opt.MapFrom(src => src.Variant.Brand))
+                .ForMember(dest => dest.Grade, opt => opt.MapFrom(src => src.Variant.Grade))
+                .ForMember(dest => dest.Size, opt => opt.MapFrom(src => src.Variant.Size))
+                .ForMember(dest => dest.Specification, opt => opt.MapFrom(src => src.Variant.Specification))
+                .ForMember(dest => dest.Packaging, opt => opt.MapFrom(src => src.Variant.Packaging))
                 .ForMember(dest => dest.Unit, opt => opt.MapFrom(src => src.Variant.Unit))
                 .ForMember(dest => dest.SubTotal, opt => opt.MapFrom(src => src.Quantity * src.UnitPrice));
 
@@ -109,6 +140,12 @@ namespace cpms_Application.MyMapper
                 .ForMember(dest => dest.MaterialId, opt => opt.MapFrom(src => src.Variant.MaterialId))
                 .ForMember(dest => dest.MaterialName, opt => opt.MapFrom(src => src.Variant.Material.MaterialName))
                 .ForMember(dest => dest.VariantName, opt => opt.MapFrom(src => src.Variant.VariantName))
+                .ForMember(dest => dest.SKU, opt => opt.MapFrom(src => src.Variant.SKU))
+                .ForMember(dest => dest.Brand, opt => opt.MapFrom(src => src.Variant.Brand))
+                .ForMember(dest => dest.Grade, opt => opt.MapFrom(src => src.Variant.Grade))
+                .ForMember(dest => dest.Size, opt => opt.MapFrom(src => src.Variant.Size))
+                .ForMember(dest => dest.Specification, opt => opt.MapFrom(src => src.Variant.Specification))
+                .ForMember(dest => dest.Packaging, opt => opt.MapFrom(src => src.Variant.Packaging))
                 .ForMember(dest => dest.Unit, opt => opt.MapFrom(src => src.Variant.Unit))
                 .ForMember(dest => dest.RowVersion, opt => opt.MapFrom(src => Convert.ToBase64String(src.RowVersion)))
                 .ForMember(dest => dest.IsLowStock, opt => opt.MapFrom(src => src.AvailableQuantity <= src.ReorderLevel));
@@ -166,7 +203,7 @@ namespace cpms_Application.MyMapper
                 .ForMember(dest => dest.RequestedByName, opt => opt.MapFrom(src =>
                     src.Requester != null
                         ? $"{src.Requester.LastName} {src.Requester.FirstName}".Trim()
-                        : "Người dùng hệ thống"))
+                        : "System user"))
                 .ForMember(dest => dest.TaskId, opt => opt.MapFrom(src => src.TaskId))
                 .ForMember(dest => dest.WarehouseName, opt => opt.MapFrom(src => src.Warehouse != null ? src.Warehouse.WarehouseName : null))
                 .ForMember(dest => dest.Items, opt => opt.MapFrom(src => src.Requisitions));
@@ -175,6 +212,7 @@ namespace cpms_Application.MyMapper
                 .ForMember(dest => dest.MaterialId, opt => opt.MapFrom(src => src.Variant.MaterialId))
                 .ForMember(dest => dest.MaterialName, opt => opt.MapFrom(src => src.Variant.Material.MaterialName))
                 .ForMember(dest => dest.VariantName, opt => opt.MapFrom(src => src.Variant.VariantName))
+                .ForMember(dest => dest.SKU, opt => opt.MapFrom(src => src.Variant.SKU))
                 .ForMember(dest => dest.Unit, opt => opt.MapFrom(src => src.Variant.Unit));
 
 

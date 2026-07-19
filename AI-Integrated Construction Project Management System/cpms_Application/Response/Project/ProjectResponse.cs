@@ -22,7 +22,13 @@ namespace cpms_Application.Response.Project
 
         // 3. Tài chính
         public decimal TotalProjectBudget { get; set; }
+        public bool BudgetConfigured { get; set; }
         public decimal ActualCost { get; set; }
+        public decimal PlannedTaskBudget { get; set; }
+        public decimal ReportedTaskActualCost { get; set; }
+        public decimal PurchaseOrderCommittedCost { get; set; }
+        public decimal PurchaseOrderReceivedCost { get; set; }
+        public decimal RemainingProcurementBudget { get; set; }
         public string Currency { get; set; } = "VND";
 
         // 4. Thông tin PM (Để FE hiển thị luôn "Quản lý bởi: Nguyễn Văn A")

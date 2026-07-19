@@ -11,6 +11,7 @@ namespace cpms_Application.Interfaces
     public interface ITaskService
     {
         Task<ApiResponse> CreateTaskAsync(CreateTaskRequest request);
+        Task<ApiResponse> GetTaskByIdAsync(int taskId);
         Task<ApiResponse> GetTasksByProjectAsync(int projectId);
 
         Task<ApiResponse> GetMaterialRequirementsByProjectIdAsync(int projectId);

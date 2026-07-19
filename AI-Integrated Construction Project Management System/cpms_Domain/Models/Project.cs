@@ -75,9 +75,12 @@ namespace cpms_Domain.Models
             Status = ProjectStatus.PLANNING;
         }
 
-        public void Complete(bool allTasksCompleted)
+        public void Complete(bool allRequiredTasksClosed)
         {
-            if (!allTasksCompleted) throw new InvalidOperationException("Every project task must be completed first.");
+            if (Status is not (ProjectStatus.IN_PROGRESS or ProjectStatus.DELAYED))
+                throw new InvalidOperationException("Only an active project can be completed.");
+            if (!allRequiredTasksClosed)
+                throw new InvalidOperationException("Every non-cancelled project task must be completed first.");
             Status = ProjectStatus.COMPLETED;
         }
 

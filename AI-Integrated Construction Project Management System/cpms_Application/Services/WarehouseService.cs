@@ -31,11 +31,39 @@ namespace cpms_Application.Services
             var warehouse = _mapper.Map<Warehouse>(request);
             warehouse.ManagerId = request.ManagerId > 0 ? request.ManagerId : user.Id;
             var manager = await _uow.UserAccounts.GetByIdAsync(warehouse.ManagerId);
-            if (manager == null || manager.Role != Role.WAREHOUSE_MANAGER)
-                return new ApiResponse().SetBadRequest(message: "Warehouse manager must be an active WAREHOUSE_MANAGER account.");
+            if (manager == null || manager.Role != Role.WAREHOUSE_MANAGER || manager.IsEmailVerified != true)
+                return new ApiResponse().SetBadRequest(message: "Warehouse manager must be a verified WAREHOUSE_MANAGER account.");
+            var duplicate = await _uow.Warehouses.GetAsync(w => w.WarehouseName == request.WarehouseName.Trim());
+            if (duplicate != null) return new ApiResponse().SetConflict("An active warehouse already uses this name.");
+            warehouse.WarehouseName = request.WarehouseName.Trim();
+            warehouse.Location = request.Location.Trim();
+            warehouse.Manager = manager;
             await _uow.Warehouses.AddAsync(warehouse);
             await _uow.SaveChangeAsync();
-            return new ApiResponse().SetOk("Warehouse created successfully.");
+            return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Created, true,
+                result: _mapper.Map<WarehouseResponse>(warehouse));
+        }
+
+        public async Task<ApiResponse> UpdateWarehouseAsync(int warehouseId, UpdateWarehouseRequest request)
+        {
+            var user = _claimService.GetUserClaim();
+            if (!IsAdmin(user)) return Forbidden("Only administrators may update warehouses.");
+            var warehouse = await _uow.Warehouses.GetByIdAsync(warehouseId);
+            if (warehouse == null) return new ApiResponse().SetNotFound("Warehouse not found.");
+            var manager = await _uow.UserAccounts.GetByIdAsync(request.ManagerId);
+            if (manager == null || manager.Role != Role.WAREHOUSE_MANAGER || manager.IsEmailVerified != true)
+                return new ApiResponse().SetBadRequest("Warehouse manager must be a verified WAREHOUSE_MANAGER account.");
+            var normalizedName = request.WarehouseName.Trim();
+            var duplicate = await _uow.Warehouses.GetAsync(w => w.WarehouseId != warehouseId && w.WarehouseName == normalizedName);
+            if (duplicate != null) return new ApiResponse().SetConflict("Another active warehouse already uses this name.");
+            warehouse.WarehouseName = normalizedName;
+            warehouse.Location = request.Location.Trim();
+            warehouse.ManagerId = request.ManagerId;
+            warehouse.Manager = manager;
+            warehouse.ModifiedBy = user.Id;
+            warehouse.ModifiedDate = DateTime.UtcNow;
+            await _uow.SaveChangeAsync();
+            return new ApiResponse().SetOk(_mapper.Map<WarehouseResponse>(warehouse));
         }
 
         public async Task<ApiResponse> GetAllWarehousesAsync()
@@ -45,6 +73,17 @@ namespace cpms_Application.Services
             var list = await _uow.Warehouses.GetAllAsync(IsAdmin(user) ? null : w => w.ManagerId == user.Id,
                 q => q.Include(w => w.Manager).Include(w => w.InventoryRecords));
             return new ApiResponse().SetOk(_mapper.Map<List<WarehouseResponse>>(list));
+        }
+
+        public async Task<ApiResponse> GetWarehouseByIdAsync(int warehouseId)
+        {
+            var access = await AuthorizeReadAsync(warehouseId);
+            if (access != null) return access;
+            var warehouse = await _uow.Warehouses.GetAsync(w => w.WarehouseId == warehouseId,
+                q => q.Include(w => w.Manager).Include(w => w.InventoryRecords));
+            return warehouse == null
+                ? new ApiResponse().SetNotFound("Warehouse not found.")
+                : new ApiResponse().SetOk(_mapper.Map<WarehouseResponse>(warehouse));
         }
 
         public async Task<ApiResponse> GetWarehouseInventoryAsync(int warehouseId)
@@ -398,8 +437,8 @@ namespace cpms_Application.Services
                     query => query.Include(x => x.Requisitions));
                 if (materialRequest == null)
                     return await Rollback(new ApiResponse().SetBadRequest(message: "Referenced material request was not found."));
-                if (materialRequest.Status != MaterialRequestStatuses.Issued)
-                    return await Rollback(new ApiResponse().SetConflict(message: "Only issued material requests can be returned."));
+                if (materialRequest.Status is not (MaterialRequestStatuses.Issued or MaterialRequestStatuses.PartiallyIssued))
+                    return await Rollback(new ApiResponse().SetConflict(message: "Only issued or partially issued material requests can be returned."));
                 if (materialRequest.WarehouseId != request.WarehouseId)
                     return await Rollback(new ApiResponse().SetBadRequest(message: "The material request was issued from a different warehouse."));
 

@@ -34,8 +34,8 @@ public sealed class ProgressReportService : IProgressReportService
         var isOwner = IsRole(currentUser, Role.PM) && project.PMUserID == currentUser.Id;
         if (!isOwner)
             return Forbidden("Only the owning project manager may submit progress.");
-        if (project.Status is ProjectStatus.PAUSED or ProjectStatus.CANCELLED or ProjectStatus.COMPLETED)
-            return new ApiResponse().SetConflict("Progress cannot be submitted while the project is paused or closed.");
+        if (project.Status is not (ProjectStatus.IN_PROGRESS or ProjectStatus.DELAYED))
+            return new ApiResponse().SetConflict("Progress can only be submitted after the project has started and while it remains active.");
         if (task.Status is DomainTaskStatus.CANCELLED or DomainTaskStatus.REJECTED or DomainTaskStatus.COMPLETED)
             return new ApiResponse().SetConflict("Progress cannot be submitted for a closed task.");
         if (request.ProgressIncrement <= 0 || task.ActualProgressPct + request.ProgressIncrement > 100)
@@ -73,8 +73,10 @@ public sealed class ProgressReportService : IProgressReportService
             return new ApiResponse().SetConflict("Only pending progress reports can be approved.");
         if (!MatchesRowVersion(aggregate.Report.RowVersion, request.RowVersion))
             return new ApiResponse().SetConflict("Progress report changed. Reload and retry.");
-        if (aggregate.Project!.Status is ProjectStatus.PAUSED or ProjectStatus.CANCELLED or ProjectStatus.COMPLETED)
-            return new ApiResponse().SetConflict("Progress cannot be approved while the project is paused or closed.");
+        if (aggregate.Project!.Status is not (ProjectStatus.IN_PROGRESS or ProjectStatus.DELAYED))
+            return new ApiResponse().SetConflict("Progress can only be approved while the project is active.");
+        if (aggregate.Task!.Status is DomainTaskStatus.CANCELLED or DomainTaskStatus.REJECTED)
+            return new ApiResponse().SetConflict("Progress cannot be approved for a cancelled or rejected task.");
         ProgressReport? original = null;
         if (aggregate.Report.OriginalReportId.HasValue)
         {
@@ -82,6 +84,8 @@ public sealed class ProgressReportService : IProgressReportService
             if (original == null || original.Status != ProgressReportStatus.APPROVED)
                 return new ApiResponse().SetConflict("The original report is no longer eligible for correction.");
         }
+        if (aggregate.Task.Status == DomainTaskStatus.COMPLETED && original == null)
+            return new ApiResponse().SetConflict("A completed task cannot accept another progress report. Correct or reverse an approved report instead.");
         var progressAfterApproval = aggregate.Task!.ActualProgressPct - (original?.ProgressIncrement ?? 0) + aggregate.Report.ProgressIncrement;
         if (progressAfterApproval > 100)
             return new ApiResponse().SetConflict("Approval would make task progress exceed 100%.");
@@ -145,6 +149,10 @@ public sealed class ProgressReportService : IProgressReportService
         if (access != null) return access;
         if (aggregate.Report.Status != ProgressReportStatus.APPROVED)
             return new ApiResponse().SetConflict("Only an approved report can be corrected.");
+        if (aggregate.Project!.Status is not (ProjectStatus.IN_PROGRESS or ProjectStatus.DELAYED))
+            return new ApiResponse().SetConflict("Progress can only be corrected while the project is active.");
+        if (aggregate.Task!.Status is DomainTaskStatus.CANCELLED or DomainTaskStatus.REJECTED)
+            return new ApiResponse().SetConflict("Progress cannot be corrected while the task is cancelled or rejected.");
         if (!MatchesRowVersion(aggregate.Report.RowVersion, request.RowVersion))
             return new ApiResponse().SetConflict("Progress report changed. Reload and retry.");
 
@@ -188,6 +196,10 @@ public sealed class ProgressReportService : IProgressReportService
         if (access != null) return access;
         if (aggregate.Report.Status != ProgressReportStatus.APPROVED)
             return new ApiResponse().SetConflict("Only an approved report can be reversed.");
+        if (aggregate.Project!.Status is not (ProjectStatus.IN_PROGRESS or ProjectStatus.DELAYED))
+            return new ApiResponse().SetConflict("Progress can only be reversed while the project is active.");
+        if (aggregate.Task!.Status is DomainTaskStatus.CANCELLED or DomainTaskStatus.REJECTED)
+            return new ApiResponse().SetConflict("Progress cannot be reversed while the task is cancelled or rejected.");
         if (!MatchesRowVersion(aggregate.Report.RowVersion, request.RowVersion))
             return new ApiResponse().SetConflict("Progress report changed. Reload and retry.");
 

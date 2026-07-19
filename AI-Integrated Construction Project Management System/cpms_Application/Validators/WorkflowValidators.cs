@@ -127,9 +127,29 @@ namespace cpms_Application.Validators
         }
     }
 
+    public class UpdateSupplierRequestValidator : AbstractValidator<UpdateSupplierRequest>
+    {
+        public UpdateSupplierRequestValidator()
+        {
+            RuleFor(x => x.CompanyName).NotEmpty().MaximumLength(200);
+            RuleFor(x => x.ContactEmail).EmailAddress().MaximumLength(150).When(x => !string.IsNullOrWhiteSpace(x.ContactEmail));
+            RuleFor(x => x.ContactPhone).MaximumLength(20);
+        }
+    }
+
     public class CreateWarehouseRequestValidator : AbstractValidator<CreateWarehouseRequest>
     {
         public CreateWarehouseRequestValidator()
+        {
+            RuleFor(x => x.ManagerId).GreaterThan(0);
+            RuleFor(x => x.WarehouseName).NotEmpty().MaximumLength(250);
+            RuleFor(x => x.Location).NotEmpty().MaximumLength(500);
+        }
+    }
+
+    public class UpdateWarehouseRequestValidator : AbstractValidator<UpdateWarehouseRequest>
+    {
+        public UpdateWarehouseRequestValidator()
         {
             RuleFor(x => x.ManagerId).GreaterThan(0);
             RuleFor(x => x.WarehouseName).NotEmpty().MaximumLength(250);
@@ -145,6 +165,21 @@ namespace cpms_Application.Validators
             RuleFor(x => x).Must(x => x.VariantId > 0 || x.MaterialId > 0).WithMessage("VariantId is required.");
             RuleFor(x => x.SupplierSku).MaximumLength(100);
             RuleFor(x => x.UnitPrice).GreaterThanOrEqualTo(0);
+            RuleFor(x => x.UnitPrice).GreaterThan(0).When(x => x.IsAvailable)
+                .WithMessage("An available supplier offer must have a positive unit price.");
+            RuleFor(x => x.MinimumOrderQuantity).GreaterThanOrEqualTo(0);
+            RuleFor(x => x.LeadTimeDays).GreaterThanOrEqualTo(0);
+        }
+    }
+
+    public class UpdateCatalogRequestValidator : AbstractValidator<UpdateCatalogRequest>
+    {
+        public UpdateCatalogRequestValidator()
+        {
+            RuleFor(x => x.SupplierSku).MaximumLength(100);
+            RuleFor(x => x.UnitPrice).GreaterThanOrEqualTo(0);
+            RuleFor(x => x.UnitPrice).GreaterThan(0).When(x => x.IsAvailable)
+                .WithMessage("An available supplier offer must have a positive unit price.");
             RuleFor(x => x.MinimumOrderQuantity).GreaterThanOrEqualTo(0);
             RuleFor(x => x.LeadTimeDays).GreaterThanOrEqualTo(0);
         }
@@ -235,6 +270,15 @@ namespace cpms_Application.Validators
                 item.RuleFor(x => x.Quantity).GreaterThan(0);
                 item.RuleFor(x => x.UnitPrice).GreaterThanOrEqualTo(0);
             });
+        }
+    }
+
+    public class PurchaseOrderActionRequestValidator : AbstractValidator<PurchaseOrderActionRequest>
+    {
+        public PurchaseOrderActionRequestValidator()
+        {
+            RuleFor(x => x.Note).MaximumLength(1000);
+            RuleFor(x => x.RowVersion).MaximumLength(200);
         }
     }
 
@@ -337,6 +381,7 @@ namespace cpms_Application.Validators
         public ReceivePurchaseOrderRequestValidator()
         {
             RuleFor(x => x.Note).MaximumLength(1000);
+            RuleFor(x => x.RowVersion).MaximumLength(200);
             RuleFor(x => x.Items).NotEmpty();
             RuleFor(x => x.Items).Must(items => items.Select(i => i.LineItemId).Distinct().Count() == items.Count)
                 .WithMessage("A line item may only appear once per receipt.");

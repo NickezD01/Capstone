@@ -12,5 +12,8 @@ namespace cpms_Application.Interfaces
     {
         Task<ApiResponse> CreateSupplierAsync(CreateSupplierRequest request);
         Task<ApiResponse> GetAllSuppliersAsync();
+        Task<ApiResponse> GetSupplierByIdAsync(int supplierId);
+        Task<ApiResponse> UpdateSupplierAsync(int supplierId, UpdateSupplierRequest request);
+        Task<ApiResponse> DeactivateSupplierAsync(int supplierId);
     }
 }

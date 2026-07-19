@@ -31,7 +31,7 @@ public sealed class ProjectStatusWorker : BackgroundService
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var updated = await db.Projects
                 .Where(project => project.BaselineEnd < DateTime.UtcNow &&
-                    (project.Status == ProjectStatus.PLANNING || project.Status == ProjectStatus.IN_PROGRESS))
+                    project.Status == ProjectStatus.IN_PROGRESS)
                 .ExecuteUpdateAsync(setters => setters.SetProperty(project => project.Status, ProjectStatus.DELAYED), cancellationToken);
             if (updated > 0) _logger.LogInformation("Marked {ProjectCount} overdue projects as DELAYED.", updated);
         }

@@ -31,5 +31,29 @@ namespace cpms_API.Controllers
             var response = await _supplierService.GetAllSuppliersAsync();
             return StatusCode((int)response.StatusCode, response);
         }
+
+        [HttpGet("{supplierId:int}")]
+        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
+        public async Task<IActionResult> GetById(int supplierId)
+        {
+            var response = await _supplierService.GetSupplierByIdAsync(supplierId);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpPut("{supplierId:int}")]
+        [Authorize(Roles = "ADMIN")]
+        public async Task<IActionResult> Update(int supplierId, [FromBody] UpdateSupplierRequest request)
+        {
+            var response = await _supplierService.UpdateSupplierAsync(supplierId, request);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpDelete("{supplierId:int}")]
+        [Authorize(Roles = "ADMIN")]
+        public async Task<IActionResult> Deactivate(int supplierId)
+        {
+            var response = await _supplierService.DeactivateSupplierAsync(supplierId);
+            return StatusCode((int)response.StatusCode, response);
+        }
     }
 }

@@ -48,12 +48,28 @@ namespace cpms_API.Controllers
             return StatusCode((int)result.StatusCode, result);
         }
 
+        [HttpGet("{id:int}")]
+        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
+        public async Task<IActionResult> GetById(int id)
+        {
+            var result = await _poService.GetPurchaseOrderByIdAsync(id);
+            return StatusCode((int)result.StatusCode, result);
+        }
+
+        [HttpGet("shortages")]
+        [Authorize(Roles = "WAREHOUSE_MANAGER")]
+        public async Task<IActionResult> GetProcurementShortages()
+        {
+            var result = await _poService.GetProcurementShortagesAsync();
+            return StatusCode((int)result.StatusCode, result);
+        }
+
         // PUT: api/PurchaseOrders/{id}/approve
         [HttpPut("{id}/approve")]
         [Authorize(Roles = "ADMIN,PM")]
-        public async Task<IActionResult> Approve(int id)
+        public async Task<IActionResult> Approve(int id, [FromBody] PurchaseOrderActionRequest? request)
         {
-            var result = await _poService.ApprovePurchaseOrderAsync(id);
+            var result = await _poService.ApprovePurchaseOrderAsync(id, request);
             return StatusCode((int)result.StatusCode, result);
         }
 
@@ -61,9 +77,9 @@ namespace cpms_API.Controllers
         // 🚀 BỔ SUNG: Endpoint xử lý từ chối đơn mua hàng công trình
         [HttpPut("{id}/reject")]
         [Authorize(Roles = "ADMIN,PM")]
-        public async Task<IActionResult> Reject(int id)
+        public async Task<IActionResult> Reject(int id, [FromBody] PurchaseOrderActionRequest? request)
         {
-            var result = await _poService.RejectPurchaseOrderAsync(id);
+            var result = await _poService.RejectPurchaseOrderAsync(id, request);
             return StatusCode((int)result.StatusCode, result);
         }
 
@@ -74,7 +90,7 @@ namespace cpms_API.Controllers
             if (request.Items.Any(item => !item.RequestItemId.HasValue))
                 return BadRequest("Every shortage line must include RequestItemId.");
             var response = await _poService.CreatePurchaseOrderAsync(request);
-            return response.IsSuccess ? Ok(response) : StatusCode((int)response.StatusCode, response);
+            return StatusCode((int)response.StatusCode, response);
         }
 
         [HttpPost("{poId}/receive")]
@@ -87,17 +103,25 @@ namespace cpms_API.Controllers
 
         [HttpPost("{poId}/ship")]
         [Authorize(Roles = "WAREHOUSE_MANAGER")]
-        public async Task<IActionResult> Ship(int poId)
+        public async Task<IActionResult> Ship(int poId, [FromBody] PurchaseOrderActionRequest? request)
         {
-            var result = await _poService.MarkShippedAsync(poId);
+            var result = await _poService.MarkShippedAsync(poId, request);
+            return StatusCode((int)result.StatusCode, result);
+        }
+
+        [HttpPost("{poId}/processing")]
+        [Authorize(Roles = "WAREHOUSE_MANAGER")]
+        public async Task<IActionResult> MarkProcessing(int poId, [FromBody] PurchaseOrderActionRequest? request)
+        {
+            var result = await _poService.MarkProcessingAsync(poId, request);
             return StatusCode((int)result.StatusCode, result);
         }
 
         [HttpPost("{poId}/cancel")]
         [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
-        public async Task<IActionResult> Cancel(int poId)
+        public async Task<IActionResult> Cancel(int poId, [FromBody] PurchaseOrderActionRequest? request)
         {
-            var result = await _poService.CancelPurchaseOrderAsync(poId);
+            var result = await _poService.CancelPurchaseOrderAsync(poId, request);
             return StatusCode((int)result.StatusCode, result);
         }
     }

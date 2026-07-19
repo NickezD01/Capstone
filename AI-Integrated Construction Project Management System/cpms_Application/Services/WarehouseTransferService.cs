@@ -142,12 +142,19 @@ namespace cpms_Application.Services
                 if (transfer.Status != WarehouseTransferStatuses.Approved) return await Rollback(Conflict("Only an approved transfer can be shipped."));
 
                 var sourceInventory = new Dictionary<int, InventoryRecord>();
+                var activeReservations = new Dictionary<int, TransferInventoryReservation>();
                 foreach (var item in transfer.Items)
                 {
                     var inventory = await _uow.Inventories.GetAsync(x => x.WarehouseId == transfer.SourceWarehouseId && x.VariantId == item.VariantId);
                     if (inventory == null || !InventoryQuantityRules.CanIssue(inventory.QuantityOnHand, inventory.ReservedQuantity, inventory.QuarantineQuantity, item.RequestedQuantity))
                         return await Rollback(Conflict($"Reserved source stock is unavailable for transfer item {item.TransferItemId}."));
+                    var reservation = await _uow.TransferInventoryReservations.GetAsync(x =>
+                        x.TransferItemId == item.TransferItemId && x.Status == TransferReservationStatuses.Active);
+                    if (reservation == null || reservation.TransferId != transfer.TransferId ||
+                        reservation.InventoryId != inventory.InventoryId || reservation.Quantity != item.RequestedQuantity)
+                        return await Rollback(Conflict($"The active reservation ledger is missing or inconsistent for transfer item {item.TransferItemId}."));
                     sourceInventory[item.VariantId] = inventory;
+                    activeReservations[item.TransferItemId] = reservation;
                 }
 
                 foreach (var item in transfer.Items)
@@ -159,26 +166,9 @@ namespace cpms_Application.Services
                     inventory.UpdatedAt = DateTime.UtcNow;
                     item.ShippedQuantity = item.RequestedQuantity;
                     item.UnitCost = inventory.AverageUnitCost;
-                    var reservation = await _uow.TransferInventoryReservations.GetAsync(x =>
-                        x.TransferItemId == item.TransferItemId && x.Status == TransferReservationStatuses.Active);
-                    if (reservation == null)
-                    {
-                        await _uow.TransferInventoryReservations.AddAsync(new TransferInventoryReservation
-                        {
-                            TransferId = transfer.TransferId,
-                            TransferItemId = item.TransferItemId,
-                            InventoryId = inventory.InventoryId,
-                            Quantity = item.RequestedQuantity,
-                            Status = TransferReservationStatuses.Consumed,
-                            CreatedAt = transfer.ApprovedAt ?? DateTime.UtcNow,
-                            ResolvedAt = DateTime.UtcNow
-                        });
-                    }
-                    else
-                    {
-                        reservation.Status = TransferReservationStatuses.Consumed;
-                        reservation.ResolvedAt = DateTime.UtcNow;
-                    }
+                    var reservation = activeReservations[item.TransferItemId];
+                    reservation.Status = TransferReservationStatuses.Consumed;
+                    reservation.ResolvedAt = DateTime.UtcNow;
                     await _uow.InventoryTransactions.AddAsync(NewTransaction(inventory, InventoryTransactionTypes.TransferOut,
                         -item.RequestedQuantity, before, inventory.QuantityOnHand, transfer.TransferId, user.Id, transfer.Note));
                 }

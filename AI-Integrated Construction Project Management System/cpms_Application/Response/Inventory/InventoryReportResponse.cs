@@ -14,6 +14,12 @@ namespace cpms_Application.Response.Inventory
         public int MaterialId { get; set; }
         public string MaterialName { get; set; } = null!;
         public string VariantName { get; set; } = null!;
+        public string? SKU { get; set; }
+        public string? Brand { get; set; }
+        public string? Grade { get; set; }
+        public string? Size { get; set; }
+        public string? Specification { get; set; }
+        public string? Packaging { get; set; }
         public string WarehouseName { get; set; } = null!;
         public string Unit { get; set; } = null!;
 

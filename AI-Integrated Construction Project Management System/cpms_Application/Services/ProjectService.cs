@@ -52,7 +52,7 @@ namespace cpms_Application.Services
 
                 if (pm == null)
                 {
-                    return apiResponse.SetNotFound("Project Manager không tồn tại.");
+                    return apiResponse.SetNotFound("Project manager not found.");
                 }
 
                 // Mapping Request -> Entity
@@ -69,12 +69,13 @@ namespace cpms_Application.Services
                     include: query => query
                         .Include(p => p.ProjectManager)
                         .Include(p => p.Tasks)
+                        .Include(p => p.PurchaseOrders).ThenInclude(o => o.OrderLineItems)
                         .Include(p => p.AIAlerts)
                 )).FirstOrDefault();
 
                 if (createdProject == null)
                 {
-                    return apiResponse.SetNotFound("Không tìm thấy dự án vừa tạo.");
+                    return apiResponse.SetNotFound("The newly created project could not be reloaded.");
                 }
 
                 // Mapping sang Response
@@ -109,6 +110,7 @@ namespace cpms_Application.Services
                     include: query => query
                         .Include(p => p.ProjectManager)
                         .Include(p => p.Tasks)
+                        .Include(p => p.PurchaseOrders).ThenInclude(o => o.OrderLineItems)
                         .Include(p => p.AIAlerts)
                 );
 
@@ -133,6 +135,7 @@ namespace cpms_Application.Services
                     include: query => query
                         .Include(p => p.ProjectManager)
                         .Include(p => p.Tasks)
+                        .Include(p => p.PurchaseOrders).ThenInclude(o => o.OrderLineItems)
                         .Include(p => p.AIAlerts)
                 )).FirstOrDefault();
 
@@ -159,7 +162,7 @@ namespace cpms_Application.Services
 
             const long maxWordSize = 10 * 1024 * 1024;
             if (file == null || file.Length == 0)
-                return apiResponse.SetBadRequest("Vui lòng tải lên một file Word (.docx) hợp lệ.");
+                return apiResponse.SetBadRequest("Upload a valid Word (.docx) file.");
             if (file.Length > maxWordSize || !string.Equals(Path.GetExtension(file.FileName), ".docx", StringComparison.OrdinalIgnoreCase))
                 return apiResponse.SetBadRequest(message: "The project import must be a .docx file no larger than 10 MB.");
 
@@ -179,7 +182,7 @@ namespace cpms_Application.Services
                 if (pmAccount == null)
                 {
                     await _unitOfWork.RollbackTransactionAsync();
-                    return apiResponse.SetNotFound("Tài khoản quản lý dự án (PMUserID) không tồn tại hoặc không hợp lệ.");
+                    return apiResponse.SetNotFound("The selected project-manager account does not exist or is invalid.");
                 }
 
                 string projectName = "";
@@ -234,7 +237,7 @@ namespace cpms_Application.Services
                 if (string.IsNullOrWhiteSpace(projectName))
                 {
                     await _unitOfWork.RollbackTransactionAsync();
-                    return apiResponse.SetBadRequest("File văn bản sai cấu trúc hoặc trống. Không tìm thấy dòng chứa tiêu đề 'Tên dự án:'.");
+                    return apiResponse.SetBadRequest("The document is empty or invalid. The required 'Tên dự án:' line was not found.");
                 }
                 if (projectName.Length > 200 || address.Length > 500 || totalBudget < 0 || baselineEnd < baselineStart || startDate > baselineEnd)
                 {
@@ -292,12 +295,12 @@ namespace cpms_Application.Services
                 // KIỂM TRA ĐIỀU KIỆN BIÊN: Chặn các giá trị số lượng bất hợp pháp (<= 0) từ phía Client
                 if (request.GrossQuantityRequired <= 0)
                 {
-                    return apiResponse.SetBadRequest("Số lượng định mức vật tư yêu cầu phải lớn hơn 0.");
+                    return apiResponse.SetBadRequest("Planned material quantity must be greater than zero.");
                 }
 
                 var taskItem = await _unitOfWork.TaskItems.GetByIdAsync(taskId);
                 if (taskItem == null)
-                    return apiResponse.SetNotFound($"Không tìm thấy đầu việc (Task) với ID = {taskId}");
+                    return apiResponse.SetNotFound($"Task {taskId} was not found.");
                 var project = await _unitOfWork.Projects.GetByIdAsync(taskItem.ProjectId);
                 var currentUser = _claimService.GetUserClaim();
                 if (project == null || !string.Equals(currentUser.Role, Role.PM.ToString(), StringComparison.OrdinalIgnoreCase) || project.PMUserID != currentUser.Id)
@@ -307,7 +310,10 @@ namespace cpms_Application.Services
                 if (taskItem.Status is cpms_Domain.Models.TaskStatus.COMPLETED or cpms_Domain.Models.TaskStatus.CANCELLED)
                     return apiResponse.SetConflict("Closed tasks cannot accept material-plan changes.");
                 var downstreamRequest = await _unitOfWork.MaterialRequests.GetAsync(r =>
-                    r.TaskId == taskId && r.Status != MaterialRequestStatuses.Rejected && r.Status != MaterialRequestStatuses.Released);
+                    r.TaskId == taskId &&
+                    r.Status != MaterialRequestStatuses.Rejected &&
+                    r.Status != MaterialRequestStatuses.Released &&
+                    r.Status != MaterialRequestStatuses.Cancelled);
                 if (downstreamRequest != null)
                     return apiResponse.SetConflict("Material planning is locked after a material request has entered fulfillment.");
 
@@ -359,7 +365,9 @@ namespace cpms_Application.Services
             {
                 var project = await _unitOfWork.Projects.GetByIdAsync(projectId);
                 if (project == null)
-                    return apiResponse.SetNotFound("Dự án không tồn tại.");
+                    return apiResponse.SetNotFound("Project not found.");
+                if (project.Status is ProjectStatus.COMPLETED or ProjectStatus.CANCELLED)
+                    return apiResponse.SetConflict("MRP cannot be recalculated for a closed project.");
                 if (!await CanReadProjectAsync(projectId, project.PMUserID))
                     return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You do not have access to this project's material requirements.");
 
@@ -388,7 +396,7 @@ namespace cpms_Application.Services
             {
                 var project = await _unitOfWork.Projects.GetByIdAsync(projectId);
                 if (project == null)
-                    return apiResponse.SetNotFound("Dự án không tồn tại.");
+                    return apiResponse.SetNotFound("Project not found.");
                 var currentUser = _claimService.GetUserClaim();
                 Warehouse? selectedWarehouse = null;
                 if (!warehouseId.HasValue)
@@ -408,8 +416,10 @@ namespace cpms_Application.Services
 
                 var requirements = await _unitOfWork.TaskMaterialRequirements.GetAllAsync(
                     filter: r => r.TaskItem.ProjectId == projectId
-                              && r.TaskItem.Status != cpms_Domain.Models.TaskStatus.COMPLETED
-                              && r.TaskItem.ActualProgressPct < 100,
+                               && r.TaskItem.Status != cpms_Domain.Models.TaskStatus.COMPLETED
+                               && r.TaskItem.Status != cpms_Domain.Models.TaskStatus.CANCELLED
+                               && r.TaskItem.Status != cpms_Domain.Models.TaskStatus.REJECTED
+                               && r.TaskItem.ActualProgressPct < 100,
                     include: query => query
                         .Include(r => r.Variant)
                             .ThenInclude(v => v.Material)
@@ -432,6 +442,14 @@ namespace cpms_Application.Services
                 var issuedByVariant = issuedItems
                     .GroupBy(r => r.VariantId)
                     .ToDictionary(g => g.Key, g => g.Sum(r => r.IssuedQuantity));
+                var returnedItems = await _unitOfWork.MaterialReturns.GetAllAsync(
+                    filter: r => r.MaterialRequest.ProjectId == projectId &&
+                                 r.MaterialRequest.TaskId.HasValue &&
+                                 activeTaskIds.Contains(r.MaterialRequest.TaskId.Value),
+                    include: query => query.Include(r => r.MaterialRequest));
+                var returnedByVariant = returnedItems
+                    .GroupBy(r => r.VariantId)
+                    .ToDictionary(g => g.Key, g => g.Sum(r => r.Quantity));
 
                 var projectReservations = await _unitOfWork.InventoryReservations.GetAllAsync(
                     filter: r => r.MaterialRequest.ProjectId == projectId &&
@@ -473,8 +491,10 @@ namespace cpms_Application.Services
                         g.Key.VariantName,
                         g.Key.Unit,
                         TotalGross = g.Sum(r => r.GrossQuantityRequired),
-                        Issued = Math.Min(g.Sum(r => r.GrossQuantityRequired), issuedByVariant.GetValueOrDefault(g.Key.VariantId)),
-                        RemainingGross = Math.Max(0, g.Sum(r => r.GrossQuantityRequired) - issuedByVariant.GetValueOrDefault(g.Key.VariantId)),
+                        Issued = Math.Min(g.Sum(r => r.GrossQuantityRequired), Math.Max(0,
+                            issuedByVariant.GetValueOrDefault(g.Key.VariantId) - returnedByVariant.GetValueOrDefault(g.Key.VariantId))),
+                        RemainingGross = Math.Max(0, g.Sum(r => r.GrossQuantityRequired) - Math.Max(0,
+                            issuedByVariant.GetValueOrDefault(g.Key.VariantId) - returnedByVariant.GetValueOrDefault(g.Key.VariantId))),
                         EarliestNeedDate = g.Min(r => r.TaskItem.BaselineStart)
                     }).ToList();
 
@@ -595,6 +615,41 @@ namespace cpms_Application.Services
                 return apiResponse.SetApiResponse(System.Net.HttpStatusCode.InternalServerError, false, "Unable to calculate MRP.");
             }
         }
+
+        public async Task<ApiResponse> GetLatestMRPForProjectAsync(int projectId, int warehouseId)
+        {
+            if (warehouseId <= 0) return new ApiResponse().SetBadRequest("warehouseId is required.");
+            var project = await _unitOfWork.Projects.GetByIdAsync(projectId);
+            if (project == null) return new ApiResponse().SetNotFound("Project not found.");
+            var warehouse = await _unitOfWork.Warehouses.GetByIdAsync(warehouseId);
+            if (warehouse == null) return new ApiResponse().SetNotFound("Warehouse not found.");
+            var user = _claimService.GetUserClaim();
+            if (IsRole(user, Role.PM) && project.PMUserID != user.Id)
+                return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You may only view MRP runs for a project you manage.");
+            if (IsRole(user, Role.WAREHOUSE_MANAGER) && warehouse.ManagerId != user.Id)
+                return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You may only view MRP runs for a warehouse you manage.");
+            if (!IsRole(user, Role.ADMIN) && !IsRole(user, Role.PM) && !IsRole(user, Role.WAREHOUSE_MANAGER))
+                return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "This role cannot view MRP runs.");
+
+            var runs = await _unitOfWork.MrpPlanningRuns.GetAllAsync(run =>
+                run.ProjectId == projectId && run.WarehouseId == warehouseId);
+            var latest = runs.OrderByDescending(run => run.Version).FirstOrDefault();
+            if (latest == null) return new ApiResponse().SetNotFound("No MRP run exists for this project and warehouse.");
+            var items = JsonSerializer.Deserialize<List<MRPCalculationResponse>>(latest.SnapshotJson) ?? new();
+            foreach (var item in items)
+            {
+                item.PlanningRunId = latest.RunId;
+                item.PlanningVersion = latest.Version;
+            }
+            return new ApiResponse().SetOk(new
+            {
+                PlanningRunId = latest.RunId,
+                PlanningVersion = latest.Version,
+                latest.CalculatedAt,
+                latest.CalculatedByUserId,
+                Items = items
+            });
+        }
         public async Task<ApiResponse> AdjustProjectBudgetAsync(AdjustBudgetRequest request)
         {
             var apiResponse = new ApiResponse();
@@ -610,7 +665,13 @@ namespace cpms_Application.Services
                 {
                     await _unitOfWork.RollbackTransactionAsync();
                     transactionStarted = false;
-                    return apiResponse.SetNotFound("Không tìm thấy dự án.");
+                    return apiResponse.SetNotFound("Project not found.");
+                }
+                if (project.Status is ProjectStatus.COMPLETED or ProjectStatus.CANCELLED)
+                {
+                    await _unitOfWork.RollbackTransactionAsync();
+                    transactionStarted = false;
+                    return apiResponse.SetConflict("A closed project's budget cannot be changed.");
                 }
 
                 decimal oldBudget = project.TotalProjectBudget;
@@ -619,11 +680,18 @@ namespace cpms_Application.Services
                     p => p.ProjectId == request.ProjectId && p.Status != PurchaseOrderStatus.REJECTED &&
                          p.Status != PurchaseOrderStatus.CANCELLED);
                 var committedAmount = committedOrders.Sum(p => p.TotalAmount);
-                if (newBudget < 0 || newBudget < committedAmount)
+                var tasks = await _unitOfWork.TaskItems.GetAllAsync(t => t.ProjectId == request.ProjectId);
+                var plannedTaskAmount = tasks
+                    .Where(t => t.Status is not (cpms_Domain.Models.TaskStatus.CANCELLED or cpms_Domain.Models.TaskStatus.REJECTED))
+                    .Sum(t => t.PlannedBudget);
+                var reportedActualAmount = tasks.Sum(t => t.ActualCost);
+                var minimumSupportedBudget = Math.Max(committedAmount, Math.Max(plannedTaskAmount, reportedActualAmount));
+                if (newBudget < 0 || newBudget < minimumSupportedBudget)
                 {
                     await _unitOfWork.RollbackTransactionAsync();
                     transactionStarted = false;
-                    return apiResponse.SetConflict(message: "The adjusted budget cannot be negative or below committed purchase orders.");
+                    return apiResponse.SetConflict(message:
+                        $"The adjusted budget cannot be negative or below the current planning/commitment floor of {minimumSupportedBudget}.");
                 }
 
                 // Cập nhật ngân sách
@@ -698,6 +766,9 @@ namespace cpms_Application.Services
                 return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Only the owning project manager may update this project.");
             if (!MatchesRowVersion(project.RowVersion, request.RowVersion))
                 return new ApiResponse().SetConflict("Project changed. Reload and retry.");
+            var tasks = await _unitOfWork.TaskItems.GetAllAsync(t => t.ProjectId == projectId);
+            if (tasks.Any(task => task.BaselineStart < request.BaselineStart || task.BaselineEnd > request.BaselineEnd))
+                return new ApiResponse().SetConflict("Project dates cannot exclude an existing task. Reschedule the affected tasks first.");
             try
             {
                 project.UpdatePlan(request.ProjectName, request.Address, request.StartDate, request.BaselineStart, request.BaselineEnd);
@@ -713,13 +784,13 @@ namespace cpms_Application.Services
         public async Task<ApiResponse> ChangeProjectStatusAsync(int projectId, string action, ProjectLifecycleRequest request)
         {
             var normalizedAction = action.Trim().ToLowerInvariant();
-            var cancellationTransaction = normalizedAction == "cancel";
-            if (cancellationTransaction)
+            var closureTransaction = normalizedAction is "cancel" or "complete";
+            if (closureTransaction)
                 await _unitOfWork.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
 
             async Task<ApiResponse> Abort(ApiResponse response)
             {
-                if (cancellationTransaction) await _unitOfWork.RollbackTransactionAsync();
+                if (closureTransaction) await _unitOfWork.RollbackTransactionAsync();
                 return response;
             }
 
@@ -739,32 +810,34 @@ namespace cpms_Application.Services
                     case "start": project.Start(DateTime.UtcNow); break;
                     case "pause": project.Pause(); break;
                     case "cancel":
-                        var activeReservations = await _unitOfWork.InventoryReservations.GetAsync(r =>
-                            r.MaterialRequest.ProjectId == projectId && r.Status == InventoryReservationStatuses.Active);
-                        var openOrder = await _unitOfWork.PurchaseOrders.GetAsync(p => p.ProjectId == projectId &&
-                            (p.Status == PurchaseOrderStatus.PENDING || p.Status == PurchaseOrderStatus.APPROVED ||
-                             p.Status == PurchaseOrderStatus.PROCESSING || p.Status == PurchaseOrderStatus.SHIPPED ||
-                             p.Status == PurchaseOrderStatus.PARTIALLY_RECEIVED));
-                        if (activeReservations != null || openOrder != null)
-                            return await Abort(new ApiResponse().SetConflict("Release active inventory reservations and close or cancel open purchase orders before cancelling the project."));
+                        var cancellationBlocker = await GetProjectClosureBlockerAsync(projectId);
+                        if (cancellationBlocker != null)
+                            return await Abort(new ApiResponse().SetConflict(cancellationBlocker));
                         project.Cancel();
                         break;
                     case "reopen": project.Reopen(); break;
-                    case "complete": project.Complete(project.Tasks.Count > 0 && project.Tasks.All(t => t.Status == cpms_Domain.Models.TaskStatus.COMPLETED)); break;
+                    case "complete":
+                        var completionBlocker = await GetProjectClosureBlockerAsync(projectId);
+                        if (completionBlocker != null)
+                            return await Abort(new ApiResponse().SetConflict(completionBlocker));
+                        project.Complete(project.Tasks.Any(t => t.Status == cpms_Domain.Models.TaskStatus.COMPLETED) &&
+                            project.Tasks.All(t => t.Status is cpms_Domain.Models.TaskStatus.COMPLETED or
+                                cpms_Domain.Models.TaskStatus.CANCELLED or cpms_Domain.Models.TaskStatus.REJECTED));
+                        break;
                     default: return await Abort(new ApiResponse().SetBadRequest("Supported project actions are start, pause, cancel, reopen, and complete."));
                 }
                 await _unitOfWork.SaveChangeAsync();
-                if (cancellationTransaction) await _unitOfWork.CommitTransactionAsync();
+                if (closureTransaction) await _unitOfWork.CommitTransactionAsync();
                 return new ApiResponse().SetOk(new { project.ProjectId, Status = project.Status.ToString(), RowVersion = Convert.ToBase64String(project.RowVersion) });
             }
             catch (InvalidOperationException ex)
             {
-                if (cancellationTransaction) await _unitOfWork.RollbackTransactionAsync();
+                if (closureTransaction) await _unitOfWork.RollbackTransactionAsync();
                 return new ApiResponse().SetConflict(ex.Message);
             }
             catch
             {
-                if (cancellationTransaction) await _unitOfWork.RollbackTransactionAsync();
+                if (closureTransaction) await _unitOfWork.RollbackTransactionAsync();
                 throw;
             }
         }
@@ -788,6 +861,36 @@ namespace cpms_Application.Services
 
         private static bool MatchesRowVersion(byte[] current, string supplied) =>
             !string.IsNullOrWhiteSpace(supplied) && Convert.ToBase64String(current).Equals(supplied, StringComparison.Ordinal);
+
+        private async Task<string?> GetProjectClosureBlockerAsync(int projectId)
+        {
+            var openRequest = await _unitOfWork.MaterialRequests.GetAsync(request =>
+                request.ProjectId == projectId &&
+                (request.Status == MaterialRequestStatuses.Pending ||
+                 request.Status == MaterialRequestStatuses.Approved ||
+                 request.Status == MaterialRequestStatuses.PartiallyApproved ||
+                 request.Status == MaterialRequestStatuses.PartiallyIssued));
+            if (openRequest != null)
+                return "Reject, cancel, release, or finish open material requests before closing the project.";
+
+            var activeReservation = await _unitOfWork.InventoryReservations.GetAsync(reservation =>
+                reservation.MaterialRequest.ProjectId == projectId && reservation.Status == InventoryReservationStatuses.Active);
+            if (activeReservation != null)
+                return "Release or issue active inventory reservations before closing the project.";
+
+            var openOrder = await _unitOfWork.PurchaseOrders.GetAsync(order => order.ProjectId == projectId &&
+                (order.Status == PurchaseOrderStatus.PENDING || order.Status == PurchaseOrderStatus.APPROVED ||
+                 order.Status == PurchaseOrderStatus.PROCESSING || order.Status == PurchaseOrderStatus.SHIPPED ||
+                 order.Status == PurchaseOrderStatus.PARTIALLY_RECEIVED));
+            if (openOrder != null)
+                return "Reject, cancel, or finish open purchase orders before closing the project.";
+
+            var pendingReport = await _unitOfWork.ProgressReports.GetAsync(report =>
+                report.Task.ProjectId == projectId && report.Status == ProgressReportStatus.PENDING);
+            return pendingReport == null
+                ? null
+                : "Approve or reject pending progress reports before closing the project.";
+        }
 
         private async Task<bool> CanReadProjectAsync(int projectId, int projectManagerId)
         {

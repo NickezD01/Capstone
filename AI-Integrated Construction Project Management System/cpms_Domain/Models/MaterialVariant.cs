@@ -5,6 +5,7 @@ namespace cpms_Domain.Models
         public int VariantId { get; set; }
         public int MaterialId { get; set; }
         public string VariantName { get; set; } = null!;
+        // Internal stock-keeping code. Supplier-specific codes are stored in SupplierCatalog.
         public string? SKU { get; set; }
         public string? Brand { get; set; }
         public string? Grade { get; set; }

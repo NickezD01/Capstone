@@ -71,7 +71,7 @@ namespace cpms_Application.Services
             }
         }
 
-        public async Task<ApiResponse> GetUserIdAsync()
+        public Task<ApiResponse> GetUserIdAsync()
         {
             ApiResponse apiResponse = new ApiResponse();
             try
@@ -79,14 +79,14 @@ namespace cpms_Application.Services
                 var claim = _claim.GetUserClaim();
                 if (claim == null)
                 {
-                    return apiResponse.SetNotFound("User not found");
+                    return Task.FromResult(apiResponse.SetNotFound("User not found"));
                 }
 
-                return apiResponse.SetOk(new { UserId = claim.Id });
+                return Task.FromResult(apiResponse.SetOk(new { UserId = claim.Id }));
             }
             catch (Exception)
             {
-                return InternalError("Unable to retrieve the current user identifier.");
+                return Task.FromResult(InternalError("Unable to retrieve the current user identifier."));
             }
         }
 

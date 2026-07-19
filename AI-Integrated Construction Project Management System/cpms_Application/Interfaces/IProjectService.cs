@@ -24,6 +24,7 @@ namespace cpms_Application.Interfaces
 
         Task<ApiResponse> GetMaterialRequirementsByProjectIdAsync(int projectId);
         Task<ApiResponse> CalculateMRPForProjectAsync(int projectId, int? warehouseId = null);
+        Task<ApiResponse> GetLatestMRPForProjectAsync(int projectId, int warehouseId);
         Task<ApiResponse> UpdateProjectAsync(int projectId, UpdateProjectRequest request);
         Task<ApiResponse> ChangeProjectStatusAsync(int projectId, string action, ProjectLifecycleRequest request);
         Task<ApiResponse> ReassignProjectManagerAsync(int projectId, ReassignProjectManagerRequest request);

@@ -36,6 +36,14 @@ namespace cpms_API.Controllers
             return StatusCode((int)response.StatusCode, response);
         }
 
+        [HttpGet("{taskId:int}")]
+        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
+        public async Task<IActionResult> GetTaskById(int taskId)
+        {
+            var response = await _taskService.GetTaskByIdAsync(taskId);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
         [HttpGet("project/{projectId}/material-requirements")]
         [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
         public async Task<IActionResult> GetMaterialRequirements(int projectId)

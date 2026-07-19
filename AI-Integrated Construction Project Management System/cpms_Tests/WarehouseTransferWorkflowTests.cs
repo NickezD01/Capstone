@@ -68,6 +68,15 @@ public class WarehouseTransferWorkflowTests
         var source = new InventoryRecord { InventoryId = 1, WarehouseId = 1, VariantId = 1, QuantityOnHand = 10, ReservedQuantity = 7 };
         var destination = new InventoryRecord { InventoryId = 2, WarehouseId = 2, VariantId = 1, QuantityOnHand = 8 };
         uow.InventoryRecords.AddRange(new[] { source, destination });
+        uow.TransferReservationRecords.Add(new TransferInventoryReservation
+        {
+            TransferReservationId = 1,
+            TransferId = 1,
+            TransferItemId = 1,
+            InventoryId = 1,
+            Quantity = 4,
+            Status = TransferReservationStatuses.Active
+        });
 
         var response = await service.ShipAsync(1);
 
@@ -80,6 +89,28 @@ public class WarehouseTransferWorkflowTests
         Assert.Equal(-4, transaction.Quantity);
         Assert.Equal(1, transaction.ReferenceId);
         Assert.Equal("WAREHOUSE_TRANSFER", transaction.ReferenceType);
+    }
+
+    [Fact]
+    public async Task ShippingCannotConsumeAnotherWorkflowReservationWhenTransferLedgerIsMissing()
+    {
+        var (service, uow) = CreateTransferService(managerId: 10, status: WarehouseTransferStatuses.Approved, requested: 4);
+        var source = new InventoryRecord
+        {
+            InventoryId = 1,
+            WarehouseId = 1,
+            VariantId = 1,
+            QuantityOnHand = 10,
+            ReservedQuantity = 4
+        };
+        uow.InventoryRecords.Add(source);
+
+        var response = await service.ShipAsync(1);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal(10, source.QuantityOnHand);
+        Assert.Equal(4, source.ReservedQuantity);
+        Assert.Empty(uow.TransactionRecords);
     }
 
     [Fact]
@@ -332,8 +363,8 @@ internal class FakeRepository<T> : IGenericRepository<T> where T : class
 
     private static PropertyInfo? KeyProperty() => typeof(T).GetProperties().FirstOrDefault(p =>
         p.Name is "Id" or "WarehouseId" or "VariantId" or "InventoryId" or "TransferId" or "TransferItemId" or
-        "ProjectId" or "ItemId" or "TransactionId" or "TaskId" or "PoId" or "LineItemId" or "RequestId" or
-        "SupplierId" or "CatalogId" or "ReportId" or "ReservationId" or "AdjustmentId" or "ReturnId" or "TransferReservationId");
+        "ProjectId" or "MaterialId" or "ItemId" or "TransactionId" or "TaskId" or "PoId" or "LineItemId" or "RequestId" or
+        "SupplierId" or "CatalogId" or "MetricId" or "ReportId" or "ReservationId" or "AdjustmentId" or "ReturnId" or "TransferReservationId");
     private void AssignIdentity(T entity)
     {
         var key = KeyProperty();
@@ -363,6 +394,8 @@ internal sealed class FakeTaskItemRepository : FakeRepository<TaskItem>, ITaskIt
 internal sealed class FakeProgressReportRepository : FakeRepository<ProgressReport>, IProgressReportRepository { public FakeProgressReportRepository(List<ProgressReport> data) : base(data) { } }
 internal sealed class FakeSupplierRepository : FakeRepository<Supplier>, ISupplierRepository { public FakeSupplierRepository(List<Supplier> data) : base(data) { } }
 internal sealed class FakeSupplierCatalogRepository : FakeRepository<SupplierCatalog>, ISupplierCatalogRepository { public FakeSupplierCatalogRepository(List<SupplierCatalog> data) : base(data) { } }
+internal sealed class FakeSupplierMetricRepository : FakeRepository<SupplierMetric>, ISupplierMetricRepository { public FakeSupplierMetricRepository(List<SupplierMetric> data) : base(data) { } }
+internal sealed class FakeMaterialRepository : FakeRepository<Material>, IMaterialRepository { public FakeMaterialRepository(List<Material> data) : base(data) { } }
 internal sealed class FakeRefreshTokenRepository : FakeRepository<RefreshToken>, IRefreshTokenRepository { public FakeRefreshTokenRepository(List<RefreshToken> data) : base(data) { } }
 
 internal sealed class TestUnitOfWork : IUnitOfWork
@@ -373,6 +406,7 @@ internal sealed class TestUnitOfWork : IUnitOfWork
     public List<InventoryTransaction> TransactionRecords { get; } = new();
     public List<InventoryAdjustment> AdjustmentRecords { get; } = new();
     public List<MaterialVariant> VariantRecords { get; } = new();
+    public List<Material> MaterialRecords { get; } = new();
     public List<WarehouseTransfer> TransferRecords { get; } = new();
     public List<WarehouseTransferItem> TransferItemRecords { get; } = new();
     public List<TransferInventoryReservation> TransferReservationRecords { get; } = new();
@@ -392,6 +426,7 @@ internal sealed class TestUnitOfWork : IUnitOfWork
     public List<ProgressReport> ProgressReportRecords { get; } = new();
     public List<Supplier> SupplierRecords { get; } = new();
     public List<SupplierCatalog> SupplierCatalogRecords { get; } = new();
+    public List<SupplierMetric> SupplierMetricRecords { get; } = new();
     public List<MrpPlanningRun> MrpPlanningRunRecords { get; } = new();
     public List<PhysicalCountSession> PhysicalCountSessionRecords { get; } = new();
     public List<PhysicalCountLine> PhysicalCountLineRecords { get; } = new();
@@ -416,6 +451,7 @@ internal sealed class TestUnitOfWork : IUnitOfWork
         InventoryTransactions = new FakeRepository<InventoryTransaction>(TransactionRecords);
         InventoryAdjustments = new FakeRepository<InventoryAdjustment>(AdjustmentRecords);
         MaterialVariants = new FakeRepository<MaterialVariant>(VariantRecords);
+        Materials = new FakeMaterialRepository(MaterialRecords);
         WarehouseTransfers = new FakeTransferRepository(TransferRecords);
         WarehouseTransferItems = new FakeTransferItemRepository(TransferItemRecords);
         TransferInventoryReservations = new FakeRepository<TransferInventoryReservation>(TransferReservationRecords);
@@ -435,6 +471,7 @@ internal sealed class TestUnitOfWork : IUnitOfWork
         ProgressReports = new FakeProgressReportRepository(ProgressReportRecords);
         Suppliers = new FakeSupplierRepository(SupplierRecords);
         SupplierCatalogs = new FakeSupplierCatalogRepository(SupplierCatalogRecords);
+        SupplierMetrics = new FakeSupplierMetricRepository(SupplierMetricRecords);
         MrpPlanningRuns = new FakeRepository<MrpPlanningRun>(MrpPlanningRunRecords);
         PhysicalCountSessions = new FakeRepository<PhysicalCountSession>(PhysicalCountSessionRecords);
         PhysicalCountLines = new FakeRepository<PhysicalCountLine>(PhysicalCountLineRecords);
@@ -446,10 +483,10 @@ internal sealed class TestUnitOfWork : IUnitOfWork
     public IGenericRepository<EmailOutboxMessage> EmailOutboxMessages { get; }
     public ITaskItemRepository TaskItems { get; }
     public IProgressReportRepository ProgressReports { get; }
-    public IMaterialRepository Materials => null!;
+    public IMaterialRepository Materials { get; }
     public ISupplierRepository Suppliers { get; }
     public ISupplierCatalogRepository SupplierCatalogs { get; }
-    public ISupplierMetricRepository SupplierMetrics => null!;
+    public ISupplierMetricRepository SupplierMetrics { get; }
     public ICategoryRepository Categories => null!;
     public IMaterialRequestRepository MaterialRequests { get; }
     public IProjectBudgetHistoryRepository ProjectBudgetHistories => null!;
