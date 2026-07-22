@@ -39,6 +39,7 @@ public sealed class EmailOutboxWorker : BackgroundService
             var messages = await db.EmailOutboxMessages
                 .Where(x => x.ProcessedAt == null && x.NextAttemptAt <= now && x.AttemptCount < 10)
                 .OrderBy(x => x.MessageId).Take(20).ToListAsync(cancellationToken);
+            _logger.LogInformation("Email outbox poll found {Count} pending message(s).", messages.Count);
             foreach (var message in messages)
             {
                 try
@@ -53,8 +54,10 @@ public sealed class EmailOutboxWorker : BackgroundService
                     }
                     else
                     {
-                        message.LastError = "SMTP delivery was rejected.";
+                        message.LastError = response.ErrorMessage ?? "SMTP delivery was rejected.";
                         message.NextAttemptAt = DateTime.UtcNow.AddMinutes(Math.Min(60, Math.Pow(2, message.AttemptCount)));
+                        _logger.LogWarning("Email outbox message {MessageId} was rejected: {Error}",
+                            message.MessageId, message.LastError);
                     }
                 }
                 catch (Exception ex)
