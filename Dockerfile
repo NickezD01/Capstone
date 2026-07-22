@@ -28,8 +28,9 @@ WORKDIR /app
 
 COPY --from=build /app/publish .
 
-# Cấu hình cổng cho Render
-ENV ASPNETCORE_URLS=http://+:${PORT}
+# Thiết lập cổng kết nối
 EXPOSE 8080
+ENV ASPNETCORE_URLS=http://+:8080
 
-ENTRYPOINT ["dotnet", "cpms_API.dll"]
+# Chạy file dll của project API
+ENTRYPOINT ["dotnet", "AntiPhisher.API.dll"]
