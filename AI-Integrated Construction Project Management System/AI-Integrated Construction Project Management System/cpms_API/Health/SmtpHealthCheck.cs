@@ -1,4 +1,5 @@
 using cpms_Domain;
+using cpms_Application.Services;
 using MailKit.Net.Smtp;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 
@@ -16,11 +17,14 @@ public sealed class SmtpHealthCheck : IHealthCheck
             return HealthCheckResult.Unhealthy("SMTP credentials are not configured.");
         try
         {
+            var username = SmtpConnectionOptions.NormalizeUsername(_settings.Username);
+            var password = SmtpConnectionOptions.NormalizePassword(_settings.Password);
+            var socketOptions = SmtpConnectionOptions.Resolve(_settings);
             using var client = new SmtpClient();
-            await client.ConnectAsync(_settings.SmtpHost, _settings.SmtpPort, _settings.UseSsl, cancellationToken);
-            await client.AuthenticateAsync(_settings.Username, _settings.Password, cancellationToken);
+            await client.ConnectAsync(_settings.SmtpHost, _settings.SmtpPort, socketOptions, cancellationToken);
+            await client.AuthenticateAsync(username, password, cancellationToken);
             await client.DisconnectAsync(true, cancellationToken);
-            return HealthCheckResult.Healthy("SMTP authentication succeeded.");
+            return HealthCheckResult.Healthy($"SMTP authentication succeeded via {socketOptions}.");
         }
         catch (Exception ex)
         {
