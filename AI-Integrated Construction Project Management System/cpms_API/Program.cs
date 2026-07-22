@@ -236,7 +236,7 @@ app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "BuildSense API v1");
-    c.RoutePrefix = "swagger"; // Đường dẫn sẽ là /swagger
+    c.RoutePrefix = string.Empty;
 });
 
 app.UseHttpsRedirection();
