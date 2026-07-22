@@ -225,11 +225,19 @@ app.UseMiddleware<ExceptionMiddleware>();
 app.UseMiddleware<ValidationMiddleware>();
 app.UseForwardedHeaders();
 
-if (app.Environment.IsDevelopment())
+//if (app.Environment.IsDevelopment())
+//{
+//    app.UseSwagger();
+//    app.UseSwaggerUI();
+//}
+
+
+app.UseSwagger();
+app.UseSwaggerUI(c =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "BuildSense API v1");
+    c.RoutePrefix = "swagger"; // Đường dẫn sẽ là /swagger
+});
 
 app.UseHttpsRedirection();
 app.UseCors("Frontend");
