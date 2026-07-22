@@ -46,7 +46,16 @@ public sealed class AuthService : IAuthService
         var normalizedEmail = NormalizeEmail(request.Email);
         var existing = await FindByNormalizedEmailAsync(normalizedEmail);
         if (existing != null)
+        {
+            if (existing.IsEmailVerified != true)
+            {
+                var resendCode = GenerateSecurityCode();
+                await ReplaceSecurityTokensAsync(existing.Id, SecurityTokenPurposes.EmailVerification, resendCode);
+                await QueueEmailAsync(existing.Email!, BuildVerificationEmail(existing.FirstName, resendCode));
+                await _unitOfWork.SaveChangeAsync();
+            }
             return new ApiResponse().SetOk("If the address is eligible, verification instructions will be sent.");
+        }
 
         var password = CreatePasswordHash(request.Password);
         var user = new UserAccount

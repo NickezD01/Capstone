@@ -39,6 +39,7 @@ public sealed class EmailOutboxWorker : BackgroundService
             var messages = await db.EmailOutboxMessages
                 .Where(x => x.ProcessedAt == null && x.NextAttemptAt <= now && x.AttemptCount < 10)
                 .OrderBy(x => x.MessageId).Take(20).ToListAsync(cancellationToken);
+            _logger.LogInformation("Email outbox poll found {Count} pending message(s).", messages.Count);
             foreach (var message in messages)
             {
                 try
