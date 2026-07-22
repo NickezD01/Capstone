@@ -1,34 +1,28 @@
 # ==========================================
-# GIAI ĐOẠN 1 BUILD (Sử dụng .NET SDK)
+# GIAI ĐOẠN 1: BUILD
 # ==========================================
-FROM mcr.microsoft.comdotnetsdk8.0 AS build
-WORKDIR src
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
 
-# 1. Copy file .csproj để restore dependencies (tối ưu cache Docker)
-# Thay 'BuildSense.csproj' bằng tên file .csproj thực tế của bạn
-COPY [BuildSense.csproj, .]
-RUN dotnet restore BuildSense.csproj
+# Copy file csproj và restore
+# LƯU Ý: Thay 'BuildSense.csproj' bằng tên file .csproj thực tế của bạn
+COPY ["BuildSense.csproj", "./"]
+RUN dotnet restore "BuildSense.csproj"
 
-# 2. Copy toàn bộ mã nguồn và tiến hành Publish
+# Copy mã nguồn và build
 COPY . .
-RUN dotnet publish BuildSense.csproj -c Release -o apppublish pUseAppHost=false
+RUN dotnet publish "BuildSense.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
 # ==========================================
-# GIAI ĐOẠN 2 RUNTIME (Chỉ chứa .NET Runtime)
+# GIAI ĐOẠN 2: RUNTIME
 # ==========================================
-FROM mcr.microsoft.comdotnetaspnet8.0 AS final
-WORKDIR app
+FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS final
+WORKDIR /app
 
-# Lấy các file đã build từ giai đoạn 1 sang
-COPY --from=build apppublish .
+COPY --from=build /app/publish .
 
-# Render sẽ cấp cổng ngẫu nhiên qua biến $PORT
-# Đảm bảo ASP.NET Core lắng nghe cổng này
-ENV ASPNETCORE_URLS=http+${PORT}
-
-# Mặc định cổng chạy của .NET 8
+# Cấu hình cổng cho Render
+ENV ASPNETCORE_URLS=http://+:${PORT}
 EXPOSE 8080
 
-# Chạy ứng dụng DLL
-# Thay 'BuildSense.dll' bằng tên file .dll ứng với project của bạn khi build ra
-ENTRYPOINT [dotnet, BuildSense.dll]
+ENTRYPOINT ["dotnet", "BuildSense.dll"]
