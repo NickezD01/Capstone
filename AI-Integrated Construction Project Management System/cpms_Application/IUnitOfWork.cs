@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 namespace cpms_Application
 {
-    public interface IUnitOfWork 
+    public interface IUnitOfWork : IDisposable
     {
         // ========================================================
         // USER MANAGEMENT
@@ -16,6 +16,7 @@ namespace cpms_Application
         IUserAccountRepository UserAccounts { get; }
         IRefreshTokenRepository RefreshTokens { get; }
         IEmailVerificationRepository EmailVerifications { get; }
+        IGenericRepository<EmailOutboxMessage> EmailOutboxMessages { get; }
 
         // ========================================================
         // PROJECT & TASKS
@@ -28,12 +29,16 @@ namespace cpms_Application
         // MATERIAL & SUPPLIERS
         // ========================================================
         IMaterialRepository Materials { get; }
+        IGenericRepository<MaterialVariant> MaterialVariants { get; }
         ISupplierRepository Suppliers { get; }
         ISupplierCatalogRepository SupplierCatalogs { get; }
         ISupplierMetricRepository SupplierMetrics { get; }
         ICategoryRepository Categories { get; }
         IMaterialRequestRepository MaterialRequests { get; }
         IMaterialRequisitionRepository MaterialRequisitions { get; }
+        IGenericRepository<MaterialReturn> MaterialReturns { get; }
+        IProjectBudgetHistoryRepository ProjectBudgetHistories { get; }
+        IGenericRepository<MrpPlanningRun> MrpPlanningRuns { get; }
 
         // ========================================================
         // PURCHASING & ORDERS
@@ -42,6 +47,15 @@ namespace cpms_Application
         IOrderLineItemRepository OrderLineItems { get; }
         IWarehouseRepository Warehouses { get; }
         IInventoryRepository Inventories { get; }
+        IGenericRepository<InventoryReservation> InventoryReservations { get; }
+        IGenericRepository<InventoryTransaction> InventoryTransactions { get; }
+        IGenericRepository<InventoryAdjustment> InventoryAdjustments { get; }
+        IGenericRepository<PhysicalCountSession> PhysicalCountSessions { get; }
+        IGenericRepository<PhysicalCountLine> PhysicalCountLines { get; }
+        ITaskMaterialRequirementRepository TaskMaterialRequirements { get; }
+        IWarehouseTransferRepository WarehouseTransfers { get; }
+        IWarehouseTransferItemRepository WarehouseTransferItems { get; }
+        IGenericRepository<TransferInventoryReservation> TransferInventoryReservations { get; }
 
         // ========================================================
         // CHAT & MEETINGS
@@ -59,6 +73,7 @@ namespace cpms_Application
 
         // Hỗ trợ quản lý Transaction đồng bộ dữ liệu phức tạp
         Task BeginTransactionAsync();
+        Task BeginTransactionAsync(System.Data.IsolationLevel isolationLevel);
         Task CommitTransactionAsync();
         Task RollbackTransactionAsync();
 

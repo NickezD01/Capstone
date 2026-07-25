@@ -9,19 +9,26 @@ using FluentValidation;
 using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using System.Security.Claims;
 using System.Text;
+using System.Threading.RateLimiting;
+using cpms_API.BackgroundServices;
+using cpms_API.Health;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.AspNetCore.HttpOverrides;
+using System.Net;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // ======================================================
 // CONFIGURATION & APPSETTINGS
 // ======================================================
-builder.Configuration.AddJsonFile("appsettings.json", optional: true, reloadOnChange: true);
-
 var configuration = builder.Configuration.Get<AppSetting>();
 if (configuration != null)
 {
@@ -34,7 +41,23 @@ if (configuration != null)
 builder.Services.AddControllers();
 builder.Services.Configure<ApiBehaviorOptions>(options =>
 {
-    options.SuppressModelStateInvalidFilter = true;
+    options.SuppressModelStateInvalidFilter = false;
+    options.InvalidModelStateResponseFactory = context =>
+    {
+        var errors = context.ModelState
+            .Where(x => x.Value?.Errors.Count > 0)
+            .ToDictionary(x => x.Key, x => x.Value!.Errors.Select(e =>
+                string.IsNullOrWhiteSpace(e.ErrorMessage) ? "The supplied value is invalid." : e.ErrorMessage).ToArray());
+        return new BadRequestObjectResult(new cpms_Application.Response.ApiResponse()
+            .SetBadRequest(result: errors, message: "Request validation failed."));
+    };
+});
+
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    foreach (var value in builder.Configuration.GetSection("ReverseProxy:KnownProxies").Get<string[]>() ?? Array.Empty<string>())
+        if (IPAddress.TryParse(value, out var address)) options.KnownProxies.Add(address);
 });
 
 // Kích hoạt tính năng tự động validate đầu vào của FluentValidation trên Controller
@@ -47,11 +70,13 @@ builder.Services.AddValidatorsFromAssemblyContaining<MapperConfigurationsProfile
 // ======================================================
 // DATABASE CONFIGURATION
 // ======================================================
-builder.Services.AddDbContext<AppDbContext>(options =>
+builder.Services.AddScoped<AuditSaveChangesInterceptor>();
+builder.Services.AddDbContext<AppDbContext>((serviceProvider, options) =>
 {
     var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
     options.UseSqlServer(connectionString, b => b.MigrationsAssembly("cpms_Infrastructure")); // 🚀 ƯU TIÊN: Chỉ định rõ Assembly chứa Migration để tránh lỗi Command-line
 
+    options.AddInterceptors(serviceProvider.GetRequiredService<AuditSaveChangesInterceptor>());
     options.ConfigureWarnings(warnings =>
         warnings.Ignore(CoreEventId.NavigationBaseIncludeIgnored));
 });
@@ -60,25 +85,55 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 // JWT AUTHENTICATION
 // ======================================================
 var secretValue = builder.Configuration["SecretToken:Value"];
-if (string.IsNullOrWhiteSpace(secretValue))
+if (string.IsNullOrWhiteSpace(secretValue) || Encoding.UTF8.GetByteCount(secretValue) < 64)
 {
-    throw new Exception("SecretToken:Value is missing or invalid in appsettings.json");
+    throw new Exception("SecretToken:Value must contain at least 64 bytes for HS512 signing.");
 }
+if (configuration == null || string.IsNullOrWhiteSpace(configuration.SecretToken.Issuer) ||
+    string.IsNullOrWhiteSpace(configuration.SecretToken.Audience) || configuration.SecretToken.DurationInMinutes <= 0)
+    throw new Exception("SecretToken issuer, audience, and duration must be configured.");
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        options.RequireHttpsMetadata = false;
+        options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
         options.SaveToken = true;
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuerSigningKey = true,
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretValue)),
-            ValidateIssuer = false,
-            ValidateAudience = false,
+            ValidateIssuer = true,
+            ValidIssuer = configuration!.SecretToken.Issuer,
+            ValidateAudience = true,
+            ValidAudience = configuration.SecretToken.Audience,
             ValidateLifetime = true,
             ClockSkew = TimeSpan.Zero
+        };
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = async context =>
+            {
+                var userIdValue = context.Principal?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+                var roleValue = context.Principal?.FindFirst(ClaimTypes.Role)?.Value;
+                if (!int.TryParse(userIdValue, out var userId))
+                {
+                    context.Fail("The token does not contain a valid user identifier.");
+                    return;
+                }
+
+                var db = context.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
+                var account = await db.UserAccounts.AsNoTracking().SingleOrDefaultAsync(x => x.Id == userId);
+                if (account == null || account.IsEmailVerified != true ||
+                    !string.Equals(account.Role.ToString(), roleValue, StringComparison.OrdinalIgnoreCase))
+                {
+                    context.Fail("The account is inactive or its authorization has changed. Sign in again.");
+                    return;
+                }
+                var passwordVersion = context.Principal?.FindFirst("pwd")?.Value;
+                if (!long.TryParse(passwordVersion, out var issuedPasswordTicks) || issuedPasswordTicks != account.PasswordChangedAt.Ticks)
+                    context.Fail("The password changed after this token was issued. Sign in again.");
+            }
         };
     });
 
@@ -148,9 +203,13 @@ builder.Services.AddScoped<IMeetingService, MeetingService>();
 // ======================================================
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
+    var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
+    options.AddPolicy("Frontend", policy =>
     {
-        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
+        if (builder.Environment.IsDevelopment())
+            policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader();
+        else if (allowedOrigins.Length > 0)
+            policy.WithOrigins(allowedOrigins).AllowAnyMethod().AllowAnyHeader();
     });
 });
 
@@ -160,21 +219,50 @@ var app = builder.Build();
 // HTTP REQUEST PIPELINE (MIDDLEWARES)
 // ======================================================
 // 💡 Lưu ý: Đặt Middleware Custom trước để bắt lỗi toàn cục cho pipeline
-app.UseMiddleware<ValidationMiddleware>();
 app.UseMiddleware<ExceptionMiddleware>();
+app.UseMiddleware<ValidationMiddleware>();
+app.UseForwardedHeaders();
 
-if (app.Environment.IsDevelopment())
+//if (app.Environment.IsDevelopment())
+//{
+//    app.UseSwagger();
+//    app.UseSwaggerUI();
+//}
+
+
+app.UseSwagger();
+app.UseSwaggerUI(c =>
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "BuildSense API v1");
+    c.RoutePrefix = string.Empty;
+});
 
 app.UseHttpsRedirection();
-app.UseCors("AllowAll");
+app.UseCors("Frontend");
+app.UseMiddleware<DistributedAuthRateLimitMiddleware>();
 
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+    ResponseWriter = async (context, report) =>
+    {
+        context.Response.ContentType = "application/json";
+        await context.Response.WriteAsJsonAsync(new
+        {
+            status = report.Status.ToString(),
+            checks = report.Entries.Select(entry => new
+            {
+                name = entry.Key,
+                status = entry.Value.Status.ToString(),
+                description = entry.Value.Description
+            })
+        });
+    }
+});
 
 app.Run();

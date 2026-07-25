@@ -18,27 +18,27 @@ namespace cpms_Domain
     }
     public class ConnectionStrings
     {
-        public string DefaultConnection { get; set; }
-        public string LocalDockerConnection { get; set; }
+        public string DefaultConnection { get; set; } = string.Empty;
+        public string LocalDockerConnection { get; set; } = string.Empty;
     }
 
     public class Logging
     {
-        public LogLevel LogLevel { get; set; }
+        public LogLevel LogLevel { get; set; } = new();
     }
 
     public class LogLevel
     {
-        public string Default { get; set; }
-        public string MicrosoftAspNetCore { get; set; }
+        public string Default { get; set; } = "Information";
+        public string MicrosoftAspNetCore { get; set; } = "Warning";
     }
 
     public class SecretToken
     {
-        public string Value { get; set; }
-        public string Issuer { get; set; }
-        public string Audience { get; set; }
-        public int DurationInMinutes { get; set; }
+        public string Value { get; set; } = string.Empty;
+        public string Issuer { get; set; } = "BuildSenseAPI";
+        public string Audience { get; set; } = "BuildSenseClient";
+        public int DurationInMinutes { get; set; } = 1440;
     }
 
     public class EmailSettings

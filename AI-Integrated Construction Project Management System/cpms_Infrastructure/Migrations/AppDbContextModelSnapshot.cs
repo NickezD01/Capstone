@@ -70,14 +70,9 @@ namespace cpms_Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
-                    b.Property<int?>("UserAccountId")
-                        .HasColumnType("int");
-
                     b.HasKey("Id");
 
                     b.HasIndex("ProjectID");
-
-                    b.HasIndex("UserAccountId");
 
                     b.ToTable("AIAlerts", (string)null);
                 });
@@ -92,17 +87,33 @@ namespace cpms_Infrastructure.Migrations
 
                     b.Property<string>("ActivityName")
                         .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("ChangesJson")
+                        .HasMaxLength(8000)
                         .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<int?>("CreatedBy")
                         .HasColumnType("int");
 
                     b.Property<DateTime?>("CreatedDate")
-                        .HasColumnType("datetime2");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("EntityId")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<string>("EntityType")
                         .IsRequired()
-                        .HasColumnType("nvarchar(max)");
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
@@ -121,6 +132,34 @@ namespace cpms_Infrastructure.Migrations
                     b.HasIndex("UserID");
 
                     b.ToTable("Activities");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.AuthRateLimitEntry", b =>
+                {
+                    b.Property<string>("PartitionKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<int>("RequestCount")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTime>("WindowStart")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("PartitionKey");
+
+                    b.HasIndex("WindowStart");
+
+                    b.ToTable("AuthRateLimitEntries", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_AuthRateLimitEntries_RequestCount", "[RequestCount] >= 0");
+                        });
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.Category", b =>
@@ -313,6 +352,11 @@ namespace cpms_Infrastructure.Migrations
                     b.Property<DateTime>("ExpiresAt")
                         .HasColumnType("datetime2");
 
+                    b.Property<int>("FailedAttempts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
@@ -325,6 +369,13 @@ namespace cpms_Infrastructure.Migrations
                     b.Property<DateTime?>("ModifiedDate")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasDefaultValue("EMAIL_VERIFICATION");
+
                     b.Property<int>("UserId")
                         .HasColumnType("int");
 
@@ -335,9 +386,101 @@ namespace cpms_Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("UserId");
+                    b.HasIndex("UserId", "Purpose", "IsUsed", "ExpiresAt");
 
                     b.ToTable("EmailVerifications");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.InventoryAdjustment", b =>
+                {
+                    b.Property<int>("AdjustmentId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("AdjustmentId"));
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CreatedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<decimal>("QuantityDelta")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<string>("ReasonCode")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<DateTime>("RequestedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<int>("RequestedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ReviewNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ReviewedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<int>("VariantId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("WarehouseId")
+                        .HasColumnType("int");
+
+                    b.HasKey("AdjustmentId");
+
+                    b.HasIndex("RequestedByUserId");
+
+                    b.HasIndex("ReviewedByUserId");
+
+                    b.HasIndex("VariantId");
+
+                    b.HasIndex("WarehouseId");
+
+                    b.HasIndex("Status", "WarehouseId", "RequestedAt");
+
+                    b.ToTable("InventoryAdjustments", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_InventoryAdjustments_Quantity", "[QuantityDelta] <> 0");
+
+                            t.HasCheckConstraint("CK_InventoryAdjustments_Reason", "[ReasonCode] IN ('CYCLE_COUNT','DAMAGE','LOSS','DATA_CORRECTION','OPENING_BALANCE')");
+
+                            t.HasCheckConstraint("CK_InventoryAdjustments_Status", "[Status] IN ('PENDING','APPROVED','REJECTED')");
+                        });
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.InventoryRecord", b =>
@@ -348,6 +491,16 @@ namespace cpms_Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("InventoryId"));
 
+                    b.Property<decimal>("AvailableQuantity")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("decimal(19,4)")
+                        .HasComputedColumnSql("[QuantityOnHand] - [ReservedQuantity] - [QuarantineQuantity]", true);
+
+                    b.Property<decimal>("AverageUnitCost")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,4)")
+                        .HasDefaultValue(0m);
+
                     b.Property<int?>("CreatedBy")
                         .HasColumnType("int");
 
@@ -356,13 +509,15 @@ namespace cpms_Infrastructure.Migrations
                         .HasColumnType("datetime2")
                         .HasDefaultValueSql("GETUTCDATE()");
 
+                    b.Property<decimal>("InventoryValue")
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("decimal(38,8)")
+                        .HasComputedColumnSql("[QuantityOnHand] * [AverageUnitCost]", true);
+
                     b.Property<bool>("IsDeleted")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
-
-                    b.Property<int>("MaterialId")
-                        .HasColumnType("int");
 
                     b.Property<int?>("ModifiedBy")
                         .HasColumnType("int");
@@ -370,7 +525,17 @@ namespace cpms_Infrastructure.Migrations
                     b.Property<DateTime?>("ModifiedDate")
                         .HasColumnType("datetime2");
 
+                    b.Property<decimal>("OnOrderQuantity")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,4)")
+                        .HasDefaultValue(0m);
+
                     b.Property<decimal>("QuantityOnHand")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,4)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<decimal>("QuarantineQuantity")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("decimal(18,4)")
                         .HasDefaultValue(0m);
@@ -385,172 +550,41 @@ namespace cpms_Infrastructure.Migrations
                         .HasColumnType("decimal(18,4)")
                         .HasDefaultValue(0m);
 
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
                     b.Property<DateTime>("UpdatedAt")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
                         .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<int>("VariantId")
+                        .HasColumnType("int");
 
                     b.Property<int>("WarehouseId")
                         .HasColumnType("int");
 
                     b.HasKey("InventoryId");
 
-                    b.HasIndex("MaterialId");
+                    b.HasIndex("VariantId");
 
-                    b.HasIndex("WarehouseId");
+                    b.HasIndex("WarehouseId", "VariantId")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
 
-                    b.ToTable("InventoryRecords", (string)null);
-                });
+                    b.ToTable("InventoryRecords", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_InventoryRecords_OnOrderQuantity", "[OnOrderQuantity] >= 0");
 
-            modelBuilder.Entity("cpms_Domain.Models.Material", b =>
-                {
-                    b.Property<int>("MaterialId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
+                            t.HasCheckConstraint("CK_InventoryRecords_QuantityOnHand", "[QuantityOnHand] >= 0");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("MaterialId"));
+                            t.HasCheckConstraint("CK_InventoryRecords_ReorderLevel", "[ReorderLevel] >= 0");
 
-                    b.Property<int>("CategoryId")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("CreatedBy")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("CreatedDate")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("GETUTCDATE()");
-
-                    b.Property<bool>("IsDeleted")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValue(false);
-
-                    b.Property<string>("MaterialName")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("nvarchar(200)");
-
-                    b.Property<int?>("ModifiedBy")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("ModifiedDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<string>("Unit")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
-
-                    b.HasKey("MaterialId");
-
-                    b.HasIndex("CategoryId");
-
-                    b.ToTable("Materials", (string)null);
-                });
-
-            modelBuilder.Entity("cpms_Domain.Models.MaterialRequest", b =>
-                {
-                    b.Property<int>("RequestId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("RequestId"));
-
-                    b.Property<int?>("CreatedBy")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("CreatedDate")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("GETUTCDATE()");
-
-                    b.Property<bool>("IsDeleted")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValue(false);
-
-                    b.Property<int?>("ModifiedBy")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("ModifiedDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<int>("ProjectId")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime>("RequestDate")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("GETUTCDATE()");
-
-                    b.Property<int>("RequestedBy")
-                        .HasColumnType("int");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)")
-                        .HasDefaultValue("PENDING");
-
-                    b.HasKey("RequestId");
-
-                    b.HasIndex("ProjectId");
-
-                    b.HasIndex("RequestedBy");
-
-                    b.ToTable("MaterialsRequests", (string)null);
-                });
-
-            modelBuilder.Entity("cpms_Domain.Models.MaterialRequisition", b =>
-                {
-                    b.Property<int>("ItemId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("int");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ItemId"));
-
-                    b.Property<int?>("CreatedBy")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("CreatedDate")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("GETUTCDATE()");
-
-                    b.Property<bool>("IsDeleted")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bit")
-                        .HasDefaultValue(false);
-
-                    b.Property<int>("MaterialId")
-                        .HasColumnType("int");
-
-                    b.Property<int?>("ModifiedBy")
-                        .HasColumnType("int");
-
-                    b.Property<DateTime?>("ModifiedDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<DateTime>("NeededByDate")
-                        .HasColumnType("datetime2");
-
-                    b.Property<decimal>("Quantity")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("decimal(18,4)")
-                        .HasDefaultValue(0m);
-
-                    b.Property<int>("RequestId")
-                        .HasColumnType("int");
-
-                    b.HasKey("ItemId");
-
-                    b.HasIndex("MaterialId");
-
-                    b.HasIndex("RequestId");
-
-                    b.ToTable("MaterialsRequisitions", (string)null);
+                            t.HasCheckConstraint("CK_InventoryRecords_ReservedQuantity", "[ReservedQuantity] >= 0 AND [QuarantineQuantity] >= 0 AND [ReservedQuantity] + [QuarantineQuantity] <= [QuantityOnHand]");
+                        });
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.Meeting", b =>
@@ -699,11 +733,11 @@ namespace cpms_Infrastructure.Migrations
 
             modelBuilder.Entity("cpms_Domain.Models.OrderLineItem", b =>
                 {
-                    b.Property<int>("LineItemId")
+                    b.Property<int>("ReservationId")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("int");
 
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("LineItemId"));
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ReservationId"));
 
                     b.Property<int?>("CreatedBy")
                         .HasColumnType("int");
@@ -712,6 +746,486 @@ namespace cpms_Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
                         .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<DateTime?>("FulfilledAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("InventoryId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("Quantity")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<DateTime?>("ReleasedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("RequestId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("RequestItemId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("ReservedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasDefaultValue("ACTIVE");
+
+                    b.HasKey("ReservationId");
+
+                    b.HasIndex("InventoryId");
+
+                    b.HasIndex("RequestId");
+
+                    b.HasIndex("RequestItemId", "InventoryId")
+                        .IsUnique()
+                        .HasFilter("[Status] = 'ACTIVE' AND [IsDeleted] = 0");
+
+                    b.ToTable("InventoryReservations", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_InventoryReservations_Quantity", "[Quantity] > 0");
+
+                            t.HasCheckConstraint("CK_InventoryReservations_Status", "[Status] IN ('ACTIVE','RELEASED','FULFILLED')");
+                        });
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.InventoryTransaction", b =>
+                {
+                    b.Property<long>("TransactionId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("TransactionId"));
+
+                    b.Property<string>("BatchNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<DateTime?>("ExpiryDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("InventoryId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("LotNumber")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int>("PerformedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("Quantity")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<decimal>("QuantityAfter")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<decimal>("QuantityBefore")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<int?>("ReferenceId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ReferenceType")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("SerialNumber")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<decimal?>("TotalValue")
+                        .HasColumnType("decimal(38,8)");
+
+                    b.Property<DateTime>("TransactionDate")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("TransactionType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<decimal?>("UnitCost")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<int>("VariantId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("WarehouseId")
+                        .HasColumnType("int");
+
+                    b.HasKey("TransactionId");
+
+                    b.HasIndex("InventoryId");
+
+                    b.HasIndex("PerformedByUserId");
+
+                    b.HasIndex("SerialNumber")
+                        .IsUnique()
+                        .HasFilter("[SerialNumber] IS NOT NULL");
+
+                    b.HasIndex("VariantId");
+
+                    b.HasIndex("WarehouseId", "VariantId", "TransactionDate");
+
+                    b.ToTable("InventoryTransactions", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_InventoryTransactions_Type", "[TransactionType] IN ('RECEIPT','ISSUE','RETURN','ADJUSTMENT','TRANSFER_OUT','TRANSFER_IN','PHYSICAL_COUNT')");
+                        });
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.Material", b =>
+                {
+                    b.Property<int>("MaterialId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("MaterialId"));
+
+                    b.Property<int>("CategoryId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CreatedDate")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("DefaultUnit")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("MaterialName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("datetime2");
+
+                    b.HasKey("MaterialId");
+
+                    b.HasIndex("CategoryId");
+
+                    b.ToTable("Materials", (string)null);
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.MaterialRequest", b =>
+                {
+                    b.Property<int>("RequestId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("RequestId"));
+
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ApprovedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CreatedDate")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("DecisionNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("RequestDate")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("RequestNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int>("RequestedBy")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)")
+                        .HasDefaultValue("PENDING");
+
+                    b.Property<int?>("TaskId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("WarehouseId")
+                        .HasColumnType("int");
+
+                    b.HasKey("RequestId");
+
+                    b.HasIndex("ApprovedByUserId");
+
+                    b.HasIndex("ProjectId");
+
+                    b.HasIndex("RequestedBy");
+
+                    b.HasIndex("TaskId");
+
+                    b.HasIndex("WarehouseId");
+
+                    b.ToTable("MaterialsRequests", (string)null);
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.MaterialRequisition", b =>
+                {
+                    b.Property<int>("ItemId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ItemId"));
+
+                    b.Property<decimal>("ApprovedQuantity")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,4)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CreatedDate")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<decimal>("IssuedQuantity")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,4)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("NeededByDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<decimal>("Quantity")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,4)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<int>("RequestId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("VariantId")
+                        .HasColumnType("int");
+
+                    b.HasKey("ItemId");
+
+                    b.HasIndex("RequestId");
+
+                    b.HasIndex("VariantId");
+
+                    b.ToTable("MaterialsRequisitions", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_MaterialsRequisitions_ApprovedQuantity", "[ApprovedQuantity] >= 0 AND [ApprovedQuantity] <= [Quantity]");
+
+                            t.HasCheckConstraint("CK_MaterialsRequisitions_IssuedQuantity", "[IssuedQuantity] >= 0 AND [IssuedQuantity] <= [ApprovedQuantity]");
+
+                            t.HasCheckConstraint("CK_MaterialsRequisitions_Quantity", "[Quantity] > 0");
+                        });
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.MaterialReturn", b =>
+                {
+                    b.Property<int>("ReturnId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ReturnId"));
+
+                    b.Property<string>("Address")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("CompanyName")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CreatedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<double?>("Latitude")
+                        .HasColumnType("float");
+
+                    b.Property<double?>("Longitude")
+                        .HasColumnType("float");
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<decimal>("Quantity")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<string>("ReasonCode")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<int>("RecordedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("ReturnedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<int>("VariantId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("WarehouseId")
+                        .HasColumnType("int");
+
+                    b.HasKey("ReturnId");
+
+                    b.HasIndex("RecordedByUserId");
+
+                    b.HasIndex("VariantId");
+
+                    b.HasIndex("WarehouseId");
+
+                    b.HasIndex("MaterialRequestId", "VariantId", "ReturnedAt");
+
+                    b.ToTable("MaterialReturns", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_MaterialReturns_Condition", "[Condition] IN ('USABLE','QUARANTINED')");
+
+                            t.HasCheckConstraint("CK_MaterialReturns_Quantity", "[Quantity] > 0");
+
+                            t.HasCheckConstraint("CK_MaterialReturns_Reason", "[ReasonCode] IN ('UNUSED','EXCESS_ISSUE','DAMAGED')");
+                        });
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.MaterialVariant", b =>
+                {
+                    b.Property<int>("VariantId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("VariantId"));
+
+                    b.Property<string>("Brand")
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("Color")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CreatedDate")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("Grade")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
 
                     b.Property<bool>("IsDeleted")
                         .ValueGeneratedOnAdd()
@@ -727,22 +1241,302 @@ namespace cpms_Infrastructure.Migrations
                     b.Property<DateTime?>("ModifiedDate")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("Packaging")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("SKU")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Size")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Specification")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("VariantName")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.HasKey("VariantId");
+
+                    b.HasIndex("MaterialId");
+
+                    b.HasIndex("SKU")
+                        .IsUnique()
+                        .HasFilter("[SKU] IS NOT NULL AND [IsDeleted] = 0");
+
+                    b.ToTable("MaterialVariants", (string)null);
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.MrpPlanningRun", b =>
+                {
+                    b.Property<long>("RunId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("RunId"));
+
+                    b.Property<DateTime>("CalculatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<int>("CalculatedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CreatedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SnapshotJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("TransferRecommendationsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("int");
+
+                    b.Property<int>("WarehouseId")
+                        .HasColumnType("int");
+
+                    b.HasKey("RunId");
+
+                    b.HasIndex("CalculatedAt");
+
+                    b.HasIndex("CalculatedByUserId");
+
+                    b.HasIndex("WarehouseId");
+
+                    b.HasIndex("ProjectId", "WarehouseId", "Version")
+                        .IsUnique();
+
+                    b.ToTable("MrpPlanningRuns", (string)null);
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.OrderLineItem", b =>
+                {
+                    b.Property<int>("LineItemId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("LineItemId"));
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CreatedDate")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<decimal>("DamagedQuantity")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,4)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<decimal>("MissingQuantity")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,4)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("datetime2");
+
                     b.Property<int>("PoId")
                         .HasColumnType("int");
 
                     b.Property<decimal>("Quantity")
-                        .HasColumnType("decimal(18,2)");
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<decimal>("ReceivedQuantity")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,4)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<int?>("RequestItemId")
+                        .HasColumnType("int");
 
                     b.Property<decimal>("UnitPrice")
                         .HasColumnType("decimal(18,2)");
 
-                    b.HasKey("LineItemId");
+                    b.Property<int>("VariantId")
+                        .HasColumnType("int");
 
-                    b.HasIndex("MaterialId");
+                    b.HasKey("LineItemId");
 
                     b.HasIndex("PoId");
 
-                    b.ToTable("OrderLineItems", (string)null);
+                    b.HasIndex("RequestItemId");
+
+                    b.HasIndex("VariantId");
+
+                    b.ToTable("OrderLineItems", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_OrderLineItems_DeliveryAccounting", "[DamagedQuantity] >= 0 AND [MissingQuantity] >= 0 AND [ReceivedQuantity] + [DamagedQuantity] + [MissingQuantity] <= [Quantity]");
+
+                            t.HasCheckConstraint("CK_OrderLineItems_Quantity", "[Quantity] > 0");
+
+                            t.HasCheckConstraint("CK_OrderLineItems_ReceivedQuantity", "[ReceivedQuantity] >= 0 AND [ReceivedQuantity] <= [Quantity]");
+                        });
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.PhysicalCountLine", b =>
+                {
+                    b.Property<int>("LineId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("LineId"));
+
+                    b.Property<decimal?>("ActualQuantity")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<byte[]>("ExpectedInventoryRowVersion")
+                        .IsRequired()
+                        .HasColumnType("binary(8)");
+
+                    b.Property<decimal>("ExpectedQuantity")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<int>("InventoryId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SessionId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("VariantId")
+                        .HasColumnType("int");
+
+                    b.HasKey("LineId");
+
+                    b.HasIndex("InventoryId");
+
+                    b.HasIndex("VariantId");
+
+                    b.HasIndex("SessionId", "InventoryId")
+                        .IsUnique();
+
+                    b.ToTable("PhysicalCountLines", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_PhysicalCountLines_Actual", "[ActualQuantity] IS NULL OR [ActualQuantity] >= 0");
+
+                            t.HasCheckConstraint("CK_PhysicalCountLines_Expected", "[ExpectedQuantity] >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.PhysicalCountSession", b =>
+                {
+                    b.Property<int>("SessionId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("SessionId"));
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<int>("CreatedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CreatedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("ReviewNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ReviewedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTime>("StartedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<DateTime?>("SubmittedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("WarehouseId")
+                        .HasColumnType("int");
+
+                    b.HasKey("SessionId");
+
+                    b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("ReviewedByUserId");
+
+                    b.HasIndex("WarehouseId")
+                        .IsUnique()
+                        .HasFilter("[Status] IN ('DRAFT','PENDING_APPROVAL')");
+
+                    b.HasIndex("WarehouseId", "Status", "StartedAt");
+
+                    b.ToTable("PhysicalCountSessions", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_PhysicalCountSessions_Status", "[Status] IN ('DRAFT','PENDING_APPROVAL','APPROVED','REJECTED')");
+                        });
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.ProgressReport", b =>
@@ -753,6 +1547,11 @@ namespace cpms_Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ReportId"));
 
+                    b.Property<decimal>("ActualCostIncrement")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
+
                     b.Property<int?>("CreatedBy")
                         .HasColumnType("int");
 
@@ -760,9 +1559,6 @@ namespace cpms_Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("datetime2")
                         .HasDefaultValueSql("GETUTCDATE()");
-
-                    b.Property<int>("EngineerId")
-                        .HasColumnType("int");
 
                     b.Property<bool>("IsDeleted")
                         .ValueGeneratedOnAdd()
@@ -779,6 +1575,9 @@ namespace cpms_Infrastructure.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
+                    b.Property<int?>("OriginalReportId")
+                        .HasColumnType("int");
+
                     b.Property<decimal>("ProgressIncrement")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("decimal(5,2)")
@@ -787,20 +1586,55 @@ namespace cpms_Infrastructure.Migrations
                     b.Property<DateTime>("ReportDate")
                         .HasColumnType("datetime2");
 
+                    b.Property<int>("ReportedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ReviewNote")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ReviewedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
                     b.Property<string>("SitePhotoUrl")
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
 
                     b.Property<int>("TaskId")
                         .HasColumnType("int");
 
                     b.HasKey("ReportId");
 
-                    b.HasIndex("EngineerId");
+                    b.HasIndex("OriginalReportId");
+
+                    b.HasIndex("ReportedByUserId");
+
+                    b.HasIndex("ReviewedByUserId");
 
                     b.HasIndex("TaskId");
 
-                    b.ToTable("ProgressReports", (string)null);
+                    b.ToTable("ProgressReports", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ProgressReports_ActualCostIncrement", "[ActualCostIncrement] >= 0");
+
+                            t.HasCheckConstraint("CK_ProgressReports_ProgressIncrement", "[ProgressIncrement] >= -100 AND [ProgressIncrement] <= 100");
+
+                            t.HasCheckConstraint("CK_ProgressReports_Status", "[Status] IN ('PENDING','APPROVED','REJECTED','CORRECTED','REVERSED')");
+                        });
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.Project", b =>
@@ -852,6 +1686,12 @@ namespace cpms_Infrastructure.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
                     b.Property<DateTime>("StartDate")
                         .HasColumnType("datetime2");
 
@@ -867,7 +1707,65 @@ namespace cpms_Infrastructure.Migrations
 
                     b.HasIndex("PMUserID");
 
-                    b.ToTable("Projects", (string)null);
+                    b.ToTable("Projects", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Projects_BaselineDates", "[BaselineEnd] >= [BaselineStart]");
+
+                            t.HasCheckConstraint("CK_Projects_StartDate", "[StartDate] >= [BaselineStart] AND [StartDate] <= [BaselineEnd]");
+
+                            t.HasCheckConstraint("CK_Projects_TotalBudget", "[TotalProjectBudget] >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.ProjectBudgetHistory", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("AmountChanged")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("NewBudget")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("PreviousBudget")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("UpdatedByUserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId");
+
+                    b.HasIndex("UpdatedByUserId");
+
+                    b.ToTable("ProjectBudgetHistories", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ProjectBudgetHistories_NewBudget", "[NewBudget] >= 0");
+
+                            t.HasCheckConstraint("CK_ProjectBudgetHistories_PreviousBudget", "[PreviousBudget] >= 0");
+                        });
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.PurchaseOrder", b =>
@@ -878,13 +1776,19 @@ namespace cpms_Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("PoId"));
 
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ApprovedByUserId")
+                        .HasColumnType("int");
+
                     b.Property<int?>("CreatedBy")
                         .HasColumnType("int");
 
                     b.Property<DateTime?>("CreatedDate")
                         .HasColumnType("datetime2");
 
-                    b.Property<DateTime?>("DeliveryDate")
+                    b.Property<DateTime?>("ExpectedDeliveryDate")
                         .HasColumnType("datetime2");
 
                     b.Property<bool>("IsDeleted")
@@ -896,11 +1800,21 @@ namespace cpms_Infrastructure.Migrations
                     b.Property<DateTime?>("ModifiedDate")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
                     b.Property<DateTime>("OrderDate")
                         .HasColumnType("datetime2");
 
                     b.Property<int>("ProjectId")
                         .HasColumnType("int");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -916,13 +1830,20 @@ namespace cpms_Infrastructure.Migrations
                     b.Property<int>("UserAccountId")
                         .HasColumnType("int");
 
+                    b.Property<int>("WarehouseId")
+                        .HasColumnType("int");
+
                     b.HasKey("PoId");
+
+                    b.HasIndex("ApprovedByUserId");
 
                     b.HasIndex("ProjectId");
 
                     b.HasIndex("SupplierId");
 
                     b.HasIndex("UserAccountId");
+
+                    b.HasIndex("WarehouseId");
 
                     b.ToTable("PurchaseOrders", (string)null);
                 });
@@ -946,6 +1867,10 @@ namespace cpms_Infrastructure.Migrations
                     b.Property<DateTime?>("CreatedDate")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("DeviceInfo")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
                     b.Property<DateTime>("ExpiresAt")
                         .HasColumnType("datetime2");
 
@@ -963,10 +1888,27 @@ namespace cpms_Infrastructure.Migrations
                     b.Property<DateTime?>("ModifiedDate")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("ParentTokenHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("ReplacedByTokenHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTime?>("ReuseDetectedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("RevokedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("SessionFamilyId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("Token")
                         .IsRequired()
-                        .HasMaxLength(512)
-                        .HasColumnType("nvarchar(512)");
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
 
                     b.Property<int>("UserId")
                         .HasColumnType("int");
@@ -976,7 +1918,7 @@ namespace cpms_Infrastructure.Migrations
                     b.HasIndex("Token")
                         .IsUnique();
 
-                    b.HasIndex("UserId");
+                    b.HasIndex("UserId", "SessionFamilyId");
 
                     b.ToTable("RefreshTokens", (string)null);
                 });
@@ -988,10 +1930,6 @@ namespace cpms_Infrastructure.Migrations
                         .HasColumnType("int");
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("SupplierId"));
-
-                    b.Property<string>("Address")
-                        .HasMaxLength(500)
-                        .HasColumnType("nvarchar(500)");
 
                     b.Property<string>("CompanyName")
                         .IsRequired()
@@ -1014,12 +1952,6 @@ namespace cpms_Infrastructure.Migrations
 
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
-
-                    b.Property<double?>("Latitude")
-                        .HasColumnType("float");
-
-                    b.Property<double?>("Longitude")
-                        .HasColumnType("float");
 
                     b.Property<int?>("ModifiedBy")
                         .HasColumnType("int");
@@ -1046,14 +1978,21 @@ namespace cpms_Infrastructure.Migrations
                     b.Property<DateTime?>("CreatedDate")
                         .HasColumnType("datetime2");
 
+                    b.Property<bool>("IsAvailable")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
                     b.Property<int>("LeadTimeDays")
                         .HasColumnType("int");
 
-                    b.Property<int>("MaterialId")
-                        .HasColumnType("int");
+                    b.Property<decimal>("MinimumOrderQuantity")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,4)")
+                        .HasDefaultValue(0m);
 
                     b.Property<int?>("ModifiedBy")
                         .HasColumnType("int");
@@ -1064,14 +2003,23 @@ namespace cpms_Infrastructure.Migrations
                     b.Property<int>("SupplierId")
                         .HasColumnType("int");
 
+                    b.Property<string>("SupplierSku")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
                     b.Property<decimal>("UnitPrice")
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<int>("VariantId")
+                        .HasColumnType("int");
+
                     b.HasKey("CatalogId");
 
-                    b.HasIndex("MaterialId");
+                    b.HasIndex("VariantId");
 
-                    b.HasIndex("SupplierId");
+                    b.HasIndex("SupplierId", "VariantId")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
 
                     b.ToTable("SupplierCatalogs", (string)null);
                 });
@@ -1085,7 +2033,9 @@ namespace cpms_Infrastructure.Migrations
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("MetricId"));
 
                     b.Property<double>("AvgDeliveryDelay")
-                        .HasColumnType("float");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("float")
+                        .HasDefaultValue(0.0);
 
                     b.Property<int?>("CreatedBy")
                         .HasColumnType("int");
@@ -1096,12 +2046,22 @@ namespace cpms_Infrastructure.Migrations
                         .HasDefaultValueSql("GETUTCDATE()");
 
                     b.Property<double>("DefectRatePct")
-                        .HasColumnType("float");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("float")
+                        .HasDefaultValue(0.0);
+
+                    b.Property<int>("EvaluatedOrderCount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
 
                     b.Property<bool>("IsDeleted")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
                         .HasDefaultValue(false);
+
+                    b.Property<DateTime?>("LastEvaluatedAt")
+                        .HasColumnType("datetime2");
 
                     b.Property<int?>("ModifiedBy")
                         .HasColumnType("int");
@@ -1109,8 +2069,26 @@ namespace cpms_Infrastructure.Migrations
                     b.Property<DateTime?>("ModifiedDate")
                         .HasColumnType("datetime2");
 
+                    b.Property<double>("OnTimeDeliveryRatePct")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("float")
+                        .HasDefaultValue(0.0);
+
+                    b.Property<double>("QualityScore")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("float")
+                        .HasDefaultValue(100.0);
+
                     b.Property<double>("ReliabilityScore")
-                        .HasColumnType("float");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("float")
+                        .HasDefaultValue(0.0);
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
 
                     b.Property<int>("SupplierId")
                         .HasColumnType("int");
@@ -1120,7 +2098,12 @@ namespace cpms_Infrastructure.Migrations
                     b.HasIndex("SupplierId")
                         .IsUnique();
 
-                    b.ToTable("SupplierMetrics", (string)null);
+                    b.ToTable("SupplierMetrics", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_SupplierMetrics_OrderCount", "[EvaluatedOrderCount] >= 0");
+
+                            t.HasCheckConstraint("CK_SupplierMetrics_Rates", "[DefectRatePct] >= 0 AND [DefectRatePct] <= 100 AND [OnTimeDeliveryRatePct] >= 0 AND [OnTimeDeliveryRatePct] <= 100 AND [QualityScore] >= 0 AND [QualityScore] <= 100 AND [ReliabilityScore] >= 0 AND [ReliabilityScore] <= 100");
+                        });
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.SystemReport", b =>
@@ -1138,9 +2121,6 @@ namespace cpms_Infrastructure.Migrations
                         .HasColumnType("datetime2");
 
                     b.Property<int>("GeneratedBy")
-                        .HasColumnType("int");
-
-                    b.Property<int>("GeneratorId")
                         .HasColumnType("int");
 
                     b.Property<bool>("IsDeleted")
@@ -1161,7 +2141,7 @@ namespace cpms_Infrastructure.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("GeneratorId");
+                    b.HasIndex("GeneratedBy");
 
                     b.HasIndex("ProjectID");
 
@@ -1227,6 +2207,12 @@ namespace cpms_Infrastructure.Migrations
                     b.Property<int>("ProjectId")
                         .HasColumnType("int");
 
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(30)
@@ -1237,18 +2223,121 @@ namespace cpms_Infrastructure.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
-                    b.Property<int?>("UserAccountId")
-                        .HasColumnType("int");
-
                     b.HasKey("TaskId");
 
                     b.HasIndex("AssignedToUserID");
 
                     b.HasIndex("ProjectId");
 
-                    b.HasIndex("UserAccountId");
+                    b.ToTable("TaskItems", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_TaskItems_ActualCost", "[ActualCost] >= 0");
 
-                    b.ToTable("TaskItems", (string)null);
+                            t.HasCheckConstraint("CK_TaskItems_ActualProgressPct", "[ActualProgressPct] >= 0 AND [ActualProgressPct] <= 100");
+
+                            t.HasCheckConstraint("CK_TaskItems_BaselineDates", "[BaselineEnd] >= [BaselineStart]");
+
+                            t.HasCheckConstraint("CK_TaskItems_PlannedBudget", "[PlannedBudget] >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.TaskMaterialRequirement", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CreatedDate")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<decimal>("GrossQuantityRequired")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,4)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("TaskId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("VariantId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("VariantId");
+
+                    b.HasIndex("TaskId", "VariantId")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.ToTable("TaskMaterialRequirements", (string)null);
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.TransferInventoryReservation", b =>
+                {
+                    b.Property<int>("TransferReservationId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("TransferReservationId"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<int>("InventoryId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("Quantity")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<int>("TransferId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TransferItemId")
+                        .HasColumnType("int");
+
+                    b.HasKey("TransferReservationId");
+
+                    b.HasIndex("InventoryId");
+
+                    b.HasIndex("TransferId");
+
+                    b.HasIndex("TransferItemId")
+                        .IsUnique();
+
+                    b.ToTable("TransferInventoryReservations", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_TransferInventoryReservations_Quantity", "[Quantity] > 0");
+
+                            t.HasCheckConstraint("CK_TransferInventoryReservations_Status", "[Status] IN ('ACTIVE','CONSUMED','RELEASED')");
+                        });
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.UserAccount", b =>
@@ -1272,6 +2361,11 @@ namespace cpms_Infrastructure.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("nvarchar(150)");
 
+                    b.Property<int>("FailedLoginAttempts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int")
+                        .HasDefaultValue(0);
+
                     b.Property<string>("FirstName")
                         .HasColumnType("nvarchar(max)");
 
@@ -1289,11 +2383,26 @@ namespace cpms_Infrastructure.Migrations
                     b.Property<string>("LastName")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<DateTime?>("LockoutEnd")
+                        .HasColumnType("datetime2");
+
                     b.Property<int?>("ModifiedBy")
                         .HasColumnType("int");
 
                     b.Property<DateTime?>("ModifiedDate")
                         .HasColumnType("datetime2");
+
+                    b.Property<string>("NormalizedEmail")
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)")
+                        .HasComputedColumnSql("UPPER(LTRIM(RTRIM([Email])))", true);
+
+                    b.Property<DateTime>("PasswordChangedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
 
                     b.Property<byte[]>("PasswordHash")
                         .IsRequired()
@@ -1311,9 +2420,15 @@ namespace cpms_Infrastructure.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
                     b.HasKey("Id");
 
-                    b.HasIndex("Email")
+                    b.HasIndex("NormalizedEmail")
                         .IsUnique();
 
                     b.ToTable("UserAccounts", (string)null);
@@ -1366,6 +2481,185 @@ namespace cpms_Infrastructure.Migrations
                     b.ToTable("Warehouses", (string)null);
                 });
 
+            modelBuilder.Entity("cpms_Domain.Models.WarehouseTransfer", b =>
+                {
+                    b.Property<int>("TransferId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("TransferId"));
+
+                    b.Property<DateTime?>("ApprovedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ApprovedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CreatedDate")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<int>("DestinationWarehouseId")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTime?>("ReceivedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ReceivedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("RequestedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<int>("RequestedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<DateTime?>("ShippedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ShippedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("SourceWarehouseId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .HasDefaultValue("REQUESTED");
+
+                    b.HasKey("TransferId");
+
+                    b.HasIndex("ApprovedByUserId");
+
+                    b.HasIndex("ReceivedByUserId");
+
+                    b.HasIndex("RequestedAt");
+
+                    b.HasIndex("RequestedByUserId");
+
+                    b.HasIndex("ShippedByUserId");
+
+                    b.HasIndex("DestinationWarehouseId", "Status");
+
+                    b.HasIndex("SourceWarehouseId", "Status");
+
+                    b.ToTable("WarehouseTransfers", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_WarehouseTransfers_DifferentWarehouses", "[SourceWarehouseId] <> [DestinationWarehouseId]");
+
+                            t.HasCheckConstraint("CK_WarehouseTransfers_Status", "[Status] IN ('REQUESTED','APPROVED','IN_TRANSIT','RECEIVED','CLOSED_WITH_VARIANCE','REJECTED','CANCELLED')");
+                        });
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.WarehouseTransferItem", b =>
+                {
+                    b.Property<int>("TransferItemId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("TransferItemId"));
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CreatedDate")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<decimal>("DamagedQuantity")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,4)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<bool>("IsDeleted")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false);
+
+                    b.Property<decimal>("LostQuantity")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,4)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<decimal>("ReceivedQuantity")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,4)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<decimal>("RequestedQuantity")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<decimal>("ShippedQuantity")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,4)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<int>("TransferId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("UnitCost")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,4)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<int>("VariantId")
+                        .HasColumnType("int");
+
+                    b.HasKey("TransferItemId");
+
+                    b.HasIndex("VariantId");
+
+                    b.HasIndex("TransferId", "VariantId")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.ToTable("WarehouseTransferItems", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_WarehouseTransferItems_ReceivedQuantity", "[ReceivedQuantity] >= 0 AND [DamagedQuantity] >= 0 AND [LostQuantity] >= 0 AND [ReceivedQuantity] + [DamagedQuantity] + [LostQuantity] <= [ShippedQuantity]");
+
+                            t.HasCheckConstraint("CK_WarehouseTransferItems_RequestedQuantity", "[RequestedQuantity] > 0");
+
+                            t.HasCheckConstraint("CK_WarehouseTransferItems_ShippedQuantity", "[ShippedQuantity] >= 0 AND [ShippedQuantity] <= [RequestedQuantity]");
+                        });
+                });
+
             modelBuilder.Entity("cpms_Domain.Models.AIAlert", b =>
                 {
                     b.HasOne("cpms_Domain.Models.Project", "Project")
@@ -1373,10 +2667,6 @@ namespace cpms_Infrastructure.Migrations
                         .HasForeignKey("ProjectID")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.HasOne("cpms_Domain.Models.UserAccount", null)
-                        .WithMany("AIAlerts")
-                        .HasForeignKey("UserAccountId");
 
                     b.Navigation("Project");
                 });
@@ -1386,10 +2676,206 @@ namespace cpms_Infrastructure.Migrations
                     b.HasOne("cpms_Domain.Models.UserAccount", "User")
                         .WithMany("Activities")
                         .HasForeignKey("UserID")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.EmailVerification", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.UserAccount", "User")
+                        .WithMany("EmailVerifications")
+                        .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.InventoryAdjustment", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.UserAccount", "RequestedByUser")
+                        .WithMany()
+                        .HasForeignKey("RequestedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.UserAccount", "ReviewedByUser")
+                        .WithMany()
+                        .HasForeignKey("ReviewedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("cpms_Domain.Models.MaterialVariant", "Variant")
+                        .WithMany()
+                        .HasForeignKey("VariantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("RequestedByUser");
+
+                    b.Navigation("ReviewedByUser");
+
+                    b.Navigation("Variant");
+
+                    b.Navigation("Warehouse");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.InventoryRecord", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.MaterialVariant", "Variant")
+                        .WithMany("InventoryRecords")
+                        .HasForeignKey("VariantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.Warehouse", "Warehouse")
+                        .WithMany("InventoryRecords")
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Variant");
+
+                    b.Navigation("Warehouse");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.InventoryReservation", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.InventoryRecord", "InventoryRecord")
+                        .WithMany("Reservations")
+                        .HasForeignKey("InventoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.MaterialRequest", "MaterialRequest")
+                        .WithMany("Reservations")
+                        .HasForeignKey("RequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.MaterialRequisition", "RequestItem")
+                        .WithMany("Reservations")
+                        .HasForeignKey("RequestItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("InventoryRecord");
+
+                    b.Navigation("MaterialRequest");
+
+                    b.Navigation("RequestItem");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.InventoryTransaction", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.InventoryRecord", "InventoryRecord")
+                        .WithMany("Transactions")
+                        .HasForeignKey("InventoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.UserAccount", "PerformedBy")
+                        .WithMany()
+                        .HasForeignKey("PerformedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.MaterialVariant", "Variant")
+                        .WithMany()
+                        .HasForeignKey("VariantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("InventoryRecord");
+
+                    b.Navigation("PerformedBy");
+
+                    b.Navigation("Variant");
+
+                    b.Navigation("Warehouse");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.Material", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.Category", "Category")
+                        .WithMany("Materials")
+                        .HasForeignKey("CategoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Category");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.MaterialRequest", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.UserAccount", "Approver")
+                        .WithMany()
+                        .HasForeignKey("ApprovedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("cpms_Domain.Models.Project", "Project")
+                        .WithMany("MaterialRequests")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.UserAccount", "Requester")
+                        .WithMany()
+                        .HasForeignKey("RequestedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.TaskItem", "TaskItem")
+                        .WithMany()
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("cpms_Domain.Models.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Approver");
+
+                    b.Navigation("Project");
+
+                    b.Navigation("Requester");
+
+                    b.Navigation("TaskItem");
+
+                    b.Navigation("Warehouse");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.MaterialRequisition", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.MaterialRequest", "MaterialRequest")
+                        .WithMany("Requisitions")
+                        .HasForeignKey("RequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.MaterialVariant", "Variant")
+                        .WithMany("MaterialRequisitions")
+                        .HasForeignKey("VariantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("MaterialRequest");
+
+                    b.Navigation("Variant");
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.ChatConversation", b =>
@@ -1450,81 +2936,128 @@ namespace cpms_Infrastructure.Migrations
 
             modelBuilder.Entity("cpms_Domain.Models.EmailVerification", b =>
                 {
-                    b.HasOne("cpms_Domain.Models.UserAccount", "User")
-                        .WithMany("EmailVerifications")
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                    b.HasOne("cpms_Domain.Models.MaterialRequest", "MaterialRequest")
+                        .WithMany()
+                        .HasForeignKey("MaterialRequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.Navigation("User");
-                });
+                    b.HasOne("cpms_Domain.Models.UserAccount", "RecordedByUser")
+                        .WithMany()
+                        .HasForeignKey("RecordedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
-            modelBuilder.Entity("cpms_Domain.Models.InventoryRecord", b =>
-                {
-                    b.HasOne("cpms_Domain.Models.Material", "Material")
-                        .WithMany("Inventories")
-                        .HasForeignKey("MaterialId")
+                    b.HasOne("cpms_Domain.Models.MaterialVariant", "Variant")
+                        .WithMany()
+                        .HasForeignKey("VariantId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.HasOne("cpms_Domain.Models.Warehouse", "Warehouse")
-                        .WithMany("InventoryRecords")
+                        .WithMany()
                         .HasForeignKey("WarehouseId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.Navigation("Material");
+                    b.Navigation("MaterialRequest");
+
+                    b.Navigation("RecordedByUser");
+
+                    b.Navigation("Variant");
 
                     b.Navigation("Warehouse");
                 });
 
-            modelBuilder.Entity("cpms_Domain.Models.Material", b =>
-                {
-                    b.HasOne("cpms_Domain.Models.Category", "Category")
-                        .WithMany("Materials")
-                        .HasForeignKey("CategoryId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Category");
-                });
-
-            modelBuilder.Entity("cpms_Domain.Models.MaterialRequest", b =>
-                {
-                    b.HasOne("cpms_Domain.Models.Project", "Project")
-                        .WithMany("MaterialRequests")
-                        .HasForeignKey("ProjectId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("cpms_Domain.Models.UserAccount", "Requester")
-                        .WithMany()
-                        .HasForeignKey("RequestedBy")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("Project");
-
-                    b.Navigation("Requester");
-                });
-
-            modelBuilder.Entity("cpms_Domain.Models.MaterialRequisition", b =>
+            modelBuilder.Entity("cpms_Domain.Models.MaterialVariant", b =>
                 {
                     b.HasOne("cpms_Domain.Models.Material", "Material")
-                        .WithMany("MaterialRequisitions")
+                        .WithMany("Variants")
                         .HasForeignKey("MaterialId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("cpms_Domain.Models.MaterialRequest", "MaterialRequest")
-                        .WithMany("Requisitions")
-                        .HasForeignKey("RequestId")
+                    b.Navigation("Material");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.MrpPlanningRun", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.UserAccount", "CalculatedBy")
+                        .WithMany()
+                        .HasForeignKey("CalculatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("CalculatedBy");
+
+                    b.Navigation("Project");
+
+                    b.Navigation("Warehouse");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.OrderLineItem", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.PurchaseOrder", "PurchaseOrder")
+                        .WithMany("OrderLineItems")
+                        .HasForeignKey("PoId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Material");
+                    b.HasOne("cpms_Domain.Models.MaterialRequisition", "RequestItem")
+                        .WithMany("OrderLineItems")
+                        .HasForeignKey("RequestItemId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
-                    b.Navigation("MaterialRequest");
+                    b.HasOne("cpms_Domain.Models.MaterialVariant", "Variant")
+                        .WithMany("OrderLineItems")
+                        .HasForeignKey("VariantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("PurchaseOrder");
+
+                    b.Navigation("RequestItem");
+
+                    b.Navigation("Variant");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.PhysicalCountLine", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.InventoryRecord", "InventoryRecord")
+                        .WithMany()
+                        .HasForeignKey("InventoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.PhysicalCountSession", "Session")
+                        .WithMany("Lines")
+                        .HasForeignKey("SessionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.MaterialVariant", "Variant")
+                        .WithMany()
+                        .HasForeignKey("VariantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("InventoryRecord");
+
+                    b.Navigation("Session");
+
+                    b.Navigation("Variant");
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.Meeting", b =>
@@ -1573,30 +3106,47 @@ namespace cpms_Infrastructure.Migrations
 
             modelBuilder.Entity("cpms_Domain.Models.OrderLineItem", b =>
                 {
-                    b.HasOne("cpms_Domain.Models.Material", "Material")
-                        .WithMany("OrderLineItems")
-                        .HasForeignKey("MaterialId")
+                    b.HasOne("cpms_Domain.Models.UserAccount", "CreatedByUser")
+                        .WithMany()
+                        .HasForeignKey("CreatedByUserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("cpms_Domain.Models.PurchaseOrder", "PurchaseOrder")
-                        .WithMany("OrderLineItems")
-                        .HasForeignKey("PoId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                    b.HasOne("cpms_Domain.Models.UserAccount", "ReviewedByUser")
+                        .WithMany()
+                        .HasForeignKey("ReviewedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("cpms_Domain.Models.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.Navigation("Material");
+                    b.Navigation("CreatedByUser");
 
-                    b.Navigation("PurchaseOrder");
+                    b.Navigation("ReviewedByUser");
+
+                    b.Navigation("Warehouse");
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.ProgressReport", b =>
                 {
-                    b.HasOne("cpms_Domain.Models.UserAccount", "Engineer")
+                    b.HasOne("cpms_Domain.Models.ProgressReport", "OriginalReport")
+                        .WithMany()
+                        .HasForeignKey("OriginalReportId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("cpms_Domain.Models.UserAccount", "Reporter")
                         .WithMany("ProgressReports")
-                        .HasForeignKey("EngineerId")
+                        .HasForeignKey("ReportedByUserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.UserAccount", "Reviewer")
+                        .WithMany()
+                        .HasForeignKey("ReviewedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("cpms_Domain.Models.TaskItem", "Task")
                         .WithMany("ProgressReports")
@@ -1604,7 +3154,11 @@ namespace cpms_Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.Navigation("Engineer");
+                    b.Navigation("OriginalReport");
+
+                    b.Navigation("Reporter");
+
+                    b.Navigation("Reviewer");
 
                     b.Navigation("Task");
                 });
@@ -1620,8 +3174,32 @@ namespace cpms_Infrastructure.Migrations
                     b.Navigation("ProjectManager");
                 });
 
+            modelBuilder.Entity("cpms_Domain.Models.ProjectBudgetHistory", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.Project", "Project")
+                        .WithMany("BudgetHistories")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.UserAccount", "UpdatedByUser")
+                        .WithMany()
+                        .HasForeignKey("UpdatedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Project");
+
+                    b.Navigation("UpdatedByUser");
+                });
+
             modelBuilder.Entity("cpms_Domain.Models.PurchaseOrder", b =>
                 {
+                    b.HasOne("cpms_Domain.Models.UserAccount", "Approver")
+                        .WithMany()
+                        .HasForeignKey("ApprovedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("cpms_Domain.Models.Project", "Project")
                         .WithMany("PurchaseOrders")
                         .HasForeignKey("ProjectId")
@@ -1640,11 +3218,21 @@ namespace cpms_Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("cpms_Domain.Models.Warehouse", "Warehouse")
+                        .WithMany()
+                        .HasForeignKey("WarehouseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Approver");
+
                     b.Navigation("Project");
 
                     b.Navigation("Supplier");
 
                     b.Navigation("UserAccount");
+
+                    b.Navigation("Warehouse");
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.RefreshToken", b =>
@@ -1660,21 +3248,21 @@ namespace cpms_Infrastructure.Migrations
 
             modelBuilder.Entity("cpms_Domain.Models.SupplierCatalog", b =>
                 {
-                    b.HasOne("cpms_Domain.Models.Material", "Material")
-                        .WithMany("SupplierCatalogs")
-                        .HasForeignKey("MaterialId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
                     b.HasOne("cpms_Domain.Models.Supplier", "Supplier")
                         .WithMany("SupplierCatalogs")
                         .HasForeignKey("SupplierId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Material");
+                    b.HasOne("cpms_Domain.Models.MaterialVariant", "Variant")
+                        .WithMany("SupplierCatalogs")
+                        .HasForeignKey("VariantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.Navigation("Supplier");
+
+                    b.Navigation("Variant");
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.SupplierMetric", b =>
@@ -1692,14 +3280,14 @@ namespace cpms_Infrastructure.Migrations
                 {
                     b.HasOne("cpms_Domain.Models.UserAccount", "Generator")
                         .WithMany("SystemReports")
-                        .HasForeignKey("GeneratorId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .HasForeignKey("GeneratedBy")
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.HasOne("cpms_Domain.Models.Project", "Project")
                         .WithMany("SystemReports")
                         .HasForeignKey("ProjectID")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Generator");
@@ -1710,7 +3298,7 @@ namespace cpms_Infrastructure.Migrations
             modelBuilder.Entity("cpms_Domain.Models.TaskItem", b =>
                 {
                     b.HasOne("cpms_Domain.Models.UserAccount", "AssignedToUser")
-                        .WithMany()
+                        .WithMany("Tasks")
                         .HasForeignKey("AssignedToUserID")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
@@ -1721,13 +3309,55 @@ namespace cpms_Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.HasOne("cpms_Domain.Models.UserAccount", null)
-                        .WithMany("Tasks")
-                        .HasForeignKey("UserAccountId");
-
                     b.Navigation("AssignedToUser");
 
                     b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.TaskMaterialRequirement", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.TaskItem", "TaskItem")
+                        .WithMany("MaterialRequirements")
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.MaterialVariant", "Variant")
+                        .WithMany("TaskMaterialRequirements")
+                        .HasForeignKey("VariantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("TaskItem");
+
+                    b.Navigation("Variant");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.TransferInventoryReservation", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.InventoryRecord", "Inventory")
+                        .WithMany()
+                        .HasForeignKey("InventoryId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.WarehouseTransfer", "Transfer")
+                        .WithMany()
+                        .HasForeignKey("TransferId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.WarehouseTransferItem", "TransferItem")
+                        .WithMany()
+                        .HasForeignKey("TransferItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Inventory");
+
+                    b.Navigation("Transfer");
+
+                    b.Navigation("TransferItem");
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.Warehouse", b =>
@@ -1739,6 +3369,73 @@ namespace cpms_Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Manager");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.WarehouseTransfer", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.UserAccount", "ApprovedByUser")
+                        .WithMany()
+                        .HasForeignKey("ApprovedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("cpms_Domain.Models.Warehouse", "DestinationWarehouse")
+                        .WithMany()
+                        .HasForeignKey("DestinationWarehouseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.UserAccount", "ReceivedByUser")
+                        .WithMany()
+                        .HasForeignKey("ReceivedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("cpms_Domain.Models.UserAccount", "RequestedByUser")
+                        .WithMany()
+                        .HasForeignKey("RequestedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.UserAccount", "ShippedByUser")
+                        .WithMany()
+                        .HasForeignKey("ShippedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("cpms_Domain.Models.Warehouse", "SourceWarehouse")
+                        .WithMany()
+                        .HasForeignKey("SourceWarehouseId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("ApprovedByUser");
+
+                    b.Navigation("DestinationWarehouse");
+
+                    b.Navigation("ReceivedByUser");
+
+                    b.Navigation("RequestedByUser");
+
+                    b.Navigation("ShippedByUser");
+
+                    b.Navigation("SourceWarehouse");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.WarehouseTransferItem", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.WarehouseTransfer", "Transfer")
+                        .WithMany("Items")
+                        .HasForeignKey("TransferId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.MaterialVariant", "Variant")
+                        .WithMany()
+                        .HasForeignKey("VariantId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Transfer");
+
+                    b.Navigation("Variant");
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.Category", b =>
@@ -1755,18 +3452,39 @@ namespace cpms_Infrastructure.Migrations
 
             modelBuilder.Entity("cpms_Domain.Models.Material", b =>
                 {
-                    b.Navigation("Inventories");
+                    b.Navigation("Variants");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.MaterialRequest", b =>
+                {
+                    b.Navigation("Requisitions");
+
+                    b.Navigation("Reservations");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.MaterialRequisition", b =>
+                {
+                    b.Navigation("OrderLineItems");
+
+                    b.Navigation("Reservations");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.MaterialVariant", b =>
+                {
+                    b.Navigation("InventoryRecords");
 
                     b.Navigation("MaterialRequisitions");
 
                     b.Navigation("OrderLineItems");
 
                     b.Navigation("SupplierCatalogs");
+
+                    b.Navigation("TaskMaterialRequirements");
                 });
 
-            modelBuilder.Entity("cpms_Domain.Models.MaterialRequest", b =>
+            modelBuilder.Entity("cpms_Domain.Models.PhysicalCountSession", b =>
                 {
-                    b.Navigation("Requisitions");
+                    b.Navigation("Lines");
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.Meeting", b =>
@@ -1777,6 +3495,8 @@ namespace cpms_Infrastructure.Migrations
             modelBuilder.Entity("cpms_Domain.Models.Project", b =>
                 {
                     b.Navigation("AIAlerts");
+
+                    b.Navigation("BudgetHistories");
 
                     b.Navigation("MaterialRequests");
 
@@ -1803,13 +3523,13 @@ namespace cpms_Infrastructure.Migrations
 
             modelBuilder.Entity("cpms_Domain.Models.TaskItem", b =>
                 {
+                    b.Navigation("MaterialRequirements");
+
                     b.Navigation("ProgressReports");
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.UserAccount", b =>
                 {
-                    b.Navigation("AIAlerts");
-
                     b.Navigation("Activities");
 
                     b.Navigation("EmailVerifications");
@@ -1830,6 +3550,11 @@ namespace cpms_Infrastructure.Migrations
             modelBuilder.Entity("cpms_Domain.Models.Warehouse", b =>
                 {
                     b.Navigation("InventoryRecords");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.WarehouseTransfer", b =>
+                {
+                    b.Navigation("Items");
                 });
 #pragma warning restore 612, 618
         }

@@ -23,12 +23,14 @@ namespace cpms_Infrastructure
         public ITaskItemRepository TaskItems { get; }
         public IProgressReportRepository ProgressReports { get; }
         public IMaterialRepository Materials { get; }
+        public IGenericRepository<cpms_Domain.Models.MaterialVariant> MaterialVariants { get; }
         public ISupplierRepository Suppliers { get; }
         public ISupplierCatalogRepository SupplierCatalogs { get; }
         public ISupplierMetricRepository SupplierMetrics { get; }
         public IPurchaseOrderRepository PurchaseOrders { get; }
         public IOrderLineItemRepository OrderLineItems { get; }
         public IEmailVerificationRepository EmailVerifications { get; }
+        public IGenericRepository<cpms_Domain.Models.EmailOutboxMessage> EmailOutboxMessages { get; }
         public IRefreshTokenRepository RefreshTokens { get; }
         public ICategoryRepository Categories { get; }
         public IWarehouseRepository Warehouses { get; }
@@ -42,6 +44,7 @@ namespace cpms_Infrastructure
 
         public IMaterialRequestRepository MaterialRequests { get; }
         public IMaterialRequisitionRepository MaterialRequisitions { get; }
+        public IGenericRepository<cpms_Domain.Models.MaterialReturn> MaterialReturns { get; }
 
 
         // =========================================
@@ -56,12 +59,14 @@ namespace cpms_Infrastructure
             TaskItems = new TaskItemRepository(context);
             ProgressReports = new ProgressReportRepository(context);
             Materials = new MaterialRepository(context);
+            MaterialVariants = new GenericRepository<cpms_Domain.Models.MaterialVariant>(context);
             Suppliers = new SupplierRepository(context);
             SupplierCatalogs = new SupplierCatalogRepository(context);
             SupplierMetrics = new SupplierMetricRepository(context);
             PurchaseOrders = new PurchaseOrderRepository(context);
             OrderLineItems = new OrderLineItemRepository(context);
             EmailVerifications = new EmailVerificationRepository(context);
+            EmailOutboxMessages = new GenericRepository<cpms_Domain.Models.EmailOutboxMessage>(context);
             RefreshTokens = new RefreshTokenRepository(context);
             Categories = new CategoryRepository(context);
             Warehouses = new WarehouseRepository(context);
@@ -75,6 +80,13 @@ namespace cpms_Infrastructure
  
             MaterialRequests = new MaterialRequestRepository(context);
             MaterialRequisitions = new MaterialRequisitionRepository(context);
+            MaterialReturns = new GenericRepository<cpms_Domain.Models.MaterialReturn>(context);
+            TaskMaterialRequirements = new TaskMaterialRequirementRepository(context);
+            ProjectBudgetHistories = new ProjectBudgetHistoryRepository(context);
+            MrpPlanningRuns = new GenericRepository<cpms_Domain.Models.MrpPlanningRun>(context);
+            WarehouseTransfers = new WarehouseTransferRepository(context);
+            WarehouseTransferItems = new WarehouseTransferItemRepository(context);
+            TransferInventoryReservations = new GenericRepository<cpms_Domain.Models.TransferInventoryReservation>(context);
         }
 
         // =========================================
@@ -82,20 +94,14 @@ namespace cpms_Infrastructure
         // =========================================
         public async Task SaveChangeAsync()
         {
-            try
-            {
-                await _context.SaveChangesAsync();
-            }
-            catch (Exception ex)
-            {
-                throw new Exception(ex.Message);
-            }
+            await _context.SaveChangesAsync();
         }
 
         // =========================================
         // TRANSACTION MANAGEMENT
         // =========================================
         public async Task BeginTransactionAsync() => await _context.Database.BeginTransactionAsync();
+        public async Task BeginTransactionAsync(IsolationLevel isolationLevel) => await _context.Database.BeginTransactionAsync(isolationLevel);
         public async Task CommitTransactionAsync() => await _context.Database.CommitTransactionAsync();
         public async Task RollbackTransactionAsync() => await _context.Database.RollbackTransactionAsync();
 
