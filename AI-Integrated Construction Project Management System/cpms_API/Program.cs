@@ -173,7 +173,7 @@ builder.Services.AddSwaggerGen(options =>
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient<ITeamsMeetingClient, TeamsMeetingClient>();
 builder.Services.AddHttpClient<IGoogleAIClient, GoogleAIClient>();
-builder.Services.AddAutoMapper(typeof(MapperConfigurationsProfile).Assembly);
+builder.Services.AddAutoMapper(_ => { }, typeof(MapperConfigurationsProfile).Assembly);
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 // ======================================================

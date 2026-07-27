@@ -493,6 +493,11 @@ internal sealed class TestUnitOfWork : IUnitOfWork
     public IGenericRepository<MrpPlanningRun> MrpPlanningRuns { get; }
     public IGenericRepository<PhysicalCountSession> PhysicalCountSessions { get; }
     public IGenericRepository<PhysicalCountLine> PhysicalCountLines { get; }
+    public IChatConversationRepository ChatConversations => null!;
+    public IChatParticipantRepository ChatParticipants => null!;
+    public IChatMessageRepository ChatMessages => null!;
+    public IMeetingRepository Meetings => null!;
+    public IMeetingParticipantRepository MeetingParticipants => null!;
     public IPurchaseOrderRepository PurchaseOrders { get; }
     public IOrderLineItemRepository OrderLineItems { get; }
     public IGenericRepository<InventoryReservation> InventoryReservations { get; }

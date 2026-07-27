@@ -28,6 +28,7 @@ namespace cpms_Infrastructure
         public DbSet<EmailOutboxMessage> EmailOutboxMessages { get; set; }
         public DbSet<RefreshToken> RefreshTokens { get; set; }
         public DbSet<ActivityLog> Activities { get; set; }
+        public DbSet<AuthRateLimitEntry> AuthRateLimitEntries { get; set; }
         public DbSet<AIAlert> AIAlerts { get; set; }
         public DbSet<SystemReport> SystemReports { get; set; }
         public DbSet<ChatConversation> ChatConversations { get; set; }

@@ -12,7 +12,12 @@ namespace cpms_Domain
         public Logging Logging { get; set; } = new();
         public string AllowedHosts { get; set; } = "*";
         public SecretToken SecretToken { get; set; } = new();
-        public EmailSettings EmailSettings { get; set; } = new();
+        public EmailSettings Email { get; set; } = new();
+        public EmailSettings EmailSettings
+        {
+            get => Email;
+            set => Email = value ?? new EmailSettings();
+        }
         public TeamsGraph TeamsGraph { get; set; } = new TeamsGraph();
         public GoogleAI GoogleAI { get; set; } = new GoogleAI();
     }
@@ -43,12 +48,12 @@ namespace cpms_Domain
 
     public class EmailSettings
     {
-        public string SmtpHost { get; set; }
-        public int SmtpPort { get; set; }
-        public bool UseSsl { get; set; }
-        public string Username { get; set; }
-        public string Password { get; set; }
-        public string FromAddress { get; set; }
+        public string SmtpHost { get; set; } = "smtp.gmail.com";
+        public int SmtpPort { get; set; } = 465;
+        public bool UseSsl { get; set; } = true;
+        public string Username { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+        public string FromAddress { get; set; } = string.Empty;
     }
 
     public class TeamsGraph

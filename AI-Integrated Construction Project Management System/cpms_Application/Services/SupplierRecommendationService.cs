@@ -40,9 +40,10 @@ namespace cpms_Application.Services
 
             var materialIds = requestedItems.Select(i => i.MaterialId).ToList();
             var catalogs = await _uow.SupplierCatalogs.GetAllAsync(
-                filter: c => materialIds.Contains(c.MaterialId),
+                filter: c => c.IsAvailable && materialIds.Contains(c.Variant.MaterialId),
                 include: query => query
-                    .Include(c => c.Material)
+                    .Include(c => c.Variant)
+                    .ThenInclude(v => v.Material)
                     .Include(c => c.Supplier)
                     .ThenInclude(s => s.SupplierMetric)
             );
@@ -209,14 +210,18 @@ namespace cpms_Application.Services
                 {
                     var supplier = group.First().Supplier;
                     var lines = group
-                        .Where(c => requestedByMaterialId.ContainsKey(c.MaterialId))
+                        .Where(c => requestedByMaterialId.ContainsKey(c.Variant.MaterialId))
                         .Select(c =>
                         {
-                            var item = requestedByMaterialId[c.MaterialId];
+                            var materialId = c.Variant.MaterialId;
+                            var item = requestedByMaterialId[materialId];
+                            var materialName = string.IsNullOrWhiteSpace(c.Variant.VariantName)
+                                ? c.Variant.Material.MaterialName
+                                : $"{c.Variant.Material.MaterialName} - {c.Variant.VariantName}";
                             return new SupplierRecommendationLineResponse
                             {
-                                MaterialId = c.MaterialId,
-                                MaterialName = c.Material.MaterialName,
+                                MaterialId = materialId,
+                                MaterialName = materialName,
                                 Quantity = item.Quantity,
                                 UnitPrice = c.UnitPrice,
                                 EstimatedLineCost = c.UnitPrice * item.Quantity,
