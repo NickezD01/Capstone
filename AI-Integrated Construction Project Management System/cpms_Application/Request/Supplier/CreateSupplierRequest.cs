@@ -11,5 +11,8 @@ namespace cpms_Application.Request.Supplier
         public string CompanyName { get; set; } = null!;
         public string? ContactEmail { get; set; }
         public string? ContactPhone { get; set; }
+        public string? Address { get; set; }
+        public double? Latitude { get; set; }
+        public double? Longitude { get; set; }
     }
 }

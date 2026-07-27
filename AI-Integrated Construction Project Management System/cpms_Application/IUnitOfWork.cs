@@ -58,6 +58,15 @@ namespace cpms_Application
         IGenericRepository<TransferInventoryReservation> TransferInventoryReservations { get; }
 
         // ========================================================
+        // CHAT & MEETINGS
+        // ========================================================
+        IChatConversationRepository ChatConversations { get; }
+        IChatParticipantRepository ChatParticipants { get; }
+        IChatMessageRepository ChatMessages { get; }
+        IMeetingRepository Meetings { get; }
+        IMeetingParticipantRepository MeetingParticipants { get; }
+
+        // ========================================================
         // CORE METHODS
         // ========================================================
         Task SaveChangeAsync();

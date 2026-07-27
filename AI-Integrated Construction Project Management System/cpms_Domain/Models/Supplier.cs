@@ -12,6 +12,9 @@ namespace cpms_Domain.Models
         public string CompanyName { get; set; } = null!;
         public string? ContactEmail { get; set; }
         public string? ContactPhone { get; set; }
+        public string? Address { get; set; }
+        public double? Latitude { get; set; }
+        public double? Longitude { get; set; }
 
         // Navigation
         public virtual SupplierMetric? SupplierMetric { get; set; }

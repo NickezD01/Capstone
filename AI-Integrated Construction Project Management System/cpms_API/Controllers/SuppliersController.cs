@@ -1,5 +1,6 @@
-﻿using cpms_Application.Interfaces;
+using cpms_Application.Interfaces;
 using cpms_Application.Request.Supplier;
+using cpms_Application.Request.SupplierRecommendation;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 
@@ -10,10 +11,12 @@ namespace cpms_API.Controllers
     public class SuppliersController : ControllerBase
     {
         private readonly ISupplierService _supplierService;
+        private readonly ISupplierRecommendationService _supplierRecommendationService;
 
-        public SuppliersController(ISupplierService supplierService)
+        public SuppliersController(ISupplierService supplierService, ISupplierRecommendationService supplierRecommendationService)
         {
             _supplierService = supplierService;
+            _supplierRecommendationService = supplierRecommendationService;
         }
 
         [HttpPost]
@@ -54,6 +57,13 @@ namespace cpms_API.Controllers
         {
             var response = await _supplierService.DeactivateSupplierAsync(supplierId);
             return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpPost("recommendations/balanced")]
+        public async Task<IActionResult> RecommendBalancedSuppliers([FromBody] BalancedSupplierRecommendationRequest request)
+        {
+            var response = await _supplierRecommendationService.RecommendBalancedSuppliersAsync(request);
+            return response.IsSuccess ? Ok(response) : BadRequest(response);
         }
     }
 }

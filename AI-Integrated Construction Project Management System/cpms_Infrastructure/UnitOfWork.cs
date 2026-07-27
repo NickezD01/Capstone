@@ -35,17 +35,11 @@ namespace cpms_Infrastructure
         public ICategoryRepository Categories { get; }
         public IWarehouseRepository Warehouses { get; }
         public IInventoryRepository Inventories { get; }
-        public IGenericRepository<cpms_Domain.Models.InventoryReservation> InventoryReservations { get; }
-        public IGenericRepository<cpms_Domain.Models.InventoryTransaction> InventoryTransactions { get; }
-        public IGenericRepository<cpms_Domain.Models.InventoryAdjustment> InventoryAdjustments { get; }
-        public IGenericRepository<cpms_Domain.Models.PhysicalCountSession> PhysicalCountSessions { get; }
-        public IGenericRepository<cpms_Domain.Models.PhysicalCountLine> PhysicalCountLines { get; }
-        public ITaskMaterialRequirementRepository TaskMaterialRequirements { get; }
-        public IProjectBudgetHistoryRepository ProjectBudgetHistories { get; }
-        public IGenericRepository<cpms_Domain.Models.MrpPlanningRun> MrpPlanningRuns { get; }
-        public IWarehouseTransferRepository WarehouseTransfers { get; }
-        public IWarehouseTransferItemRepository WarehouseTransferItems { get; }
-        public IGenericRepository<cpms_Domain.Models.TransferInventoryReservation> TransferInventoryReservations { get; }
+        public IChatConversationRepository ChatConversations { get; }
+        public IChatParticipantRepository ChatParticipants { get; }
+        public IChatMessageRepository ChatMessages { get; }
+        public IMeetingRepository Meetings { get; }
+        public IMeetingParticipantRepository MeetingParticipants { get; }
 
 
         public IMaterialRequestRepository MaterialRequests { get; }
@@ -77,11 +71,11 @@ namespace cpms_Infrastructure
             Categories = new CategoryRepository(context);
             Warehouses = new WarehouseRepository(context);
             Inventories = new InventoryRepository(context);
-            InventoryReservations = new GenericRepository<cpms_Domain.Models.InventoryReservation>(context);
-            InventoryTransactions = new GenericRepository<cpms_Domain.Models.InventoryTransaction>(context);
-            InventoryAdjustments = new GenericRepository<cpms_Domain.Models.InventoryAdjustment>(context);
-            PhysicalCountSessions = new GenericRepository<cpms_Domain.Models.PhysicalCountSession>(context);
-            PhysicalCountLines = new GenericRepository<cpms_Domain.Models.PhysicalCountLine>(context);
+            ChatConversations = new ChatConversationRepository(context);
+            ChatParticipants = new ChatParticipantRepository(context);
+            ChatMessages = new ChatMessageRepository(context);
+            Meetings = new MeetingRepository(context);
+            MeetingParticipants = new MeetingParticipantRepository(context);
 
  
             MaterialRequests = new MaterialRequestRepository(context);

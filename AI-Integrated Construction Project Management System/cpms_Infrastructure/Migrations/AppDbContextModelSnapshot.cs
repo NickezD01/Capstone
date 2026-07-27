@@ -180,55 +180,159 @@ namespace cpms_Infrastructure.Migrations
                     b.ToTable("Categories", (string)null);
                 });
 
-            modelBuilder.Entity("cpms_Domain.Models.EmailOutboxMessage", b =>
+            modelBuilder.Entity("cpms_Domain.Models.ChatConversation", b =>
                 {
-                    b.Property<long>("MessageId")
+                    b.Property<int>("ConversationId")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<long>("MessageId"));
-
-                    b.Property<int>("AttemptCount")
                         .HasColumnType("int");
 
-                    b.Property<DateTime>("CreatedAt")
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ConversationId"));
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CreatedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("LastMessageAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("TaskId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.HasKey("ConversationId");
+
+                    b.HasIndex("ProjectId");
+
+                    b.HasIndex("TaskId");
+
+                    b.ToTable("ChatConversations");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.ChatMessage", b =>
+                {
+                    b.Property<int>("MessageId")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("datetime2")
-                        .HasDefaultValueSql("GETUTCDATE()");
+                        .HasColumnType("int");
 
-                    b.Property<string>("LastError")
-                        .HasColumnType("nvarchar(max)");
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("MessageId"));
 
-                    b.Property<DateTime>("NextAttemptAt")
+                    b.Property<string>("AttachmentUrl")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<int>("ConversationId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CreatedDate")
                         .HasColumnType("datetime2");
 
-                    b.Property<DateTime?>("ProcessedAt")
+                    b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("ProtectedHtmlBody")
-                        .IsRequired()
-                        .HasMaxLength(8000)
-                        .HasColumnType("nvarchar(max)");
+                    b.Property<DateTime?>("EditedAt")
+                        .HasColumnType("datetime2");
 
-                    b.Property<string>("Recipient")
-                        .IsRequired()
-                        .HasMaxLength(320)
-                        .HasColumnType("nvarchar(320)");
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
 
-                    b.Property<byte[]>("RowVersion")
-                        .IsConcurrencyToken()
-                        .IsRequired()
-                        .ValueGeneratedOnAddOrUpdate()
-                        .HasColumnType("rowversion");
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("SenderId")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("SentAt")
+                        .HasColumnType("datetime2");
 
                     b.HasKey("MessageId");
 
-                    b.HasIndex("ProcessedAt", "NextAttemptAt");
+                    b.HasIndex("ConversationId");
 
-                    b.ToTable("EmailOutboxMessages", null, t =>
-                        {
-                            t.HasCheckConstraint("CK_EmailOutboxMessages_AttemptCount", "[AttemptCount] >= 0 AND [AttemptCount] <= 10");
-                        });
+                    b.HasIndex("SenderId");
+
+                    b.ToTable("ChatMessages");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.ChatParticipant", b =>
+                {
+                    b.Property<int>("ParticipantId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ParticipantId"));
+
+                    b.Property<int>("ConversationId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CreatedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsMuted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTime>("JoinedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("LastReadAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("ParticipantId");
+
+                    b.HasIndex("UserId");
+
+                    b.HasIndex("ConversationId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("ChatParticipants");
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.EmailVerification", b =>
@@ -483,7 +587,151 @@ namespace cpms_Infrastructure.Migrations
                         });
                 });
 
-            modelBuilder.Entity("cpms_Domain.Models.InventoryReservation", b =>
+            modelBuilder.Entity("cpms_Domain.Models.Meeting", b =>
+                {
+                    b.Property<int>("MeetingId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("MeetingId"));
+
+                    b.Property<string>("Agenda")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CreatedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("EndDateTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("ExternalEventId")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("ExternalOnlineMeetingId")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("GraphResponse")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("JoinUrl")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int>("OrganizerId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTime>("StartDateTime")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(250)
+                        .HasColumnType("nvarchar(250)");
+
+                    b.Property<int?>("TaskId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("TimeZone")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.HasKey("MeetingId");
+
+                    b.HasIndex("OrganizerId");
+
+                    b.HasIndex("ProjectId");
+
+                    b.HasIndex("TaskId");
+
+                    b.ToTable("Meetings");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.MeetingParticipant", b =>
+                {
+                    b.Property<int>("ParticipantId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ParticipantId"));
+
+                    b.Property<int?>("CreatedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("CreatedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("DisplayName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("MeetingId")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("ModifiedBy")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("ModifiedDate")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int?>("UserId")
+                        .HasColumnType("int");
+
+                    b.HasKey("ParticipantId");
+
+                    b.HasIndex("MeetingId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("MeetingParticipants");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.OrderLineItem", b =>
                 {
                     b.Property<int>("ReservationId")
                         .ValueGeneratedOnAdd()
@@ -870,7 +1118,11 @@ namespace cpms_Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("ReturnId"));
 
-                    b.Property<string>("Condition")
+                    b.Property<string>("Address")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("CompanyName")
                         .IsRequired()
                         .HasMaxLength(30)
                         .HasColumnType("nvarchar(30)");
@@ -884,8 +1136,11 @@ namespace cpms_Infrastructure.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
-                    b.Property<int>("MaterialRequestId")
-                        .HasColumnType("int");
+                    b.Property<double?>("Latitude")
+                        .HasColumnType("float");
+
+                    b.Property<double?>("Longitude")
+                        .HasColumnType("float");
 
                     b.Property<int?>("ModifiedBy")
                         .HasColumnType("int");
@@ -2623,7 +2878,63 @@ namespace cpms_Infrastructure.Migrations
                     b.Navigation("Variant");
                 });
 
-            modelBuilder.Entity("cpms_Domain.Models.MaterialReturn", b =>
+            modelBuilder.Entity("cpms_Domain.Models.ChatConversation", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.TaskItem", "Task")
+                        .WithMany()
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Project");
+
+                    b.Navigation("Task");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.ChatMessage", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.ChatConversation", "Conversation")
+                        .WithMany("Messages")
+                        .HasForeignKey("ConversationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.UserAccount", "Sender")
+                        .WithMany()
+                        .HasForeignKey("SenderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Conversation");
+
+                    b.Navigation("Sender");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.ChatParticipant", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.ChatConversation", "Conversation")
+                        .WithMany("Participants")
+                        .HasForeignKey("ConversationId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.UserAccount", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Conversation");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.EmailVerification", b =>
                 {
                     b.HasOne("cpms_Domain.Models.MaterialRequest", "MaterialRequest")
                         .WithMany()
@@ -2749,7 +3060,51 @@ namespace cpms_Infrastructure.Migrations
                     b.Navigation("Variant");
                 });
 
-            modelBuilder.Entity("cpms_Domain.Models.PhysicalCountSession", b =>
+            modelBuilder.Entity("cpms_Domain.Models.Meeting", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.UserAccount", "Organizer")
+                        .WithMany()
+                        .HasForeignKey("OrganizerId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.TaskItem", "Task")
+                        .WithMany()
+                        .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Organizer");
+
+                    b.Navigation("Project");
+
+                    b.Navigation("Task");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.MeetingParticipant", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.Meeting", "Meeting")
+                        .WithMany("Participants")
+                        .HasForeignKey("MeetingId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.UserAccount", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Meeting");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.OrderLineItem", b =>
                 {
                     b.HasOne("cpms_Domain.Models.UserAccount", "CreatedByUser")
                         .WithMany()
@@ -3088,11 +3443,11 @@ namespace cpms_Infrastructure.Migrations
                     b.Navigation("Materials");
                 });
 
-            modelBuilder.Entity("cpms_Domain.Models.InventoryRecord", b =>
+            modelBuilder.Entity("cpms_Domain.Models.ChatConversation", b =>
                 {
-                    b.Navigation("Reservations");
+                    b.Navigation("Messages");
 
-                    b.Navigation("Transactions");
+                    b.Navigation("Participants");
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.Material", b =>
@@ -3130,6 +3485,11 @@ namespace cpms_Infrastructure.Migrations
             modelBuilder.Entity("cpms_Domain.Models.PhysicalCountSession", b =>
                 {
                     b.Navigation("Lines");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.Meeting", b =>
+                {
+                    b.Navigation("Participants");
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.Project", b =>
