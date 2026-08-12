@@ -198,11 +198,19 @@ builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IMeetingService, MeetingService>();
 
 // ======================================================
+// BACKGROUND SERVICES REGISTRATION
+// ======================================================
+builder.Services.AddHostedService<EmailOutboxWorker>();
+
+// ======================================================
 // HEALTH CHECKS REGISTRATION (Added to fix startup crash)
 // ======================================================
 builder.Services.AddHealthChecks()
     .AddDbContextCheck<AppDbContext>(
         name: "database",
+        tags: new[] { "ready" })
+    .AddCheck<SmtpHealthCheck>(
+        name: "smtp",
         tags: new[] { "ready" });
 
 // ======================================================
@@ -251,6 +259,23 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+// ======================================================
+// AUTO DATABASE MIGRATION ON STARTUP
+// ======================================================
+try
+{
+    using (var scope = app.Services.CreateScope())
+    {
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        await db.Database.MigrateAsync();
+    }
+}
+catch (Exception ex)
+{
+    var logger = app.Services.GetRequiredService<ILogger<Program>>();
+    logger.LogError(ex, "Database migration failed. Attempting to continue...");
+}
 
 // Health Check Endpoints
 app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
