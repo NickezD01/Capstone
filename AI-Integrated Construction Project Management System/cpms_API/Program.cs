@@ -197,6 +197,13 @@ builder.Services.AddScoped<IMaterialRequestService, MaterialRequestService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IMeetingService, MeetingService>();
 
+// ======================================================
+// HEALTH CHECKS REGISTRATION (Added to fix startup crash)
+// ======================================================
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<AppDbContext>(
+        name: "database",
+        tags: new[] { "ready" });
 
 // ======================================================
 // CORS POLICY
@@ -229,7 +236,6 @@ app.UseForwardedHeaders();
 //    app.UseSwaggerUI();
 //}
 
-
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
@@ -245,6 +251,8 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+// Health Check Endpoints
 app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });
 app.MapHealthChecks("/health/ready", new HealthCheckOptions
 {
