@@ -48,12 +48,11 @@ namespace cpms_Domain
 
     public class EmailSettings
     {
-        public string SmtpHost { get; set; } = "smtp.gmail.com";
-        public int SmtpPort { get; set; } = 465;
-        public bool UseSsl { get; set; } = true;
-        public string Username { get; set; } = string.Empty;
-        public string Password { get; set; } = string.Empty;
-        public string FromAddress { get; set; } = string.Empty;
+        public string GmailClientId { get; set; } = string.Empty;
+        public string GmailClientSecret { get; set; } = string.Empty;
+        public string GmailRefreshToken { get; set; } = string.Empty;
+        public string GmailSenderEmail { get; set; } = string.Empty;
+        public string GmailSenderName { get; set; } = "BuildSense";
     }
 
     public class TeamsGraph

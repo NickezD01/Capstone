@@ -180,7 +180,11 @@ builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 // APPLICATION SERVICES REGISTRATION
 // ======================================================
 builder.Services.AddScoped<IAuthService, AuthService>();
-builder.Services.AddScoped<IEmailService, EmailService>();
+builder.Services.AddHttpClient<IEmailService, EmailService>(client =>
+{
+    client.BaseAddress = new Uri("https://gmail.googleapis.com/");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
 builder.Services.AddScoped<IClaimService, ClaimService>();
 builder.Services.AddScoped<IUserAccountService, UserAccountService>();
 builder.Services.AddScoped<IProjectService, ProjectService>();
@@ -209,8 +213,8 @@ builder.Services.AddHealthChecks()
     .AddDbContextCheck<AppDbContext>(
         name: "database",
         tags: new[] { "ready" })
-    .AddCheck<SmtpHealthCheck>(
-        name: "smtp",
+    .AddCheck<EmailApiHealthCheck>(
+        name: "gmail-api",
         tags: new[] { "ready" });
 
 // ======================================================
