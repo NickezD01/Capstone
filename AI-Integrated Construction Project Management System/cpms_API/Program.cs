@@ -186,20 +186,20 @@ builder.Services.AddHttpClient<IEmailService, EmailService>(client =>
     client.Timeout = TimeSpan.FromSeconds(30);
 });
 builder.Services.AddScoped<IClaimService, ClaimService>();
-builder.Services.AddScoped<IUserAccountService, IUserAccountService>();
+builder.Services.AddScoped<IUserAccountService, UserAccountService>();
 builder.Services.AddScoped<IProjectService, ProjectService>();
-builder.Services.AddScoped<IPurchaseOrderService, IPurchaseOrderService>();
-builder.Services.AddScoped<ISupplierService, ISupplierService>();
-builder.Services.AddScoped<ISupplierRecommendationService, ISupplierRecommendationService>();
-builder.Services.AddScoped<ICatalogService, ICatalogService>();
-builder.Services.AddScoped<ICategoryService, ICategoryService>();
-builder.Services.AddScoped<IMaterialService, IMaterialService>();
-builder.Services.AddScoped<IWarehouseService, IWarehouseService>();
-builder.Services.AddScoped<ITaskService, ITaskService>();
-builder.Services.AddScoped<IProgressReportService, IProgressReportService>();
-builder.Services.AddScoped<IMaterialRequestService, IMaterialRequestService>();
-builder.Services.AddScoped<IChatService, IChatService>();
-builder.Services.AddScoped<IMeetingService, IMeetingService>();
+builder.Services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
+builder.Services.AddScoped<ISupplierService, SupplierService>();
+builder.Services.AddScoped<ISupplierRecommendationService, SupplierRecommendationService>();
+builder.Services.AddScoped<ICatalogService, CatalogService>();
+builder.Services.AddScoped<ICategoryService, CategoryService>();
+builder.Services.AddScoped<IMaterialService, MaterialService>();
+builder.Services.AddScoped<IWarehouseService, WarehouseService>();
+builder.Services.AddScoped<ITaskService, TaskService>();
+builder.Services.AddScoped<IProgressReportService, ProgressReportService>();
+builder.Services.AddScoped<IMaterialRequestService, MaterialRequestService>();
+builder.Services.AddScoped<IChatService, ChatService>();
+builder.Services.AddScoped<IMeetingService, MeetingService>();
 
 // ======================================================
 // BACKGROUND SERVICES REGISTRATION
