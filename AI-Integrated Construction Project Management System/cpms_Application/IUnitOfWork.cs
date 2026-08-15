@@ -63,6 +63,8 @@ namespace cpms_Application
         IChatConversationRepository ChatConversations { get; }
         IChatParticipantRepository ChatParticipants { get; }
         IChatMessageRepository ChatMessages { get; }
+        IAiChatSessionRepository AiChatSessions { get; }
+        IAiChatMessageRepository AiChatMessages { get; }
         IMeetingRepository Meetings { get; }
         IMeetingParticipantRepository MeetingParticipants { get; }
 

@@ -47,6 +47,8 @@ namespace cpms_Infrastructure
         public IChatConversationRepository ChatConversations { get; }
         public IChatParticipantRepository ChatParticipants { get; }
         public IChatMessageRepository ChatMessages { get; }
+        public IAiChatSessionRepository AiChatSessions { get; }
+        public IAiChatMessageRepository AiChatMessages { get; }
         public IMeetingRepository Meetings { get; }
         public IMeetingParticipantRepository MeetingParticipants { get; }
 
@@ -90,6 +92,8 @@ namespace cpms_Infrastructure
             ChatConversations = new ChatConversationRepository(context);
             ChatParticipants = new ChatParticipantRepository(context);
             ChatMessages = new ChatMessageRepository(context);
+            AiChatSessions = new AiChatSessionRepository(context);
+            AiChatMessages = new AiChatMessageRepository(context);
             Meetings = new MeetingRepository(context);
             MeetingParticipants = new MeetingParticipantRepository(context);
 

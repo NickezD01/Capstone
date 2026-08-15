@@ -34,6 +34,8 @@ namespace cpms_Infrastructure
         public DbSet<ChatConversation> ChatConversations { get; set; }
         public DbSet<ChatParticipant> ChatParticipants { get; set; }
         public DbSet<ChatMessage> ChatMessages { get; set; }
+        public DbSet<AiChatSession> AiChatSessions { get; set; }
+        public DbSet<AiChatMessage> AiChatMessages { get; set; }
         public DbSet<Meeting> Meetings { get; set; }
         public DbSet<MeetingParticipant> MeetingParticipants { get; set; }
 
