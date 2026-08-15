@@ -100,6 +100,7 @@ namespace cpms_Application.Services
                 {
                     nameof(Role.ADMIN) => null,
                     nameof(Role.PM) => p => p.PMUserID == currentUser.Id,
+                    nameof(Role.CUSTOMER) => p => p.CustomerUserID == currentUser.Id,
                     nameof(Role.WAREHOUSE_MANAGER) => p =>
                         p.MaterialRequests.Any(r => r.WarehouseId.HasValue && r.Warehouse!.ManagerId == currentUser.Id) ||
                         p.PurchaseOrders.Any(o => o.Warehouse.ManagerId == currentUser.Id),
@@ -134,6 +135,7 @@ namespace cpms_Application.Services
                     filter: p => p.ProjectId == id,
                     include: query => query
                         .Include(p => p.ProjectManager)
+                        .Include(p => p.Customer)
                         .Include(p => p.Tasks)
                         .Include(p => p.PurchaseOrders).ThenInclude(o => o.OrderLineItems)
                         .Include(p => p.AIAlerts)
@@ -859,6 +861,26 @@ namespace cpms_Application.Services
             return await GetProjectByIdAsync(projectId);
         }
 
+        public async Task<ApiResponse> ReassignProjectCustomerAsync(int projectId, ReassignProjectCustomerRequest request)
+        {
+            var user = _claimService.GetUserClaim();
+            if (!IsRole(user, Role.ADMIN))
+                return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Administrator access is required.");
+
+            var project = await _unitOfWork.Projects.GetByIdAsync(projectId);
+            if (project == null) return new ApiResponse().SetNotFound("Project not found.");
+            if (!MatchesRowVersion(project.RowVersion, request.RowVersion))
+                return new ApiResponse().SetConflict("Project changed. Reload and retry.");
+
+            var customer = await _unitOfWork.UserAccounts.GetByIdAsync(request.CustomerUserId);
+            if (customer == null || customer.Role != Role.CUSTOMER || customer.IsEmailVerified != true)
+                return new ApiResponse().SetBadRequest("The customer must be a verified customer account.");
+
+            project.CustomerUserID = customer.Id;
+            await _unitOfWork.SaveChangeAsync();
+            return await GetProjectByIdAsync(projectId);
+        }
+
         private static bool MatchesRowVersion(byte[] current, string supplied) =>
             !string.IsNullOrWhiteSpace(supplied) && Convert.ToBase64String(current).Equals(supplied, StringComparison.Ordinal);
 
@@ -897,6 +919,11 @@ namespace cpms_Application.Services
             var currentUser = _claimService.GetUserClaim();
             if (IsRole(currentUser, Role.ADMIN)) return true;
             if (IsRole(currentUser, Role.PM)) return projectManagerId == currentUser.Id;
+            if (IsRole(currentUser, Role.CUSTOMER))
+            {
+                var project = await _unitOfWork.Projects.GetAsync(p => p.ProjectId == projectId);
+                return project != null && project.CustomerUserID == currentUser.Id;
+            }
             if (!IsRole(currentUser, Role.WAREHOUSE_MANAGER)) return false;
 
             var linkedRequest = await _unitOfWork.MaterialRequests.GetAsync(r =>

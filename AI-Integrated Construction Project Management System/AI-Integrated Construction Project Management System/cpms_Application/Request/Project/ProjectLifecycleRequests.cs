@@ -20,3 +20,9 @@ public sealed class ReassignProjectManagerRequest
     public int ProjectManagerUserId { get; set; }
     public string RowVersion { get; set; } = string.Empty;
 }
+
+public sealed class ReassignProjectCustomerRequest
+{
+    public int CustomerUserId { get; set; }
+    public string RowVersion { get; set; } = string.Empty;
+}

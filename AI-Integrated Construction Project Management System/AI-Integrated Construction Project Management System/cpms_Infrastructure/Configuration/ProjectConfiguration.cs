@@ -39,6 +39,11 @@ namespace cpms_Infrastructure.Configuration
        .WithMany(u => u.ManagedProjects)
        .HasForeignKey(p => p.PMUserID)
        .OnDelete(DeleteBehavior.Restrict);
+
+            builder.HasOne(p => p.Customer)
+       .WithMany(u => u.CustomerProjects)
+       .HasForeignKey(p => p.CustomerUserID)
+       .OnDelete(DeleteBehavior.Restrict);
         }
     }
 }

@@ -28,5 +28,6 @@ namespace cpms_Application.Interfaces
         Task<ApiResponse> UpdateProjectAsync(int projectId, UpdateProjectRequest request);
         Task<ApiResponse> ChangeProjectStatusAsync(int projectId, string action, ProjectLifecycleRequest request);
         Task<ApiResponse> ReassignProjectManagerAsync(int projectId, ReassignProjectManagerRequest request);
+        Task<ApiResponse> ReassignProjectCustomerAsync(int projectId, ReassignProjectCustomerRequest request);
     }
 }

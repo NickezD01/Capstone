@@ -24,6 +24,7 @@ namespace cpms_Domain.Models
 
         // 🚀 BỔ SUNG KHÓA NGOẠI: Người quản lý dự án (Project Manager)
         public int PMUserID { get; set; }
+        public int CustomerUserID { get; set; }
         public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 
 
@@ -33,6 +34,7 @@ namespace cpms_Domain.Models
 
         // 1. Trỏ ngược về ông PM quản lý dự án này
         public virtual UserAccount ProjectManager { get; set; } = null!;
+        public virtual UserAccount? Customer { get; set; }
 
         // 2. Dự án được chia thành nhiều Đầu việc (Tasks assigned to)
         public virtual ICollection<TaskItem> Tasks { get; set; } = new List<TaskItem>();

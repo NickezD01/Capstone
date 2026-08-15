@@ -34,6 +34,8 @@ namespace cpms_Application.Response.Project
         // 4. Thông tin PM (Để FE hiển thị luôn "Quản lý bởi: Nguyễn Văn A")
         public int PMUserID { get; set; }
         public string PMName { get; set; } = null!;
+        public int CustomerUserID { get; set; }
+        public string CustomerName { get; set; } = string.Empty;
 
         // 5. Thống kê (Không bắt buộc nhưng FE rất thích)
         public int TotalTasks { get; set; }

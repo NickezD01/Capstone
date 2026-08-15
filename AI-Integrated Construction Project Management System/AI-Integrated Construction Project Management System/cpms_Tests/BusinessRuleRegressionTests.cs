@@ -214,6 +214,47 @@ public class BusinessRuleRegressionTests
     }
 
     [Fact]
+    public async Task AdminCanAssignCustomerToProjectAndCustomerCanReadProject()
+    {
+        var uow = new TestUnitOfWork();
+        var project = new Project
+        {
+            ProjectId = 1,
+            ProjectName = "Customer Project",
+            PMUserID = 5,
+            CustomerUserID = 0,
+            RowVersion = [1]
+        };
+        uow.ProjectRecords.Add(project);
+
+        var customer = new UserAccount
+        {
+            Id = 20,
+            Email = "customer@example.com",
+            IsEmailVerified = true,
+            Role = Role.CUSTOMER
+        };
+        uow.UserAccountRecords.Add(customer);
+
+        var assignResponse = await new ProjectService(uow, CreateMapper(), new FakeClaimService(1, Role.ADMIN))
+            .ReassignProjectCustomerAsync(1, new ReassignProjectCustomerRequest { CustomerUserId = customer.Id, RowVersion = "AQ==" });
+
+        Assert.True(assignResponse.IsSuccess, assignResponse.ErrorMessage);
+        Assert.Equal(customer.Id, project.CustomerUserID);
+
+        var customerReadResponse = await new ProjectService(uow, CreateMapper(), new FakeClaimService(customer.Id, Role.CUSTOMER))
+            .GetProjectByIdAsync(1);
+
+        Assert.True(customerReadResponse.IsSuccess, customerReadResponse.ErrorMessage);
+
+        var customerListResponse = await new ProjectService(uow, CreateMapper(), new FakeClaimService(customer.Id, Role.CUSTOMER))
+            .GetAllProjectsAsync();
+
+        Assert.True(customerListResponse.IsSuccess, customerListResponse.ErrorMessage);
+        Assert.NotNull(customerListResponse.Result);
+    }
+
+    [Fact]
     public async Task ReturnCannotExceedIssuedQuantityAfterPreviousReturns()
     {
         var uow = new TestUnitOfWork();

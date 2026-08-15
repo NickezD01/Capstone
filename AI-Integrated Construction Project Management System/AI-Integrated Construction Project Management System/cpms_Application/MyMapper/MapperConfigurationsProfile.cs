@@ -54,6 +54,12 @@ namespace cpms_Application.MyMapper
             src.ProjectManager != null
                 ? $"{src.ProjectManager.LastName} {src.ProjectManager.FirstName}".Trim()
                 : string.Empty))
+    .ForMember(dest => dest.CustomerUserID, opt => opt.MapFrom(src => src.CustomerUserID))
+    .ForMember(dest => dest.CustomerName,
+        opt => opt.MapFrom(src =>
+            src.Customer != null
+                ? $"{src.Customer.LastName} {src.Customer.FirstName}".Trim()
+                : string.Empty))
 
     .ForMember(dest => dest.TotalTasks,
         opt => opt.MapFrom(src => src.Tasks.Count))

@@ -146,5 +146,13 @@ namespace cpms_API.Controllers
             var response = await _projectService.ReassignProjectManagerAsync(projectId, request);
             return StatusCode((int)response.StatusCode, response);
         }
+
+        [HttpPut("{projectId:int}/project-customer")]
+        [Authorize(Roles = "ADMIN")]
+        public async Task<IActionResult> ReassignProjectCustomer(int projectId, ReassignProjectCustomerRequest request)
+        {
+            var response = await _projectService.ReassignProjectCustomerAsync(projectId, request);
+            return StatusCode((int)response.StatusCode, response);
+        }
     }
 }

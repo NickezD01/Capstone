@@ -32,6 +32,9 @@ namespace cpms_Domain.Models
         // 1. Một User với vai trò Project Manager có thể quản lý nhiều Dự án (FK: PMUserID trong Projects)
         public virtual ICollection<Project> ManagedProjects { get; set; } = new List<Project>();
 
+        // Project customer view access for the assigned client account
+        public virtual ICollection<Project> CustomerProjects { get; set; } = new List<Project>();
+
         // 2. Một User được giao nhiều Tasks (FK: AssignedToUserID trong Tasks)
         public virtual ICollection<TaskItem> Tasks { get; set; } = new List<TaskItem>();
 
