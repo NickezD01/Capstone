@@ -35,6 +35,28 @@ The EF model is aligned to `../Capstone_Revised.sql` by migration
 
 ## Deployment
 
+### Local secrets
+
+Never commit connection strings, API keys, refresh tokens, or JWT signing keys. The API
+project already has a `UserSecretsId`, so configure local values from the solution directory
+once with:
+
+```powershell
+dotnet user-secrets --project cpms_API set "ConnectionStrings:DefaultConnection" "<connection-string>"
+dotnet user-secrets --project cpms_API set "SecretToken:Value" "<random-value-at-least-64-bytes>"
+dotnet user-secrets --project cpms_API set "GoogleAI:ApiKey" "<google-ai-key>"
+```
+
+These values are stored outside the repository and remain available across commits. The
+tracked [cpms_API/.env.example](cpms_API/.env.example) lists the equivalent environment
+variable names for deployment configuration; it is only a template and is not loaded as a
+local dotenv file automatically.
+
+Use deployment-platform secret variables for non-development environments. Rotate every
+credential that was previously committed, including the database password and Google AI key.
+If the commits were pushed, remove the values from repository history with a history rewrite
+tool after rotation, then force-push the rewritten branches according to your team's process.
+
 Do not edit `__EFMigrationsHistory` manually. Back up the database, review the generated migration
 SQL, then run the normal EF command from this solution directory:
 
