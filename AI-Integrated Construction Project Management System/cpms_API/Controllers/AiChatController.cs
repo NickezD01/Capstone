@@ -2,6 +2,7 @@ using cpms_Application.Interfaces;
 using cpms_Application.Request.AiChat;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.ModelBinding;
 
 namespace cpms_API.Controllers
 {
@@ -18,9 +19,9 @@ namespace cpms_API.Controllers
         }
 
         [HttpPost("sessions")]
-        public async Task<IActionResult> CreateSession([FromBody] CreateAiChatSessionRequest request)
+        public async Task<IActionResult> CreateSession([FromBody(EmptyBodyBehavior = EmptyBodyBehavior.Allow)] CreateAiChatSessionRequest? request)
         {
-            var response = await _aiChatService.CreateSessionAsync(request);
+            var response = await _aiChatService.CreateSessionAsync(request ?? new CreateAiChatSessionRequest());
             return StatusCode((int)response.StatusCode, response);
         }
 

@@ -216,7 +216,8 @@ namespace cpms_Application.Services
                 UserId = session.UserId,
                 ProjectId = session.ProjectId,
                 Title = session.Title,
-                LastMessageAt = session.LastMessageAt,
+                CreatedAt = session.CreatedDate ?? session.LastMessageAt,
+                LastMessageAt = messageCount > 0 ? session.LastMessageAt : null,
                 MessageCount = messageCount
             };
         }
@@ -229,6 +230,7 @@ namespace cpms_Application.Services
                 SessionId = message.SessionId,
                 Role = message.Role,
                 Content = message.Content,
+                CreatedAt = message.CreatedDate ?? message.SentAt,
                 SentAt = message.SentAt
             };
         }

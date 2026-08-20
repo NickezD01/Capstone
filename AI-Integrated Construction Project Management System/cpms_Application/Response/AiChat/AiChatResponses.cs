@@ -8,7 +8,8 @@ namespace cpms_Application.Response.AiChat
         public int UserId { get; set; }
         public int? ProjectId { get; set; }
         public string Title { get; set; } = null!;
-        public DateTime LastMessageAt { get; set; }
+        public DateTime? CreatedAt { get; set; }
+        public DateTime? LastMessageAt { get; set; }
         public int MessageCount { get; set; }
     }
 
@@ -18,6 +19,7 @@ namespace cpms_Application.Response.AiChat
         public int SessionId { get; set; }
         public AiChatRole Role { get; set; }
         public string Content { get; set; } = null!;
+        public DateTime CreatedAt { get; set; }
         public DateTime SentAt { get; set; }
     }
 
