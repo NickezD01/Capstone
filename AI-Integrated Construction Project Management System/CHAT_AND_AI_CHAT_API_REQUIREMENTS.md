@@ -17,6 +17,34 @@ Every endpoint should return the existing BuildSense envelope:
 
 Validation or permission failures should keep the same shape with `isSuccess: false`, a useful `errorMessage`, and the real HTTP status code.
 
+### Error Response Contract
+
+The frontend should always check `isSuccess` first. When `isSuccess` is `false`, use `errorMessage` for display text and use `result.errorCode` for programmatic handling when it is present.
+
+Database failures should not return raw SQL exception text. They should return the shared envelope with a stable machine-readable error code:
+
+```json
+{
+  "statusCode": 503,
+  "isSuccess": false,
+  "errorMessage": "The database schema is not ready. Run the latest backend migrations.",
+  "result": {
+    "errorCode": "DATABASE_SCHEMA_NOT_READY",
+    "retryable": false
+  }
+}
+```
+
+Known database error codes:
+
+| HTTP | `result.errorCode`                 | Meaning for frontend handling                                                                  |
+| ---- | ---------------------------------- | ---------------------------------------------------------------------------------------------- |
+| 503  | `DATABASE_SCHEMA_NOT_READY`        | The API is running against a database that has not applied the latest migrations. Do not retry. |
+| 503  | `DATABASE_UNAVAILABLE`             | The database connection/login/server is temporarily unavailable. Retry can be offered.          |
+| 400  | `DATABASE_CONSTRAINT_VIOLATION`    | The submitted ID or relationship is invalid, stale, or violates a quantity constraint.          |
+| 409  | `DATABASE_DUPLICATE_KEY`           | The request conflicts with an existing unique record.                                           |
+| 500  | `DATABASE_ERROR`                   | Unclassified database save error. Log/report and show a generic failure message.                |
+
 ## Team Chat
 
 Base path: `/api/Chat`
@@ -139,21 +167,55 @@ All endpoints require `Authorization: Bearer <accessToken>`.
 }
 ```
 
-Both fields are optional. The backend should scope the session to the current authenticated user.
+Both fields are optional. The frontend may send `{}` or omit the request body. The backend should scope the session to the current authenticated user.
 
 ### AI Session Response
 
+Successful `POST /api/AiChat/sessions` response:
+
 ```json
 {
-  "sessionId": 50,
-  "userId": 1,
-  "title": "Procurement advice",
-  "projectId": 1,
-  "createdAt": "2026-08-20T03:20:00Z",
-  "lastMessageAt": null,
-  "messageCount": 0
+  "statusCode": 200,
+  "isSuccess": true,
+  "errorMessage": null,
+  "result": {
+    "sessionId": 50,
+    "userId": 1,
+    "title": "Procurement advice",
+    "projectId": 1,
+    "createdAt": "2026-08-20T03:20:00Z",
+    "lastMessageAt": null,
+    "messageCount": 0
+  }
 }
 ```
+
+If `projectId` is supplied but does not exist, return:
+
+```json
+{
+  "statusCode": 404,
+  "isSuccess": false,
+  "errorMessage": "Project not found.",
+  "result": null
+}
+```
+
+If the AI chat tables are missing because the backend database has not applied migration `20260815191500_AddAiChatSessions`, return:
+
+```json
+{
+  "statusCode": 503,
+  "isSuccess": false,
+  "errorMessage": "The database schema is not ready. Run the latest backend migrations.",
+  "result": {
+    "errorCode": "DATABASE_SCHEMA_NOT_READY",
+    "retryable": false
+  }
+}
+```
+
+The frontend should treat `DATABASE_SCHEMA_NOT_READY` as an environment/backend setup problem, not as a user input problem.
 
 ### Send AI Message Request
 
@@ -195,5 +257,6 @@ The current frontend also tolerates `sentAt` instead of `createdAt`, and a legac
 
 - `POST /api/Chat/conversations` returns 400 because `type` is sent as a string. The frontend now sends numeric enum values.
 - `POST /api/Chat/conversations` creates a row but does not include the current user as a participant, causing the next message/list call to fail with 403 or return empty.
+- `POST /api/AiChat/sessions` returns `503` with `DATABASE_SCHEMA_NOT_READY` because the running database has not applied migration `20260815191500_AddAiChatSessions`. Apply migrations before retrying.
 - AI chat endpoints return a different DTO shape than the frontend expects. Use `createdAt` consistently, or keep `sentAt` while the frontend compatibility shim remains in place.
 - Endpoints return raw objects instead of the standard envelope. The frontend can parse raw successful objects in some cases, but all app APIs should return the envelope for consistent errors.

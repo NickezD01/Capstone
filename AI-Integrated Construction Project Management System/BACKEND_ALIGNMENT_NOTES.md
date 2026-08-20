@@ -57,6 +57,19 @@ credential that was previously committed, including the database password and Go
 If the commits were pushed, remove the values from repository history with a history rewrite
 tool after rotation, then force-push the rewritten branches according to your team's process.
 
+For the Docker deployment, set these environment variables in the hosting provider's secret
+configuration (for example, the Render service environment settings):
+
+```text
+ASPNETCORE_ENVIRONMENT=Production
+ConnectionStrings__DefaultConnection=<production-connection-string>
+SecretToken__Value=<random-value-at-least-64-bytes>
+GoogleAI__ApiKey=<production-google-ai-key>
+```
+
+Do not add these values to the Dockerfile or commit them in an environment file. The container
+already listens on port `8080`.
+
 Do not edit `__EFMigrationsHistory` manually. Back up the database, review the generated migration
 SQL, then run the normal EF command from this solution directory:
 

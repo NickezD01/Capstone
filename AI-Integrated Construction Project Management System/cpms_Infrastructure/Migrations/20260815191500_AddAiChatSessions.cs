@@ -1,4 +1,5 @@
 using System;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -6,7 +7,9 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace cpms_Infrastructure.Migrations
 {
     /// <inheritdoc />
-    public class AddAiChatSessions : Migration
+    [DbContext(typeof(AppDbContext))]
+    [Migration("20260815191500_AddAiChatSessions")]
+    public partial class AddAiChatSessions : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
