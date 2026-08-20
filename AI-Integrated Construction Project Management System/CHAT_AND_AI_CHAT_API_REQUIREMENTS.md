@@ -148,6 +148,25 @@ Base path: `/api/AiChat`
 
 All endpoints require `Authorization: Bearer <accessToken>`.
 
+### AI Provider Split
+
+The backend separates web search from reasoning:
+
+| Provider | Role | When it runs |
+| -------- | ---- | ------------ |
+| **Tavily** | Web search only | When `useWebSearch: true` on `POST /sessions/{sessionId}/messages` |
+| **Gemini** | Reasoning / answer generation | On every AI chat message |
+
+Flow when `useWebSearch` is enabled:
+
+1. Backend saves the user message.
+2. Tavily searches the web using the latest user message as the query.
+3. Gemini receives conversation history, optional project context, and Tavily snippets.
+4. Gemini generates the assistant reply.
+5. Backend saves and returns both messages.
+
+When `useWebSearch` is `false`, step 2 is skipped and Gemini answers from conversation/project context only.
+
 ### Required Endpoints
 
 | Method   | Path                                        | Purpose                                               |
@@ -226,37 +245,168 @@ The frontend should treat `DATABASE_SCHEMA_NOT_READY` as an environment/backend 
 }
 ```
 
-Preferred response:
+| Field | Type | Required | Meaning |
+| ----- | ---- | -------- | ------- |
+| `message` | string | yes | User message text. |
+| `useWebSearch` | boolean | no | When `true`, Tavily performs web search before Gemini generates the reply. Default behavior when omitted: `false`. |
+
+### Send AI Message Response
+
+Preferred `result` shape from `POST /api/AiChat/sessions/{sessionId}/messages`:
 
 ```json
 {
   "userMessage": {
     "messageId": 201,
     "sessionId": 50,
-    "role": "user",
+    "role": 0,
     "content": "Which supplier should we use for cement?",
-    "useWebSearch": false,
-    "createdAt": "2026-08-20T03:21:00Z"
+    "createdAt": "2026-08-20T03:21:00Z",
+    "sentAt": "2026-08-20T03:21:00Z"
   },
   "assistantMessage": {
     "messageId": 202,
     "sessionId": 50,
-    "role": "assistant",
+    "role": 1,
     "content": "Based on your catalog data...",
-    "useWebSearch": false,
-    "createdAt": "2026-08-20T03:21:02Z"
+    "createdAt": "2026-08-20T03:21:03Z",
+    "sentAt": "2026-08-20T03:21:03Z"
   },
-  "webSearchUsed": false,
-  "webSearchSummary": null
+  "usedWebSearch": false,
+  "webSearchSources": []
 }
 ```
 
-The current frontend also tolerates `sentAt` instead of `createdAt`, and a legacy single `message` field instead of `assistantMessage`.
+Role values:
+
+| Value | Meaning |
+| ----- | ------- |
+| `0` | `User` |
+| `1` | `Assistant` |
+
+Frontend compatibility notes:
+
+- The frontend may send/read `role` as `"user"` / `"assistant"` only if Swagger confirms string enum binding. The backend enum is numeric by default.
+- Both `createdAt` and `sentAt` are returned on each message.
+- `usedWebSearch` is `true` only after Tavily search ran. `webSearchSources` lists `{ title, url }` from Tavily. Gemini never searches the web.
+
+Example with web search enabled:
+
+Request:
+
+```json
+{
+  "message": "What are current rebar prices near Ho Chi Minh City?",
+  "useWebSearch": true
+}
+```
+
+Success `result` includes Tavily sources plus a Gemini-written answer:
+
+```json
+{
+  "usedWebSearch": true,
+  "webSearchSources": [
+    { "title": "Rebar prices", "url": "https://example.com/rebar" }
+  ]
+}
+```
+
+If Tavily succeeds but Gemini is rate-limited, the backend returns HTTP **429** (not a Tavily failure):
+
+```json
+{
+  "statusCode": 429,
+  "isSuccess": false,
+  "errorMessage": "Tavily web search succeeded, but Gemini rate limit was exceeded while reasoning. Wait a minute and try again.",
+  "result": {
+    "errorCode": "GEMINI_RATE_LIMITED",
+    "usedWebSearch": true,
+    "webSearchSources": [
+      { "title": "Rebar prices", "url": "https://example.com/rebar" }
+    ]
+  }
+}
+```
+
+Failure when Tavily is not configured:
+
+```json
+{
+  "statusCode": 400,
+  "isSuccess": false,
+  "errorMessage": "Tavily:ApiKey is not configured.",
+  "result": null
+}
+```
+
+Failure when Gemini is not configured:
+
+```json
+{
+  "statusCode": 400,
+  "isSuccess": false,
+  "errorMessage": "GoogleAI:ApiKey is not configured.",
+  "result": null
+}
+```
+
+### Frontend UI Recommendations
+
+- Add a "Search the web" toggle mapped to `useWebSearch`.
+- Use a two-step loading state when web search is enabled:
+  - "Searching the web..."
+  - "Generating answer..."
+- Disable or hide the web-search toggle if the backend returns Tavily configuration errors during testing.
+- When a session has `projectId`, show that project context is included in the assistant prompt.
+
+## Supplier Recommendation AI Flow
+
+Base path: `/api/Suppliers/recommendations/balanced`
+
+This endpoint is public in source (no `[Authorize]` on the action). It also uses the Tavily + Gemini split when web search is requested.
+
+Request fields relevant to AI:
+
+```json
+{
+  "searchWebForNearbySuppliers": true,
+  "warehouseLocation": "District 7, Ho Chi Minh City",
+  "searchRadiusKm": 30,
+  "regionCode": "VN"
+}
+```
+
+| Field | Meaning |
+| ----- | ------- |
+| `searchWebForNearbySuppliers` | Enables Tavily web search for external suppliers. |
+| `warehouseLocation` | Required when web search is enabled. Used to build the Tavily query. |
+| `searchRadiusKm` | Radius hint for the Tavily query. Backend defaults to `30` when omitted or invalid. |
+| `regionCode` | Optional region hint appended to the Tavily query. |
+
+Response flags:
+
+| Field | Meaning |
+| ----- | ------- |
+| `usedWebSearch` | Tavily search ran and external suppliers were parsed from the results. |
+| `usedGoogleAI` | Gemini reranking/summary ran successfully. |
+| `webSearchSummary` | Short summary of external supplier search. |
+| `aiSummary` | Short summary from Gemini reranking. |
+
+External suppliers appear with:
+
+- `supplierId: 0`
+- `source: "WebSearch"`
+- optional `sourceUrls[]`, `websiteUrl`, `googleMapsUrl`, `rating`, `reviewCount`, `distanceEstimate`
 
 ## Common Failure Cases to Check
 
 - `POST /api/Chat/conversations` returns 400 because `type` is sent as a string. The frontend now sends numeric enum values.
 - `POST /api/Chat/conversations` creates a row but does not include the current user as a participant, causing the next message/list call to fail with 403 or return empty.
 - `POST /api/AiChat/sessions` returns `503` with `DATABASE_SCHEMA_NOT_READY` because the running database has not applied migration `20260815191500_AddAiChatSessions`. Apply migrations before retrying.
-- AI chat endpoints return a different DTO shape than the frontend expects. Use `createdAt` consistently, or keep `sentAt` while the frontend compatibility shim remains in place.
+- AI chat endpoints return a different DTO shape than the frontend expects. Use both `createdAt` and `sentAt`; the reply contains `userMessage` and `assistantMessage`, not a top-level `message`.
+- AI chat with `useWebSearch: true` fails with HTTP 400 when Tavily is not configured (`Tavily:ApiKey is not configured.`).
+- AI chat with `useWebSearch: true` can still fail with HTTP **429** `GEMINI_RATE_LIMITED` after Tavily succeeds. That means Gemini quota/rate limit was hit during reasoning, not that web search used Google Search.
+- AI chat fails with HTTP 400 when Gemini is not configured (`GoogleAI:ApiKey is not configured.`).
+- Supplier recommendation web search is skipped silently when `searchWebForNearbySuppliers` is `false` or `warehouseLocation` is empty; `usedWebSearch` stays `false`.
 - Endpoints return raw objects instead of the standard envelope. The frontend can parse raw successful objects in some cases, but all app APIs should return the envelope for consistent errors.

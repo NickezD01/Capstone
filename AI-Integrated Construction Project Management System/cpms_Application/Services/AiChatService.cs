@@ -2,6 +2,7 @@ using cpms_Application.Interfaces;
 using cpms_Application.Request.AiChat;
 using cpms_Application.Response;
 using cpms_Application.Response.AiChat;
+using cpms_Domain;
 using cpms_Domain.Models;
 using Microsoft.EntityFrameworkCore;
 using System.Text;
@@ -19,12 +20,21 @@ namespace cpms_Application.Services
         private readonly IUnitOfWork _uow;
         private readonly IClaimService _claimService;
         private readonly IGoogleAIClient _googleAIClient;
+        private readonly ITavilySearchClient _tavilySearchClient;
+        private readonly AppSetting _appSetting;
 
-        public AiChatService(IUnitOfWork uow, IClaimService claimService, IGoogleAIClient googleAIClient)
+        public AiChatService(
+            IUnitOfWork uow,
+            IClaimService claimService,
+            IGoogleAIClient googleAIClient,
+            ITavilySearchClient tavilySearchClient,
+            AppSetting appSetting)
         {
             _uow = uow;
             _claimService = claimService;
             _googleAIClient = googleAIClient;
+            _tavilySearchClient = tavilySearchClient;
+            _appSetting = appSetting;
         }
 
         public async Task<ApiResponse> CreateSessionAsync(CreateAiChatSessionRequest request)
@@ -118,14 +128,43 @@ namespace cpms_Application.Services
             history.Add(userMessage);
 
             var systemInstruction = await BuildSystemInstructionAsync(session);
-            var prompt = BuildConversationPrompt(history);
+            TavilySearchResult? webSearchResult = null;
+            if (request.UseWebSearch)
+            {
+                webSearchResult = await _tavilySearchClient.SearchAsync(new TavilySearchOptions
+                {
+                    Query = userContent,
+                    MaxResults = _appSetting.Tavily.DefaultMaxResults,
+                    SearchDepth = _appSetting.Tavily.SearchDepth
+                });
 
-            var aiResult = request.UseWebSearch
-                ? await _googleAIClient.GenerateGroundedTextAsync(systemInstruction, prompt)
-                : await _googleAIClient.GenerateTextAsync(systemInstruction, prompt);
+                if (!webSearchResult.IsSuccess)
+                    return response.SetBadRequest(webSearchResult.ErrorMessage ?? "Web search failed.");
+            }
+
+            var prompt = BuildPrompt(history, webSearchResult);
+            var aiResult = await _googleAIClient.GenerateTextAsync(systemInstruction, prompt);
 
             if (!aiResult.IsSuccess)
+            {
+                if (aiResult.IsRateLimited)
+                {
+                    return response.SetApiResponse(
+                        System.Net.HttpStatusCode.TooManyRequests,
+                        false,
+                        webSearchResult == null
+                            ? "Gemini rate limit exceeded. Wait a minute and try again."
+                            : "Tavily web search succeeded, but Gemini rate limit was exceeded while reasoning. Wait a minute and try again.",
+                        new
+                        {
+                            errorCode = "GEMINI_RATE_LIMITED",
+                            usedWebSearch = webSearchResult != null,
+                            webSearchSources = MapSources(webSearchResult)
+                        });
+                }
+
                 return response.SetBadRequest(aiResult.ErrorMessage ?? "AI request failed.");
+            }
 
             var assistantMessage = new AiChatMessage
             {
@@ -149,7 +188,9 @@ namespace cpms_Application.Services
             return response.SetOk(new AiChatReplyResponse
             {
                 UserMessage = MapMessage(userMessage),
-                AssistantMessage = MapMessage(assistantMessage)
+                AssistantMessage = MapMessage(assistantMessage),
+                UsedWebSearch = webSearchResult != null,
+                WebSearchSources = MapSources(webSearchResult)
             });
         }
 
@@ -193,6 +234,23 @@ namespace cpms_Application.Services
                    "Use this project context when answering, but do not invent data that was not provided.";
         }
 
+        private static string BuildPrompt(IEnumerable<AiChatMessage> messages, TavilySearchResult? webSearchResult)
+        {
+            var builder = new StringBuilder();
+            builder.AppendLine(BuildConversationPrompt(messages));
+
+            if (webSearchResult != null)
+            {
+                builder.AppendLine();
+                builder.AppendLine(webSearchResult.ToContextBlock());
+                builder.AppendLine();
+                builder.AppendLine("Use the web search results above when they are relevant. Cite source URLs when you rely on them.");
+            }
+
+            builder.AppendLine("Reply to the latest user message as the Assistant.");
+            return builder.ToString();
+        }
+
         private static string BuildConversationPrompt(IEnumerable<AiChatMessage> messages)
         {
             var builder = new StringBuilder();
@@ -203,8 +261,6 @@ namespace cpms_Application.Services
                 builder.AppendLine($"{speaker}: {message.Content}");
             }
 
-            builder.AppendLine();
-            builder.AppendLine("Reply to the latest user message as the Assistant.");
             return builder.ToString();
         }
 
@@ -220,6 +276,21 @@ namespace cpms_Application.Services
                 LastMessageAt = messageCount > 0 ? session.LastMessageAt : null,
                 MessageCount = messageCount
             };
+        }
+
+        private static List<AiChatWebSearchSource> MapSources(TavilySearchResult? webSearchResult)
+        {
+            if (webSearchResult == null)
+                return new List<AiChatWebSearchSource>();
+
+            return webSearchResult.Results
+                .Where(r => !string.IsNullOrWhiteSpace(r.Url) || !string.IsNullOrWhiteSpace(r.Title))
+                .Select(r => new AiChatWebSearchSource
+                {
+                    Title = r.Title,
+                    Url = r.Url
+                })
+                .ToList();
         }
 
         private static AiChatMessageResponse MapMessage(AiChatMessage message)

@@ -173,6 +173,11 @@ builder.Services.AddSwaggerGen(options =>
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddHttpClient<ITeamsMeetingClient, TeamsMeetingClient>();
 builder.Services.AddHttpClient<IGoogleAIClient, GoogleAIClient>();
+builder.Services.AddHttpClient<ITavilySearchClient, TavilySearchClient>(client =>
+{
+    client.BaseAddress = new Uri("https://api.tavily.com/");
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
 builder.Services.AddAutoMapper(_ => { }, typeof(MapperConfigurationsProfile).Assembly);
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
@@ -195,6 +200,7 @@ builder.Services.AddScoped<ICatalogService, CatalogService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<IMaterialService, MaterialService>();
 builder.Services.AddScoped<IWarehouseService, WarehouseService>();
+builder.Services.AddScoped<IWarehouseTransferService, WarehouseTransferService>();
 builder.Services.AddScoped<ITaskService, TaskService>();
 builder.Services.AddScoped<IProgressReportService, ProgressReportService>();
 builder.Services.AddScoped<IMaterialRequestService, MaterialRequestService>();

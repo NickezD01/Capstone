@@ -20,6 +20,7 @@ namespace cpms_Domain
         }
         public TeamsGraph TeamsGraph { get; set; } = new TeamsGraph();
         public GoogleAI GoogleAI { get; set; } = new GoogleAI();
+        public Tavily Tavily { get; set; } = new Tavily();
     }
     public class ConnectionStrings
     {
@@ -75,5 +76,12 @@ namespace cpms_Domain
     {
         public string? ApiKey { get; set; }
         public string Model { get; set; } = "gemini-3.5-flash";
+    }
+
+    public class Tavily
+    {
+        public string? ApiKey { get; set; }
+        public int DefaultMaxResults { get; set; } = 5;
+        public string SearchDepth { get; set; } = "basic";
     }
 }

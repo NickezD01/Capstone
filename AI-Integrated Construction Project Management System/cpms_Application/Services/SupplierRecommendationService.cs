@@ -2,6 +2,7 @@ using cpms_Application.Interfaces;
 using cpms_Application.Request.SupplierRecommendation;
 using cpms_Application.Response;
 using cpms_Application.Response.SupplierRecommendation;
+using cpms_Domain;
 using cpms_Domain.Models;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
@@ -12,11 +13,19 @@ namespace cpms_Application.Services
     {
         private readonly IUnitOfWork _uow;
         private readonly IGoogleAIClient _googleAIClient;
+        private readonly ITavilySearchClient _tavilySearchClient;
+        private readonly AppSetting _appSetting;
 
-        public SupplierRecommendationService(IUnitOfWork uow, IGoogleAIClient googleAIClient)
+        public SupplierRecommendationService(
+            IUnitOfWork uow,
+            IGoogleAIClient googleAIClient,
+            ITavilySearchClient tavilySearchClient,
+            AppSetting appSetting)
         {
             _uow = uow;
             _googleAIClient = googleAIClient;
+            _tavilySearchClient = tavilySearchClient;
+            _appSetting = appSetting;
         }
 
         public async Task<ApiResponse> RecommendBalancedSuppliersAsync(BalancedSupplierRecommendationRequest request)
@@ -105,15 +114,33 @@ namespace cpms_Application.Services
                 })
                 .ToList();
 
-            var systemInstruction = "You search the web for construction material suppliers near a warehouse location. Return only valid JSON, no markdown. Prefer suppliers with evidence of material fit, reliability, reviews, and contact details.";
+            var systemInstruction = "You analyze web search results for construction material suppliers near a warehouse location. Return only valid JSON, no markdown. Prefer suppliers with evidence of material fit, reliability, reviews, and contact details.";
+            var searchQuery = BuildSupplierSearchQuery(request, materialNames.Select(m => m.MaterialName).ToList());
+            var searchResult = await _tavilySearchClient.SearchAsync(new TavilySearchOptions
+            {
+                Query = searchQuery,
+                MaxResults = Math.Clamp(_appSetting.Tavily.DefaultMaxResults + 3, 5, 20),
+                SearchDepth = _appSetting.Tavily.SearchDepth
+            });
+
+            if (!searchResult.IsSuccess)
+                return null;
+
             var input = JsonSerializer.Serialize(new
             {
-                task = "Find nearby external suppliers that can provide the requested construction materials. Score each supplier for balanced cost and reliable material supply. Use recent web results and include source URLs.",
+                task = "Find nearby external suppliers that can provide the requested construction materials. Score each supplier for balanced cost and reliable material supply. Use only the provided web search results and include source URLs from those results.",
                 warehouseLocation = request.WarehouseLocation,
                 radiusKm = request.SearchRadiusKm <= 0 ? 30 : request.SearchRadiusKm,
                 regionCode = request.RegionCode,
                 requestedMaterials = materialNames,
                 existingInternalSupplierNames = internalRecommendations.Select(r => r.CompanyName).ToList(),
+                webSearchResults = searchResult.Results.Select(r => new
+                {
+                    r.Title,
+                    r.Url,
+                    r.Content,
+                    r.Score
+                }),
                 requiredJsonShape = new
                 {
                     summary = "short summary of web search results",
@@ -141,7 +168,7 @@ namespace cpms_Application.Services
                 }
             });
 
-            var aiResponse = await _googleAIClient.GenerateGroundedTextAsync(systemInstruction, input);
+            var aiResponse = await _googleAIClient.GenerateTextAsync(systemInstruction, input);
             if (!aiResponse.IsSuccess || string.IsNullOrWhiteSpace(aiResponse.Text))
                 return null;
 
@@ -179,7 +206,7 @@ namespace cpms_Application.Services
                         ReliabilityScore = EstimateReliabilityScore(s),
                         MatchedMaterialCount = s.MatchedMaterials?.Count ?? 0,
                         RequestedMaterialCount = requestedCount,
-                        Reason = string.IsNullOrWhiteSpace(s.Reason) ? "External supplier found through grounded Google Search." : s.Reason!,
+                        Reason = string.IsNullOrWhiteSpace(s.Reason) ? "External supplier found through Tavily web search." : s.Reason!,
                         SourceUrls = s.SourceUrls ?? new List<string>()
                     })
                     .ToList();
@@ -194,6 +221,23 @@ namespace cpms_Application.Services
             {
                 return null;
             }
+        }
+
+        private static string BuildSupplierSearchQuery(
+            BalancedSupplierRecommendationRequest request,
+            IReadOnlyList<string> materialNames)
+        {
+            var materials = materialNames
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Take(5)
+                .ToList();
+
+            var materialText = materials.Count == 0 ? "construction materials" : string.Join(", ", materials);
+            var radiusKm = request.SearchRadiusKm <= 0 ? 30 : request.SearchRadiusKm;
+            var location = request.WarehouseLocation!.Trim();
+            var region = string.IsNullOrWhiteSpace(request.RegionCode) ? string.Empty : $" {request.RegionCode.Trim()}";
+
+            return $"construction material suppliers near {location}{region} within {radiusKm} km supplying {materialText}";
         }
 
         private static List<SupplierCandidate> BuildCandidates(

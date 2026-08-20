@@ -18,16 +18,6 @@ namespace cpms_Application.Services
 
         public async Task<GoogleAITextResult> GenerateTextAsync(string systemInstruction, string input)
         {
-            return await GenerateTextInternalAsync(systemInstruction, input, useGoogleSearch: false);
-        }
-
-        public async Task<GoogleAITextResult> GenerateGroundedTextAsync(string systemInstruction, string input)
-        {
-            return await GenerateTextInternalAsync(systemInstruction, input, useGoogleSearch: true);
-        }
-
-        private async Task<GoogleAITextResult> GenerateTextInternalAsync(string systemInstruction, string input, bool useGoogleSearch)
-        {
             var googleAI = _appSetting.GoogleAI;
             if (string.IsNullOrWhiteSpace(googleAI.ApiKey))
             {
@@ -38,30 +28,17 @@ namespace cpms_Application.Services
             using var request = new HttpRequestMessage(HttpMethod.Post, "https://generativelanguage.googleapis.com/v1beta/interactions");
             request.Headers.Add("x-goog-api-key", googleAI.ApiKey);
 
-            object payload = useGoogleSearch
-                ? new
+            var payload = new
+            {
+                model,
+                system_instruction = systemInstruction,
+                input,
+                generation_config = new
                 {
-                    model,
-                    system_instruction = systemInstruction,
-                    input,
-                    tools = new object[] { new { type = "google_search" } },
-                    generation_config = new
-                    {
-                        temperature = 0.2,
-                        thinking_level = "low"
-                    }
+                    temperature = 0.2,
+                    thinking_level = "low"
                 }
-                : new
-                {
-                    model,
-                    system_instruction = systemInstruction,
-                    input,
-                    generation_config = new
-                    {
-                        temperature = 0.2,
-                        thinking_level = "low"
-                    }
-                };
+            };
 
             request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
@@ -69,9 +46,16 @@ namespace cpms_Application.Services
             {
                 using var response = await _httpClient.SendAsync(request);
                 var responseText = await response.Content.ReadAsStringAsync();
+                if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                {
+                    return GoogleAITextResult.Failed(
+                        "Gemini rate limit exceeded. Wait a minute and try again.",
+                        System.Net.HttpStatusCode.TooManyRequests);
+                }
+
                 if (!response.IsSuccessStatusCode)
                 {
-                    return GoogleAITextResult.Failed($"Google AI returned {(int)response.StatusCode}: {responseText}");
+                    return GoogleAITextResult.Failed($"Google AI returned {(int)response.StatusCode}: {responseText}", response.StatusCode);
                 }
 
                 var outputText = ExtractOutputText(responseText);

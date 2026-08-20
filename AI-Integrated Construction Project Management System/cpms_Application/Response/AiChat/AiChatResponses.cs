@@ -27,5 +27,13 @@ namespace cpms_Application.Response.AiChat
     {
         public AiChatMessageResponse UserMessage { get; set; } = null!;
         public AiChatMessageResponse AssistantMessage { get; set; } = null!;
+        public bool UsedWebSearch { get; set; }
+        public List<AiChatWebSearchSource> WebSearchSources { get; set; } = new();
+    }
+
+    public class AiChatWebSearchSource
+    {
+        public string Title { get; set; } = string.Empty;
+        public string Url { get; set; } = string.Empty;
     }
 }

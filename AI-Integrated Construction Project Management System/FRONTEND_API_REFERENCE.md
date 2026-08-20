@@ -249,6 +249,73 @@ Base path: `/api/Suppliers`
 | DELETE | `/{supplierId}` | `ADMIN` | none | Message |
 | POST | `/recommendations/balanced` | Public by controller attribute | `BalancedSupplierRecommendationRequest` | `BalancedSupplierRecommendationResponse` |
 
+Supplier recommendation notes:
+
+- Internal catalog candidates are scored first using weighted cost, reliability, lead time, and material coverage.
+- When `searchWebForNearbySuppliers` is `true` and `warehouseLocation` is provided, the backend uses **Tavily** to search the web, then **Gemini** to extract and score external suppliers from those search results.
+- After web results are merged, **Gemini** may rerank the combined internal + external list and populate `aiSummary`.
+- Response flags:
+  - `usedWebSearch`: Tavily web search ran successfully and contributed external suppliers.
+  - `usedGoogleAI`: Gemini reranking/summary ran successfully.
+  - `webSearchSummary`: short summary of external supplier search.
+  - `aiSummary`: short summary from Gemini reranking.
+- External suppliers use `source: "WebSearch"` and `supplierId: 0`.
+- External suppliers may include `sourceUrls[]`, `websiteUrl`, `googleMapsUrl`, `rating`, `reviewCount`, and `distanceEstimate`.
+
+Example: balanced recommendation with web search
+
+Request:
+
+```json
+POST /api/Suppliers/recommendations/balanced
+{
+  "projectId": 1,
+  "items": [
+    { "materialId": 10, "quantity": 50 },
+    { "materialId": 12, "quantity": 20 }
+  ],
+  "costWeight": 40,
+  "reliabilityWeight": 40,
+  "leadTimeWeight": 20,
+  "maxRecommendations": 5,
+  "searchWebForNearbySuppliers": true,
+  "warehouseLocation": "District 7, Ho Chi Minh City",
+  "searchRadiusKm": 30,
+  "regionCode": "VN"
+}
+```
+
+Success `result` (trimmed):
+
+```json
+{
+  "usedGoogleAI": true,
+  "usedWebSearch": true,
+  "strategy": "Balance cost, reliability, and lead time.",
+  "aiSummary": "Supplier A offers the best balance...",
+  "webSearchSummary": "Found 3 nearby external suppliers for cement and steel.",
+  "recommendations": [
+    {
+      "supplierId": 4,
+      "source": "InternalCatalog",
+      "companyName": "BuildMart Supply",
+      "balancedScore": 86.5,
+      "reason": "Covers all requested materials...",
+      "lines": []
+    },
+    {
+      "supplierId": 0,
+      "source": "WebSearch",
+      "companyName": "Saigon Materials Co.",
+      "websiteUrl": "https://example.com",
+      "sourceUrls": ["https://example.com"],
+      "balancedScore": 78.2,
+      "reason": "External supplier found through Tavily web search."
+    }
+  ]
+}
+```
+
 Note: the recommendation endpoint has no `[Authorize]` attribute on the controller or method in source.
 
 ### Supplier Catalogs
@@ -348,11 +415,74 @@ All AI chat endpoints require any authenticated user.
 
 AI Chat rules:
 
-- Each session is scoped to a user.
-- Sessions can optionally be linked to a project.
-- User sends a message and receives an AI assistant reply.
-- Messages can optionally use web search when enabled by the request.
-- Sessions can be deleted by the owner.
+- Each session is scoped to the authenticated user.
+- Sessions can optionally be linked to a project; when `projectId` is set, Gemini receives project context in the system prompt.
+- `POST /sessions/{sessionId}/messages` persists the user message, generates one assistant reply, and returns both in `AiChatReplyResponse`.
+- Web search is optional via `useWebSearch`. When `true`, the backend runs **Tavily** for search, then **Gemini** for reasoning over the returned snippets. Gemini does not search the web directly.
+- Sessions are soft-deleted by the owner via `DELETE /sessions/{sessionId}`.
+
+AI integration architecture (backend):
+
+| Step | Provider | Responsibility |
+| --- | --- | --- |
+| 1 | **Tavily** | Web search only. Returns titles, URLs, and content snippets. |
+| 2 | **Gemini** | Reasoning only. Reads conversation history plus Tavily snippets and generates the answer. |
+
+Frontend implications:
+
+- Set `useWebSearch: true` when the user asks for current/external information (market prices, nearby suppliers, regulations, news).
+- Expect slightly higher latency when web search is enabled.
+- If Tavily is not configured on the backend, web-search requests return HTTP 400 with an error like `Tavily:ApiKey is not configured.`
+- If Gemini is not configured, any AI chat message returns HTTP 400 with an error like `GoogleAI:ApiKey is not configured.`
+- The reply includes `usedWebSearch` and `webSearchSources[]` (`title`, `url`) from Tavily. Gemini never searches the web.
+- If Tavily succeeds but Gemini is rate-limited, the API returns HTTP 429 with `errorCode: "GEMINI_RATE_LIMITED"` and the Tavily sources. That is a Gemini quota issue, not a web-search failure.
+
+Example: send AI message with web search
+
+Request:
+
+```json
+POST /api/AiChat/sessions/50/messages
+{
+  "message": "What are current cement price trends in Vietnam?",
+  "useWebSearch": true
+}
+```
+
+Success `result`:
+
+```json
+{
+  "userMessage": {
+    "messageId": 201,
+    "sessionId": 50,
+    "role": 0,
+    "content": "What are current cement price trends in Vietnam?",
+    "createdAt": "2026-08-20T03:21:00Z",
+    "sentAt": "2026-08-20T03:21:00Z"
+  },
+  "assistantMessage": {
+    "messageId": 202,
+    "sessionId": 50,
+    "role": 1,
+    "content": "Based on recent web results...",
+    "createdAt": "2026-08-20T03:21:03Z",
+    "sentAt": "2026-08-20T03:21:03Z"
+  },
+  "usedWebSearch": true,
+  "webSearchSources": [
+    {
+      "title": "Cement market update",
+      "url": "https://example.com/cement"
+    }
+  ]
+}
+```
+
+Notes:
+
+- `role` is enum `AiChatRole`: `0 = User`, `1 = Assistant`. If your client sends JSON enums as strings, confirm Swagger; otherwise send numeric values.
+- Both `createdAt` and `sentAt` are returned for compatibility.
 
 ### Meetings
 
@@ -423,6 +553,10 @@ Procurement:
 - `CreateCatalogRequest`: `supplierId`, `variantId`, `materialId`, `supplierSku?`, `unitPrice`, `minimumOrderQuantity`, `leadTimeDays`, `isAvailable`
 - `UpdateCatalogRequest`: `supplierSku?`, `unitPrice`, `minimumOrderQuantity`, `leadTimeDays`, `isAvailable`
 - `BalancedSupplierRecommendationRequest`: `projectId?`, `items[]`, `costWeight`, `reliabilityWeight`, `leadTimeWeight`, `maxRecommendations`, `searchWebForNearbySuppliers`, `warehouseLocation?`, `searchRadiusKm`, `regionCode?`
+  - `searchWebForNearbySuppliers`: when `true`, backend uses Tavily search + Gemini extraction. Requires non-empty `warehouseLocation`.
+  - `warehouseLocation`: free-text location used to build the Tavily query, for example `"District 7, Ho Chi Minh City"`.
+  - `searchRadiusKm`: search radius hint included in the Tavily query. Defaults to `30` when omitted or `<= 0`.
+  - `regionCode?`: optional region hint appended to the Tavily query, for example `"VN"`.
 - `RequestedMaterialItem`: `materialId`, `quantity`
 - `CreatePurchaseOrderRequest`: `projectId`, `supplierId`, `warehouseId`, `expectedDeliveryDate?`, `note?`, `items[]`
 - `OrderLineItemDto`: `variantId`, `materialId`, `requestItemId?`, `quantity`, `unitPrice`
@@ -453,6 +587,8 @@ Chat and meetings:
 - `UpdateMessageRequest`: `body`
 - `CreateAiChatSessionRequest`: `title?`, `projectId?`
 - `SendAiChatMessageRequest`: `message`, `useWebSearch`
+  - `message`: required user text.
+  - `useWebSearch`: when `true`, backend calls Tavily first, then Gemini. When `false`, Gemini answers from conversation/project context only.
 - `CreateMeetingRequest`: `projectId`, `taskId?`, `subject`, `agenda?`, `startDateTime`, `endDateTime`, `timeZone`, `scheduleWithTeams`, `participants[]`
 - `MeetingParticipantRequest`: `userId?`, `email`, `displayName?`, `role`
 - `CancelMeetingRequest`: `reason?`
@@ -478,6 +614,9 @@ Use these as the shape inside `result`.
 - `SupplierResponse`: `supplierId`, `companyName`, `contactEmail?`, `contactPhone?`
 - `CatalogOfferResponse`: `catalogId`, `supplierId`, `supplierName`, `variantId`, `materialId`, `materialName`, `variantName`, `sku?`, `supplierSku?`, `unit`, `unitPrice`, `minimumOrderQuantity`, `leadTimeDays`, `isAvailable`
 - `BalancedSupplierRecommendationResponse`: `usedGoogleAI`, `usedWebSearch`, `strategy`, `aiSummary?`, `webSearchSummary?`, `recommendations[]`
+  - `usedGoogleAI`: Gemini was used for reranking/summary.
+  - `usedWebSearch`: Tavily web search contributed external suppliers.
+  - `recommendations[].source`: `InternalCatalog` or `WebSearch`.
 - `PurchaseOrderResponse`: `poId`, `project`, `supplier`, `status`, `currency`, `totalAmount`, `warehouseId`, `warehouseName`, `orderDate`, `expectedDeliveryDate?`, `approvedByUserId?`, `approvedAt?`, `note?`, `rowVersion`, `items[]`
 - `OrderLineItemResponse`: `orderLineItemId`, `variantId`, `materialId`, `requestItemId?`, `materialName`, `variantName`, `sku?`, `brand?`, `grade?`, `size?`, `specification?`, `packaging?`, `unit`, `quantity`, `receivedQuantity`, `damagedQuantity`, `missingQuantity`, `accountedQuantity`, `remainingQuantity`, `unitPrice`, `subTotal`
 - `ProcurementShortageResponse`: `projectId`, `projectName`, `taskId?`, `warehouseId`, `warehouseName`, `requestItemId`, `requestIds[]`, `variantId`, `materialId`, `materialName`, `variantName`, `sku?`, `unit`, `neededByDate`, `grossShortageQuantity`, `procurementCoverageQuantity`, `remainingShortageQuantity`, `supplierOffers[]`
@@ -487,9 +626,9 @@ Use these as the shape inside `result`.
 - `WarehouseTransferResponse`: `transferId`, `sourceWarehouseId`, `sourceWarehouseName`, `destinationWarehouseId`, `destinationWarehouseName`, `status`, `requestedByUserId`, `approvedByUserId?`, `shippedByUserId?`, `receivedByUserId?`, `requestedAt`, `approvedAt?`, `shippedAt?`, `receivedAt?`, `note?`, `rowVersion`, `items[]`
 - `ConversationResponse`: `conversationId`, `projectId`, `taskId?`, `title`, `type`, `lastMessageAt`, `participants[]`
 - `MessageResponse`: `messageId`, `conversationId`, `senderId`, `senderName?`, `body`, `attachmentUrl?`, `sentAt`, `editedAt?`, `deletedAt?`
-- `AiChatSessionResponse`: `sessionId`, `userId`, `projectId?`, `title`, `lastMessageAt`, `messageCount`
-- `AiChatMessageResponse`: `messageId`, `sessionId`, `role`, `content`, `sentAt`
-- `AiChatReplyResponse`: `userMessage` (AiChatMessageResponse), `assistantMessage` (AiChatMessageResponse)
+- `AiChatSessionResponse`: `sessionId`, `userId`, `projectId?`, `title`, `createdAt?`, `lastMessageAt?`, `messageCount`
+- `AiChatMessageResponse`: `messageId`, `sessionId`, `role`, `content`, `createdAt`, `sentAt`
+- `AiChatReplyResponse`: `userMessage` (`AiChatMessageResponse`), `assistantMessage` (`AiChatMessageResponse`), `usedWebSearch`, `webSearchSources[]` (`title`, `url`)
 - `MeetingResponse`: `meetingId`, `projectId`, `taskId?`, `organizerId`, `organizerName?`, `subject`, `agenda?`, `startDateTime`, `endDateTime`, `timeZone`, `status`, `joinUrl?`, `externalEventId?`, `externalOnlineMeetingId?`, `failureReason?`, `participants[]`
 
 ## Status and Code Values
@@ -567,9 +706,43 @@ Inventory/warehouse constants:
 Chat/meeting enum meanings:
 
 - Chat conversation type: `PROJECT`, `TASK`, `MATERIAL_REQUEST`, `PURCHASE_ORDER`
+- AI chat role: `User` / `Assistant` (enum values `0` / `1` if sent as numbers)
 - Meeting provider: `MICROSOFT_TEAMS`
 - Meeting status: `DRAFT`, `SCHEDULED`, `FAILED`, `CANCELLED`
 - Meeting participant role: `REQUIRED`, `OPTIONAL`
+
+## AI Provider Split (Frontend Notes)
+
+The backend uses two providers with separate responsibilities:
+
+| Provider | Used for | Frontend trigger |
+| --- | --- | --- |
+| **Tavily** | Web search only | AI chat `useWebSearch: true`; supplier recommendation `searchWebForNearbySuppliers: true` + `warehouseLocation` |
+| **Gemini** | Reasoning, summarization, ranking, chat replies | Always used for AI chat replies; also used after Tavily search and for supplier reranking |
+
+Frontend UX suggestions:
+
+- Show a "Search the web" toggle on AI chat compose UI mapped to `useWebSearch`.
+- Show a loading state with two phases when web search is enabled: "Searching the web..." then "Generating answer...".
+- For supplier recommendation screens, expose `searchWebForNearbySuppliers`, `warehouseLocation`, and optional `searchRadiusKm` / `regionCode`.
+- Display `usedWebSearch` / `usedGoogleAI` badges on recommendation results so users know which capabilities contributed.
+- Surface backend `errorMessage` directly for missing-provider configuration (`Tavily:ApiKey...`, `GoogleAI:ApiKey...`).
+
+Backend configuration keys (for DevOps, not sent by frontend):
+
+```json
+{
+  "GoogleAI": {
+    "ApiKey": "<gemini-key>",
+    "Model": "gemini-3.5-flash"
+  },
+  "Tavily": {
+    "ApiKey": "<tavily-key>",
+    "DefaultMaxResults": 5,
+    "SearchDepth": "basic"
+  }
+}
+```
 
 ## Validation Highlights
 
@@ -598,4 +771,6 @@ Chat/meeting enum meanings:
 8. For procurement: warehouse manager checks shortages, creates PO, PM/ADMIN approves, warehouse manager marks processing/shipped/receives.
 9. For inventory corrections: warehouse manager submits adjustment/count, ADMIN reviews.
 10. For chat: create conversations per project/task and send messages as participants.
+11. For AI chat: create a session, send messages with optional `useWebSearch`, render both `userMessage` and `assistantMessage` from the reply payload.
+12. For AI supplier recommendations: call `/api/Suppliers/recommendations/balanced`; enable web search only when the UI collects a warehouse location.
 
