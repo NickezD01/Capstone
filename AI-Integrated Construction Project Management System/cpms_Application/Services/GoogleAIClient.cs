@@ -44,7 +44,7 @@ namespace cpms_Application.Services
                     model,
                     system_instruction = systemInstruction,
                     input,
-                    tools = new object[] { new { google_search = new { } } },
+                    tools = new object[] { new { type = "google_search" } },
                     generation_config = new
                     {
                         temperature = 0.2,
