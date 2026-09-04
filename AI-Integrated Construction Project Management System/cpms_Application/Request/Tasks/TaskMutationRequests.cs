@@ -2,7 +2,7 @@ namespace cpms_Application.Request.Tasks;
 
 public sealed class UpdateTaskRequest
 {
-    public string PhaseName { get; set; } = string.Empty;
+    public int ProjectPhaseId { get; set; }
     public string TaskName { get; set; } = string.Empty;
     public int AssignedToUserID { get; set; }
     public decimal PlannedBudget { get; set; }

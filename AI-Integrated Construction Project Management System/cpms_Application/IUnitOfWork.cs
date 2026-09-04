@@ -22,6 +22,7 @@ namespace cpms_Application
         // PROJECT & TASKS
         // ========================================================
         IProjectRepository Projects { get; }
+        IGenericRepository<ProjectPhase> ProjectPhases { get; }
         ITaskItemRepository TaskItems { get; }
         IProgressReportRepository ProgressReports { get; }
 

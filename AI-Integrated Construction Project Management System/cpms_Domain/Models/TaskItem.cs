@@ -7,12 +7,13 @@ namespace cpms_Domain.Models
     {
         public int TaskId { get; set; } // TaskID (PK)
         public int ProjectId { get; set; } // ProjectID (FK)
-        public string PhaseName { get; set; } = null!;
+        public int ProjectPhaseId { get; set; } // FK to ProjectPhase
         public string TaskName { get; set; } = null!;
 
         // Người chịu trách nhiệm thực hiện
         public int AssignedToUserID { get; set; }
         public virtual UserAccount AssignedToUser { get; set; } = null!;
+        public virtual ProjectPhase ProjectPhase { get; set; } = null!;
 
         // 🚀 TÍNH TOÁN QUẢN TRỊ DỰ ÁN (EVM - Earned Value Management)
         public decimal PlannedBudget { get; set; } // PV - Planned Value (Ngân sách kế hoạch)
@@ -29,13 +30,13 @@ namespace cpms_Domain.Models
         public virtual ICollection<ProgressReport> ProgressReports { get; set; } = new List<ProgressReport>();
         public virtual ICollection<TaskMaterialRequirement> MaterialRequirements { get; set; } = new List<TaskMaterialRequirement>();
 
-        public void UpdatePlan(string phaseName, string taskName, int assigneeId, decimal plannedBudget,
+        public void UpdatePlan(int projectPhaseId, string taskName, int assigneeId, decimal plannedBudget,
             DateTime baselineStart, DateTime baselineEnd)
         {
             if (Status is TaskStatus.COMPLETED or TaskStatus.CANCELLED)
                 throw new InvalidOperationException("A closed task cannot be edited.");
             if (plannedBudget < 0 || baselineEnd < baselineStart) throw new ArgumentException("Task plan is invalid.");
-            PhaseName = phaseName.Trim();
+            ProjectPhaseId = projectPhaseId;
             TaskName = taskName.Trim();
             AssignedToUserID = assigneeId;
             PlannedBudget = plannedBudget;

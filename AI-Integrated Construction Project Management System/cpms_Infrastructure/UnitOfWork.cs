@@ -20,6 +20,7 @@ namespace cpms_Infrastructure
         // =========================================
         public IUserAccountRepository UserAccounts { get; }
         public IProjectRepository Projects { get; }
+        public IGenericRepository<cpms_Domain.Models.ProjectPhase> ProjectPhases { get; }
         public ITaskItemRepository TaskItems { get; }
         public IProgressReportRepository ProgressReports { get; }
         public IMaterialRepository Materials { get; }
@@ -69,6 +70,7 @@ namespace cpms_Infrastructure
 
             UserAccounts = new UserAccountRepository(context);
             Projects = new ProjectRepository(context);
+            ProjectPhases = new GenericRepository<cpms_Domain.Models.ProjectPhase>(context);
             TaskItems = new TaskItemRepository(context);
             ProgressReports = new ProgressReportRepository(context);
             Materials = new MaterialRepository(context);

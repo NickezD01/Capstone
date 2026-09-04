@@ -43,6 +43,7 @@ namespace cpms_Infrastructure
         // CORE PROJECT MANAGEMENT & PROGRESS
         // ========================================================
         public DbSet<Project> Projects { get; set; }
+        public DbSet<ProjectPhase> ProjectPhases { get; set; }
         public DbSet<TaskItem> TaskItems { get; set; }
         public DbSet<ProgressReport> ProgressReports { get; set; }
         public DbSet<ProjectBudgetHistory> ProjectBudgetHistories { get; set; }

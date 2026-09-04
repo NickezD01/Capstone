@@ -78,6 +78,15 @@ namespace cpms_Application.Services
                 taskItem.ActualProgressPct = 0;
                 taskItem.Status = DomainTaskStatus.PENDING;
 
+                // Validate if the phase exists in the project
+                var phase = await _uow.ProjectPhases.GetByIdAsync(request.ProjectPhaseId);
+                if (phase == null || phase.ProjectId != project.ProjectId)
+                {
+                    await _uow.RollbackTransactionAsync();
+                    return response.SetBadRequest("Invalid phase for this project.");
+                }
+                taskItem.ProjectPhase = phase;
+
                 await _uow.TaskItems.AddAsync(taskItem);
 
                 // 🚀 LƯU LẦN 1: Tạo bản ghi TaskItem để DB sinh mã `taskItem.TaskId` (Tự tăng)
@@ -266,7 +275,13 @@ namespace cpms_Application.Services
 
             try
             {
-                task.UpdatePlan(request.PhaseName, request.TaskName, user.Id,
+                var phase = await _uow.ProjectPhases.GetByIdAsync(request.ProjectPhaseId);
+                if (phase == null || phase.ProjectId != project.ProjectId)
+                {
+                    return new ApiResponse().SetBadRequest("Invalid phase for this project.");
+                }
+                
+                task.UpdatePlan(request.ProjectPhaseId, request.TaskName, user.Id,
                     request.PlannedBudget, request.BaselineStart, request.BaselineEnd);
                 await _uow.SaveChangeAsync();
                 return new ApiResponse().SetOk("Task updated.");

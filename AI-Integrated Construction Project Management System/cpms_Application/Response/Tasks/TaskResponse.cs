@@ -10,6 +10,7 @@ namespace cpms_Application.Response.Tasks
     {
         public int TaskId { get; set; }
         public int ProjectId { get; set; }
+        public int ProjectPhaseId { get; set; }
         public string PhaseName { get; set; } = null!;
         public string TaskName { get; set; } = null!;
         public int AssignedToUserID { get; set; }

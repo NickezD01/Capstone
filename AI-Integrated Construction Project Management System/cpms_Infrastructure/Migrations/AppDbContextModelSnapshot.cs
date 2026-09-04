@@ -1274,8 +1274,6 @@ namespace cpms_Infrastructure.Migrations
 
                     b.HasIndex("WarehouseId");
 
-                    b.HasIndex("MaterialRequestId", "VariantId", "ReturnedAt");
-
                     b.ToTable("MaterialReturns", null, t =>
                         {
                             t.HasCheckConstraint("CK_MaterialReturns_Condition", "[Condition] IN ('USABLE','QUARANTINED')");

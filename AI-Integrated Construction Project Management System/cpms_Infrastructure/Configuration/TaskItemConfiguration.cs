@@ -13,7 +13,6 @@ namespace cpms_Infrastructure.Configuration
             builder.ToTable("TaskItems");
             builder.HasKey(t => t.TaskId);
 
-            builder.Property(t => t.PhaseName).IsRequired().HasMaxLength(100);
             builder.Property(t => t.TaskName).IsRequired().HasMaxLength(200);
 
             // Cấu hình kiểu dữ liệu tài chính cho AI phân tích (EVM)
@@ -43,6 +42,11 @@ namespace cpms_Infrastructure.Configuration
                    .WithMany(p => p.Tasks)
                    .HasForeignKey(t => t.ProjectId)
                    .OnDelete(DeleteBehavior.Cascade);
+
+            builder.HasOne(t => t.ProjectPhase)
+                   .WithMany(p => p.Tasks)
+                   .HasForeignKey(t => t.ProjectPhaseId)
+                   .OnDelete(DeleteBehavior.Restrict);
 
             // 🚀 BỔ SUNG: Cấu hình khóa ngoại liên kết tới người được giao việc (AssignedToUser)
             builder.HasOne(t => t.AssignedToUser)

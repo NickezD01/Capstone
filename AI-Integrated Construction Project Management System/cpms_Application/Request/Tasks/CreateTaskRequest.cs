@@ -9,7 +9,7 @@ namespace cpms_Application.Request.Tasks
     public class CreateTaskRequest
     {
         public int ProjectId { get; set; }
-        public string PhaseName { get; set; } = null!;
+        public int ProjectPhaseId { get; set; }
         public string TaskName { get; set; } = null!;
         public int AssignedToUserID { get; set; }
         public decimal PlannedBudget { get; set; } // PV

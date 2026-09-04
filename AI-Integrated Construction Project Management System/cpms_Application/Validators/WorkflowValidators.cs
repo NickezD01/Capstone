@@ -363,8 +363,7 @@ namespace cpms_Application.Validators
         public CreateTaskRequestValidator()
         {
             RuleFor(x => x.ProjectId).GreaterThan(0);
-            RuleFor(x => x.AssignedToUserID).GreaterThan(0);
-            RuleFor(x => x.PhaseName).NotEmpty().MaximumLength(100);
+            RuleFor(x => x.ProjectPhaseId).GreaterThan(0);
             RuleFor(x => x.TaskName).NotEmpty().MaximumLength(200);
             RuleFor(x => x.PlannedBudget).GreaterThanOrEqualTo(0);
             RuleFor(x => x.BaselineEnd).GreaterThanOrEqualTo(x => x.BaselineStart);
@@ -426,8 +425,7 @@ namespace cpms_Application.Validators
     {
         public UpdateTaskRequestValidator()
         {
-            RuleFor(x => x.AssignedToUserID).GreaterThan(0);
-            RuleFor(x => x.PhaseName).NotEmpty().MaximumLength(100);
+            RuleFor(x => x.ProjectPhaseId).GreaterThan(0);
             RuleFor(x => x.TaskName).NotEmpty().MaximumLength(200);
             RuleFor(x => x.PlannedBudget).GreaterThanOrEqualTo(0);
             RuleFor(x => x.BaselineEnd).GreaterThanOrEqualTo(x => x.BaselineStart);

@@ -207,6 +207,7 @@ builder.Services.AddScoped<IMaterialRequestService, MaterialRequestService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IAiChatService, AiChatService>();
 builder.Services.AddScoped<IAiConstructionPlannerService, AiConstructionPlannerService>();
+builder.Services.AddScoped<IProjectPhaseService, ProjectPhaseService>();
 builder.Services.AddScoped<IMeetingService, MeetingService>();
 
 // ======================================================
