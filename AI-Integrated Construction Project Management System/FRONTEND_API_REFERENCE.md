@@ -1,5 +1,7 @@
 # BuildSense Backend API Reference for Frontend Chats
 
+> Restructuring update: Phase APIs are implemented. See `FRONTEND_RESTRUCTURING_PLAN.md` and `PHASE_API_IMPLEMENTATION_PLAN.md` for the migration context. Existing task endpoints remain compatible and still use `phaseName` until the task migration is completed.
+
 This document is the frontend-facing map of the backend API discovered from:
 
 - `cpms_API/Program.cs`
@@ -744,6 +746,28 @@ Backend configuration keys (for DevOps, not sent by frontend):
 }
 ```
 
+## Phase APIs (Implemented)
+
+The first restructuring slice adds phase APIs while keeping existing task endpoints compatible. `TaskItem.PhaseId` is currently nullable; do not remove or stop sending the legacy `phaseName` field until the task migration is released.
+
+| Method | Path | Auth | Body / Query | Result |
+| --- | --- | --- | --- | --- |
+| POST | `/api/Projects/{projectId}/phases` | `PM` | `CreatePhaseRequest` | `PhaseResponse` (HTTP 201) |
+| GET | `/api/Projects/{projectId}/phases` | `ADMIN,PM,WAREHOUSE_MANAGER` | none | `PhaseResponse[]` ordered by `sequenceOrder`, then `name` |
+| GET | `/api/Phases/{phaseId}` | `ADMIN,PM,WAREHOUSE_MANAGER` | none | `PhaseResponse` |
+| PUT | `/api/Phases/{phaseId}` | `PM` | `UpdatePhaseRequest` | updated `PhaseResponse` |
+| POST | `/api/Phases/{phaseId}/cancel` | `PM` | `PhaseLifecycleRequest` | `{ phaseId, status, rowVersion }` |
+
+Phase request fields:
+
+- `CreatePhaseRequest`: `name`, `description?`, `sequenceOrder`, `baselineStart`, `baselineEnd`.
+- `UpdatePhaseRequest`: the create fields plus `rowVersion`.
+- `PhaseLifecycleRequest`: `rowVersion`.
+
+Phase status values are `PLANNED`, `IN_PROGRESS`, `COMPLETED`, and `CANCELLED`. Phase names are unique within a project. Phase dates must remain inside the project baseline. Keep the latest `rowVersion` and send it on updates and cancellation; stale values return HTTP 409.
+
+Customer phase access will be enabled with the customer-assignment API and shared project-access policy. Until then, the implemented phase routes authorize `ADMIN`, `PM`, and `WAREHOUSE_MANAGER` according to their project scope.
+
 ## Validation Highlights
 
 - Passwords: 10-128 chars, at least one uppercase, lowercase, and number.
@@ -773,4 +797,3 @@ Backend configuration keys (for DevOps, not sent by frontend):
 10. For chat: create conversations per project/task and send messages as participants.
 11. For AI chat: create a session, send messages with optional `useWebSearch`, render both `userMessage` and `assistantMessage` from the reply payload.
 12. For AI supplier recommendations: call `/api/Suppliers/recommendations/balanced`; enable web search only when the UI collects a warehouse location.
-

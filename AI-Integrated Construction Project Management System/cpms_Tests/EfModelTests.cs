@@ -107,6 +107,28 @@ public class EfModelTests
     }
 
     [Fact]
+    public void Phase_HasProjectRelationshipUniquenessConcurrencyAndNullableTaskLink()
+    {
+        using var context = CreateContext();
+        var phase = context.Model.FindEntityType(typeof(Phase))!;
+        Assert.Equal("Phases", phase.GetTableName());
+        Assert.True(phase.FindProperty(nameof(Phase.RowVersion))!.IsConcurrencyToken);
+        Assert.Contains(phase.GetIndexes(), index => index.IsUnique &&
+            index.GetFilter() == "[IsDeleted] = 0" &&
+            index.Properties.Select(p => p.Name).SequenceEqual(new[] { nameof(Phase.ProjectId), nameof(Phase.Name) }));
+        Assert.Contains(phase.GetForeignKeys(), fk =>
+            fk.PrincipalEntityType.ClrType == typeof(Project) &&
+            fk.DeleteBehavior == DeleteBehavior.Cascade);
+
+        var task = context.Model.FindEntityType(typeof(TaskItem))!;
+        var phaseFk = Assert.Single(task.GetForeignKeys(), fk => fk.PrincipalEntityType.ClrType == typeof(Phase));
+        Assert.True(phaseFk.IsRequired == false);
+        Assert.Equal(DeleteBehavior.Restrict, phaseFk.DeleteBehavior);
+        Assert.NotNull(task.FindProperty(nameof(TaskItem.PhaseName)));
+        Assert.False(task.FindProperty(nameof(TaskItem.PhaseName))!.IsNullable);
+    }
+
+    [Fact]
     public void GovernanceModels_HaveRequiredConcurrencyAndUniqueness()
     {
         using var context = CreateContext();

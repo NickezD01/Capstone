@@ -7,6 +7,7 @@ namespace cpms_Domain.Models
     {
         public int TaskId { get; set; } // TaskID (PK)
         public int ProjectId { get; set; } // ProjectID (FK)
+        public int? PhaseId { get; set; }
         public string PhaseName { get; set; } = null!;
         public string TaskName { get; set; } = null!;
 
@@ -26,6 +27,7 @@ namespace cpms_Domain.Models
 
         // Navigation Properties
         public virtual Project Project { get; set; } = null!;
+        public virtual Phase? Phase { get; set; }
         public virtual ICollection<ProgressReport> ProgressReports { get; set; } = new List<ProgressReport>();
         public virtual ICollection<TaskMaterialRequirement> MaterialRequirements { get; set; } = new List<TaskMaterialRequirement>();
 

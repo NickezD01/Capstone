@@ -44,6 +44,11 @@ namespace cpms_Infrastructure.Configuration
                    .HasForeignKey(t => t.ProjectId)
                    .OnDelete(DeleteBehavior.Cascade);
 
+            builder.HasOne(t => t.Phase)
+                   .WithMany(p => p.Tasks)
+                   .HasForeignKey(t => t.PhaseId)
+                   .OnDelete(DeleteBehavior.Restrict);
+
             // 🚀 BỔ SUNG: Cấu hình khóa ngoại liên kết tới người được giao việc (AssignedToUser)
             builder.HasOne(t => t.AssignedToUser)
                    .WithMany(u => u.Tasks)

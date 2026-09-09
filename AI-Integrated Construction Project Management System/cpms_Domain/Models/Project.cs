@@ -36,6 +36,7 @@ namespace cpms_Domain.Models
 
         // 2. Dự án được chia thành nhiều Đầu việc (Tasks assigned to)
         public virtual ICollection<TaskItem> Tasks { get; set; } = new List<TaskItem>();
+        public virtual ICollection<Phase> Phases { get; set; } = new List<Phase>();
 
         // 3. Dự án tạo các yêu cầu vật tư (Bảng MaterialsRequests trong ERD)
         public virtual ICollection<MaterialRequest> MaterialRequests { get; set; } = new List<MaterialRequest>();

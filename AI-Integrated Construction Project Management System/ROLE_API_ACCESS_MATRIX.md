@@ -284,3 +284,23 @@ So for frontend:
 - Show user-count dashboards only to `ADMIN`.
 - Hide role-management actions from `PM`, `WAREHOUSE_MANAGER`, `CUSTOMER`, `SUPPLIER`, and `WORKER`.
 
+## Phase APIs (Implemented)
+
+Phase endpoints are now available as the first additive restructuring slice. Existing task APIs still use `PhaseName` for compatibility; `TaskItem.PhaseId` is nullable until the task migration is completed.
+
+| Method | API | Allowed role | Service-level rule |
+| --- | --- | --- | --- |
+| POST | `/api/Projects/{projectId}/phases` | `PM` | PM must own the project; project must not be completed or cancelled |
+| GET | `/api/Projects/{projectId}/phases` | `ADMIN,PM,WAREHOUSE_MANAGER` | Admin can read all; PM must own the project; warehouse manager must have operational project access |
+| GET | `/api/Phases/{phaseId}` | `ADMIN,PM,WAREHOUSE_MANAGER` | Access is checked through the phase's project |
+| PUT | `/api/Phases/{phaseId}` | `PM` | PM must own the phase's project; row version is required |
+| POST | `/api/Phases/{phaseId}/cancel` | `PM` | PM must own the phase's project; row version is required |
+
+Phase request/response models:
+
+- `CreatePhaseRequest`: `name`, `description?`, `sequenceOrder`, `baselineStart`, `baselineEnd`.
+- `UpdatePhaseRequest`: the create fields plus `rowVersion`.
+- `PhaseLifecycleRequest`: `rowVersion`.
+- `PhaseResponse`: `phaseId`, `projectId`, `name`, `description?`, `sequenceOrder`, `baselineStart`, `baselineEnd`, `status`, `createdDate`, `rowVersion`.
+
+Phase status values are `PLANNED`, `IN_PROGRESS`, `COMPLETED`, and `CANCELLED`. Phase names are unique within a project. Dates must remain within the project baseline, and stale updates return HTTP 409.

@@ -21,6 +21,7 @@ namespace cpms_Infrastructure
         public IUserAccountRepository UserAccounts { get; }
         public IProjectRepository Projects { get; }
         public ITaskItemRepository TaskItems { get; }
+        public IGenericRepository<cpms_Domain.Models.Phase> Phases { get; }
         public IProgressReportRepository ProgressReports { get; }
         public IMaterialRepository Materials { get; }
         public IGenericRepository<cpms_Domain.Models.MaterialVariant> MaterialVariants { get; }
@@ -70,6 +71,7 @@ namespace cpms_Infrastructure
             UserAccounts = new UserAccountRepository(context);
             Projects = new ProjectRepository(context);
             TaskItems = new TaskItemRepository(context);
+            Phases = new GenericRepository<cpms_Domain.Models.Phase>(context);
             ProgressReports = new ProgressReportRepository(context);
             Materials = new MaterialRepository(context);
             MaterialVariants = new GenericRepository<cpms_Domain.Models.MaterialVariant>(context);
