@@ -437,6 +437,8 @@ internal sealed class TestUnitOfWork : IUnitOfWork
     public List<PhysicalCountLine> PhysicalCountLineRecords { get; } = new();
     public List<AiChatSession> AiChatSessionRecords { get; } = new();
     public List<AiChatMessage> AiChatMessageRecords { get; } = new();
+    public List<ProjectBudgetLedger> ProjectBudgetLedgerRecords { get; } = new();
+    public List<ProjectBudgetHistory> ProjectBudgetHistoryRecords { get; } = new();
 
     public IWarehouseRepository Warehouses { get; }
     public IInventoryRepository Inventories { get; }
@@ -485,6 +487,8 @@ internal sealed class TestUnitOfWork : IUnitOfWork
         PhysicalCountLines = new FakeRepository<PhysicalCountLine>(PhysicalCountLineRecords);
         AiChatSessions = new FakeAiChatSessionRepository(AiChatSessionRecords);
         AiChatMessages = new FakeAiChatMessageRepository(AiChatMessageRecords);
+        ProjectBudgetLedgers = new FakeRepository<ProjectBudgetLedger>(ProjectBudgetLedgerRecords);
+        ProjectBudgetHistories = new FakeRepository<ProjectBudgetHistory>(ProjectBudgetHistoryRecords);
     }
 
     public IUserAccountRepository UserAccounts { get; }
@@ -501,24 +505,5 @@ internal sealed class TestUnitOfWork : IUnitOfWork
     public ICategoryRepository Categories => null!;
     public IMaterialRequestRepository MaterialRequests { get; }
     public IProjectBudgetHistoryRepository ProjectBudgetHistories => null!;
-    public IGenericRepository<MrpPlanningRun> MrpPlanningRuns { get; }
-    public IGenericRepository<PhysicalCountSession> PhysicalCountSessions { get; }
-    public IGenericRepository<PhysicalCountLine> PhysicalCountLines { get; }
-    public IChatConversationRepository ChatConversations => null!;
-    public IChatParticipantRepository ChatParticipants => null!;
-    public IChatMessageRepository ChatMessages => null!;
-    public IAiChatSessionRepository AiChatSessions { get; }
-    public IAiChatMessageRepository AiChatMessages { get; }
-    public IMeetingRepository Meetings => null!;
-    public IMeetingParticipantRepository MeetingParticipants => null!;
-    public IPurchaseOrderRepository PurchaseOrders { get; }
-    public IOrderLineItemRepository OrderLineItems { get; }
-    public IGenericRepository<InventoryReservation> InventoryReservations { get; }
-    public Task SaveChangeAsync() => Task.CompletedTask;
-    public Task BeginTransactionAsync() => Task.CompletedTask;
-    public Task BeginTransactionAsync(IsolationLevel isolationLevel) => Task.CompletedTask;
-    public Task CommitTransactionAsync() => Task.CompletedTask;
-    public Task RollbackTransactionAsync() => Task.CompletedTask;
-    public Task<T> ExecuteScalarAsync<T>(string sql) => throw new NotSupportedException();
-    public Task ExecuteRawSqlAsync(string sql) => throw new NotSupportedException();
-}
+    public IGenericRepository<ProjectBudgetLedger> ProjectBudgetLedgers => null!;
+

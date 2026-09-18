@@ -189,7 +189,8 @@ namespace cpms_Application.MyMapper
                 .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.Status.ToString()))
                 .ForMember(dest => dest.RowVersion, opt => opt.MapFrom(src => Convert.ToBase64String(src.RowVersion)))
                 .ForMember(dest => dest.AssignedToUserName, opt => opt.MapFrom(src => src.AssignedToUser != null ? $"{src.AssignedToUser.LastName} {src.AssignedToUser.FirstName}".Trim() : string.Empty))
-                .ForMember(dest => dest.MaterialRequirements, opt => opt.MapFrom(src => src.MaterialRequirements));
+                .ForMember(dest => dest.MaterialRequirements, opt => opt.MapFrom(src => src.MaterialRequirements))
+                .ForMember(dest => dest.Phase, opt => opt.MapFrom(src => src.Phase));
 
             CreateMap<TaskMaterialRequirement, TaskMaterialResponse>()
                 .ForMember(dest => dest.MaterialId, opt => opt.MapFrom(src => src.Variant.MaterialId))

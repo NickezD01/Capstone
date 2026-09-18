@@ -1,4 +1,5 @@
-﻿using cpms_Application.Repository;
+using cpms_Application.Repository;
+using cpms_Domain.Ledger;
 using cpms_Domain.Models;
 using System;
 using System.Collections.Generic;
@@ -39,6 +40,7 @@ namespace cpms_Application
         IMaterialRequisitionRepository MaterialRequisitions { get; }
         IGenericRepository<MaterialReturn> MaterialReturns { get; }
         IProjectBudgetHistoryRepository ProjectBudgetHistories { get; }
+        IGenericRepository<ProjectBudgetLedger> ProjectBudgetLedgers { get; }
         IGenericRepository<MrpPlanningRun> MrpPlanningRuns { get; }
 
         // ========================================================

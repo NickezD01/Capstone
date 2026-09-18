@@ -324,6 +324,7 @@ namespace cpms_Application.Services
             {
                 task.UpdatePlan(phase.PhaseId, phase.Name, request.TaskName, user.Id,
                     request.PlannedBudget, request.BaselineStart, request.BaselineEnd);
+                task.PhaseName = phase.Name;
                 await _uow.SaveChangeAsync();
                 return new ApiResponse().SetOk(_mapper.Map<TaskResponse>(task));
             }

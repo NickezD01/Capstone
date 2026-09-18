@@ -1,4 +1,5 @@
-﻿using cpms_Domain.Models;
+﻿using cpms_Domain.Ledger;
+using cpms_Domain.Models;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
@@ -47,6 +48,7 @@ namespace cpms_Infrastructure
         public DbSet<Phase> Phases { get; set; }
         public DbSet<ProgressReport> ProgressReports { get; set; }
         public DbSet<ProjectBudgetHistory> ProjectBudgetHistories { get; set; }
+        public DbSet<ProjectBudgetLedger> ProjectBudgetLedgers { get; set; }
         public DbSet<MrpPlanningRun> MrpPlanningRuns { get; set; }
         // ========================================================
         // WAREHOUSE & MATERIAL INVENTORY (Đã đồng bộ chuẩn ERD)

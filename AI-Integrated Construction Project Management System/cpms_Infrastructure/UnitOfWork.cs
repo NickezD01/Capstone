@@ -58,6 +58,7 @@ namespace cpms_Infrastructure
         public IMaterialRequisitionRepository MaterialRequisitions { get; }
         public IGenericRepository<cpms_Domain.Models.MaterialReturn> MaterialReturns { get; }
         public IProjectBudgetHistoryRepository ProjectBudgetHistories { get; }
+        public IGenericRepository<cpms_Domain.Ledger.ProjectBudgetLedger> ProjectBudgetLedgers { get; }
         public IGenericRepository<cpms_Domain.Models.MrpPlanningRun> MrpPlanningRuns { get; }
 
 
