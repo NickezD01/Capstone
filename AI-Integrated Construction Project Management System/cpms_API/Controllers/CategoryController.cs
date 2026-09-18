@@ -13,7 +13,7 @@ namespace cpms_API.Controllers
         public CategoriesController(ICategoryService service) => _service = service;
 
         [HttpPost]
-        [Authorize(Roles = "ADMIN")]
+        [Authorize(Roles = "WAREHOUSE_MANAGER")]
         public async Task<IActionResult> Create(CreateCategoryRequest request)
             => ToResult(await _service.CreateCategoryAsync(request));
 
@@ -26,12 +26,12 @@ namespace cpms_API.Controllers
             => ToResult(await _service.GetCategoryByIdAsync(id));
 
         [HttpPut("{id}")]
-        [Authorize(Roles = "ADMIN")]
+        [Authorize(Roles = "WAREHOUSE_MANAGER")]
         public async Task<IActionResult> Update(int id, UpdateCategoryRequest request)
             => ToResult(await _service.UpdateCategoryAsync(id, request));
 
         [HttpDelete("{id}")]
-        [Authorize(Roles = "ADMIN")]
+        [Authorize(Roles = "WAREHOUSE_MANAGER")]
         public async Task<IActionResult> Delete(int id)
             => ToResult(await _service.DeleteCategoryAsync(id));
 

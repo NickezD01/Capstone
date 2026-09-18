@@ -411,9 +411,11 @@ namespace cpms_Application.Services
                 if (project == null)
                     return apiResponse.SetNotFound("Project not found.");
                 var currentUser = _claimService.GetUserClaim();
+                var canonicalWarehouseId = await CanonicalWarehousePolicy.ResolveIdAsync(_unitOfWork);
+                if (!canonicalWarehouseId.HasValue)
+                    return apiResponse.SetConflict("No canonical warehouse is configured.");
+                warehouseId = canonicalWarehouseId.Value;
                 Warehouse? selectedWarehouse = null;
-                if (!warehouseId.HasValue)
-                    return apiResponse.SetBadRequest("warehouseId is required so inventory from another warehouse cannot hide a local shortage.");
                 if (warehouseId.HasValue)
                 {
                     selectedWarehouse = await _unitOfWork.Warehouses.GetByIdAsync(warehouseId.Value);

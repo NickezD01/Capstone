@@ -16,7 +16,7 @@ public class MaterialsController : ControllerBase
     public MaterialsController(IMaterialService service) => _service = service;
 
     [HttpPost]
-    [Authorize(Roles = "ADMIN")]
+    [Authorize(Roles = "WAREHOUSE_MANAGER")]
     public async Task<IActionResult> Create([FromBody] MaterialRequest request) =>
         ToResult(await _service.CreateMaterialAsync(request));
 
@@ -29,17 +29,17 @@ public class MaterialsController : ControllerBase
         ToResult(await _service.GetMaterialByIdAsync(id));
 
     [HttpPut("{id}")]
-    [Authorize(Roles = "ADMIN")]
+    [Authorize(Roles = "WAREHOUSE_MANAGER")]
     public async Task<IActionResult> Update(int id, [FromBody] UpdateMaterialRequest request) =>
         ToResult(await _service.UpdateMaterialAsync(id, request));
 
     [HttpDelete("{id}")]
-    [Authorize(Roles = "ADMIN")]
+    [Authorize(Roles = "WAREHOUSE_MANAGER")]
     public async Task<IActionResult> Delete(int id) =>
         ToResult(await _service.DeleteMaterialAsync(id));
 
     [HttpPost("variants")]
-    [Authorize(Roles = "ADMIN")]
+    [Authorize(Roles = "WAREHOUSE_MANAGER")]
     public async Task<IActionResult> CreateVariant([FromBody] MaterialVariantRequest request) =>
         ToResult(await _service.CreateVariantAsync(request));
 
@@ -52,12 +52,12 @@ public class MaterialsController : ControllerBase
         ToResult(await _service.GetVariantByIdAsync(variantId));
 
     [HttpPut("variants/{variantId}")]
-    [Authorize(Roles = "ADMIN")]
+    [Authorize(Roles = "WAREHOUSE_MANAGER")]
     public async Task<IActionResult> UpdateVariant(int variantId, [FromBody] MaterialVariantRequest request) =>
         ToResult(await _service.UpdateVariantAsync(variantId, request));
 
     [HttpDelete("variants/{variantId}")]
-    [Authorize(Roles = "ADMIN")]
+    [Authorize(Roles = "WAREHOUSE_MANAGER")]
     public async Task<IActionResult> DeleteVariant(int variantId) =>
         ToResult(await _service.DeleteVariantAsync(variantId));
 

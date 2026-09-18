@@ -41,12 +41,17 @@ namespace cpms_Application.Services
         {
             var response = new ApiResponse();
             var currentUser = _claimService.GetUserClaim();
+            if (IsRole(currentUser, Role.ADMIN))
+                return response.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Administrators have read-only access.");
 
             if (request.ProjectId.HasValue)
             {
                 var project = await _uow.Projects.GetByIdAsync(request.ProjectId.Value);
                 if (project == null)
                     return response.SetNotFound("Project not found.");
+                if (IsRole(currentUser, Role.ADMIN) || !await CanReadProjectAsync(project))
+                    return response.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false,
+                        "You do not have permission to create a chat for this project.");
             }
 
             var title = string.IsNullOrWhiteSpace(request.Title) ? "New chat" : request.Title.Trim();
@@ -100,6 +105,8 @@ namespace cpms_Application.Services
         public async Task<ApiResponse> SendMessageAsync(int sessionId, SendAiChatMessageRequest request)
         {
             var response = new ApiResponse();
+            if (IsRole(_claimService.GetUserClaim(), Role.ADMIN))
+                return response.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Administrators have read-only access.");
             if (string.IsNullOrWhiteSpace(request.Message))
                 return response.SetBadRequest("Message is required.");
 
@@ -197,6 +204,8 @@ namespace cpms_Application.Services
         public async Task<ApiResponse> DeleteSessionAsync(int sessionId)
         {
             var response = new ApiResponse();
+            if (IsRole(_claimService.GetUserClaim(), Role.ADMIN))
+                return response.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Administrators have read-only access.");
             var session = await GetOwnedSessionAsync(sessionId);
             if (session == null)
                 return response.SetNotFound("Chat session not found.");
@@ -233,6 +242,21 @@ namespace cpms_Application.Services
                    $" The user is asking about project \"{project.ProjectName}\" (ID: {project.ProjectId}). " +
                    "Use this project context when answering, but do not invent data that was not provided.";
         }
+
+        private async Task<bool> CanReadProjectAsync(Project project)
+        {
+            var user = _claimService.GetUserClaim();
+            if (IsRole(user, Role.PM)) return project.PMUserID == user.Id;
+            if (IsRole(user, Role.CUSTOMER)) return project.CustomerUserId == user.Id;
+            if (!IsRole(user, Role.WAREHOUSE_MANAGER)) return false;
+            return await _uow.MaterialRequests.GetAsync(r =>
+                       r.ProjectId == project.ProjectId && r.WarehouseId.HasValue && r.Warehouse!.ManagerId == user.Id) != null ||
+                   await _uow.PurchaseOrders.GetAsync(o =>
+                       o.ProjectId == project.ProjectId && o.Warehouse.ManagerId == user.Id) != null;
+        }
+
+        private static bool IsRole(ClaimDTO claim, Role role) =>
+            string.Equals(claim.Role, role.ToString(), StringComparison.OrdinalIgnoreCase);
 
         private static string BuildPrompt(IEnumerable<AiChatMessage> messages, TavilySearchResult? webSearchResult)
         {

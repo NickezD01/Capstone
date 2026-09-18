@@ -36,6 +36,9 @@ namespace cpms_Application.Services
             var project = await _uow.Projects.GetByIdAsync(request.ProjectId);
             if (project == null)
                 return response.SetNotFound("Project not found.");
+            if (IsRole(currentUser, Role.ADMIN) || !await CanReadProjectAsync(project))
+                return response.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false,
+                    "You do not have permission to create a meeting for this project.");
 
             if (request.TaskId.HasValue)
             {
@@ -105,11 +108,16 @@ namespace cpms_Application.Services
         public async Task<ApiResponse> GetProjectMeetingsAsync(int projectId)
         {
             var response = new ApiResponse();
+            var project = await _uow.Projects.GetByIdAsync(projectId);
+            if (project == null) return response.SetNotFound("Project not found.");
+            if (!await CanReadProjectAsync(project))
+                return response.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You do not have access to this project.");
             var meetings = await _uow.Meetings.GetAllAsync(
                 filter: m => m.ProjectId == projectId,
                 include: query => query
                     .Include(m => m.Organizer)
                     .Include(m => m.Participants)
+                    .Include(m => m.Project)
             );
 
             return response.SetOk(meetings
@@ -126,10 +134,13 @@ namespace cpms_Application.Services
                 query => query
                     .Include(m => m.Organizer)
                     .Include(m => m.Participants)
+                    .Include(m => m.Project)
             );
 
             if (meeting == null)
                 return response.SetNotFound("Meeting not found.");
+            if (!await CanReadProjectAsync(meeting.Project))
+                return response.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You do not have access to this project.");
 
             return response.SetOk(MapMeeting(meeting));
         }
@@ -146,6 +157,11 @@ namespace cpms_Application.Services
 
             if (meeting == null)
                 return response.SetNotFound("Meeting not found.");
+            var currentUser = _claimService.GetUserClaim();
+            if (IsRole(currentUser, Role.ADMIN) ||
+                (!IsRole(currentUser, Role.PM) || meeting.Project.PMUserID != currentUser.Id) &&
+                meeting.OrganizerId != currentUser.Id)
+                return response.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You do not have permission to cancel this meeting.");
 
             if (meeting.Status == MeetingStatus.CANCELLED)
                 return response.SetBadRequest("Meeting is already cancelled.");
@@ -158,7 +174,7 @@ namespace cpms_Application.Services
                     meeting.FailureReason = cancelResult.ErrorMessage;
                     _uow.Meetings.Update(meeting);
                     await _uow.SaveChangeAsync();
-                    return response.SetBadRequest(cancelResult.ErrorMessage);
+                    return response.SetBadRequest(cancelResult.ErrorMessage ?? "Unable to cancel the Teams meeting.");
                 }
             }
 
@@ -197,5 +213,21 @@ namespace cpms_Application.Services
                 }).ToList()
             };
         }
+
+        private async Task<bool> CanReadProjectAsync(Project project)
+        {
+            var user = _claimService.GetUserClaim();
+            if (IsRole(user, Role.ADMIN)) return true;
+            if (IsRole(user, Role.PM)) return project.PMUserID == user.Id;
+            if (IsRole(user, Role.CUSTOMER)) return project.CustomerUserId == user.Id;
+            if (!IsRole(user, Role.WAREHOUSE_MANAGER)) return false;
+            return await _uow.MaterialRequests.GetAsync(r =>
+                       r.ProjectId == project.ProjectId && r.WarehouseId.HasValue && r.Warehouse!.ManagerId == user.Id) != null ||
+                   await _uow.PurchaseOrders.GetAsync(o =>
+                       o.ProjectId == project.ProjectId && o.Warehouse.ManagerId == user.Id) != null;
+        }
+
+        private static bool IsRole(ClaimDTO claim, Role role) =>
+            string.Equals(claim.Role, role.ToString(), StringComparison.OrdinalIgnoreCase);
     }
 }

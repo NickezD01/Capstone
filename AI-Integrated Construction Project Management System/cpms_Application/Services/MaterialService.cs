@@ -13,15 +13,19 @@ namespace cpms_Application.Services
     {
         private readonly IUnitOfWork _uow;
         private readonly IMapper _mapper;
+        private readonly IClaimService? _claimService;
 
-        public MaterialService(IUnitOfWork uow, IMapper mapper)
+        public MaterialService(IUnitOfWork uow, IMapper mapper, IClaimService? claimService = null)
         {
             _uow = uow;
             _mapper = mapper;
+            _claimService = claimService;
         }
 
         public async Task<ApiResponse> CreateMaterialAsync(Request.Material.MaterialRequest request)
         {
+            var denied = DenyAdministratorWrite();
+            if (denied != null) return denied;
             if (string.IsNullOrWhiteSpace(request.MaterialName) || string.IsNullOrWhiteSpace(request.DefaultUnit))
                 return new ApiResponse().SetBadRequest(message: "MaterialName and DefaultUnit are required.");
             if (await _uow.Categories.GetByIdAsync(request.CategoryId) == null)
@@ -51,6 +55,8 @@ namespace cpms_Application.Services
 
         public async Task<ApiResponse> UpdateMaterialAsync(int id, UpdateMaterialRequest request)
         {
+            var denied = DenyAdministratorWrite();
+            if (denied != null) return denied;
             var material = await _uow.Materials.GetAsync(m => m.MaterialId == id, q => q.Include(m => m.Variants));
             if (material == null) return new ApiResponse().SetNotFound(message: $"Material with ID {id} not found.");
             if (string.IsNullOrWhiteSpace(request.MaterialName) || string.IsNullOrWhiteSpace(request.DefaultUnit))
@@ -81,6 +87,8 @@ namespace cpms_Application.Services
 
         public async Task<ApiResponse> DeleteMaterialAsync(int id)
         {
+            var denied = DenyAdministratorWrite();
+            if (denied != null) return denied;
             var material = await _uow.Materials.GetAsync(m => m.MaterialId == id, q => q.Include(m => m.Variants));
             if (material == null) return new ApiResponse().SetNotFound(message: $"Material with ID {id} not found.");
             foreach (var variant in material.Variants)
@@ -99,6 +107,8 @@ namespace cpms_Application.Services
 
         public async Task<ApiResponse> CreateVariantAsync(MaterialVariantRequest request)
         {
+            var denied = DenyAdministratorWrite();
+            if (denied != null) return denied;
             var material = await _uow.Materials.GetByIdAsync(request.MaterialId);
             if (material == null || !material.IsActive)
                 return new ApiResponse().SetBadRequest(message: "Material does not exist.");
@@ -161,6 +171,8 @@ namespace cpms_Application.Services
 
         public async Task<ApiResponse> UpdateVariantAsync(int variantId, MaterialVariantRequest request)
         {
+            var denied = DenyAdministratorWrite();
+            if (denied != null) return denied;
             var variant = await _uow.MaterialVariants.GetByIdAsync(variantId);
             if (variant == null) return new ApiResponse().SetNotFound(message: "Material variant not found.");
             if (request.MaterialId != variant.MaterialId)
@@ -212,6 +224,11 @@ namespace cpms_Application.Services
             return candidate;
         }
 
+        private ApiResponse? DenyAdministratorWrite() =>
+            _claimService != null && string.Equals(_claimService.GetUserClaim().Role, Role.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase)
+                ? new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Administrators have read-only access.")
+                : null;
+
         private async Task<bool> HasOperationalUseAsync(int variantId) =>
             await _uow.Inventories.GetAsync(i => i.VariantId == variantId) != null ||
             await _uow.OrderLineItems.GetAsync(i => i.VariantId == variantId) != null ||
@@ -220,6 +237,8 @@ namespace cpms_Application.Services
 
         public async Task<ApiResponse> DeleteVariantAsync(int variantId)
         {
+            var denied = DenyAdministratorWrite();
+            if (denied != null) return denied;
             var variant = await _uow.MaterialVariants.GetByIdAsync(variantId);
             if (variant == null) return new ApiResponse().SetNotFound(message: "Material variant not found.");
             var conflict = await GetVariantDeactivationConflictAsync(variantId);

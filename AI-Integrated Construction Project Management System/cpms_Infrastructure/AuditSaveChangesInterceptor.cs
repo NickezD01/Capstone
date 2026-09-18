@@ -1,4 +1,5 @@
 using cpms_Domain.Models;
+using cpms_Domain.Ledger;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -43,6 +44,12 @@ public sealed class AuditSaveChangesInterceptor : SaveChangesInterceptor
     private void AddAuditEntries(DbContext? context)
     {
         if (context == null || _writingDeferredAudits) return;
+        var ledgerMutations = context.ChangeTracker.Entries<ProjectBudgetLedger>()
+            .Where(entry => entry.State is EntityState.Modified or EntityState.Deleted)
+            .ToList();
+        if (ledgerMutations.Count > 0)
+            throw new InvalidOperationException("Project budget ledger history is append-only.");
+
         var httpContext = _httpContextAccessor.HttpContext;
         if (!int.TryParse(httpContext?.User.FindFirst("UserId")?.Value, out var userId)) return;
         var candidates = context.ChangeTracker.Entries()

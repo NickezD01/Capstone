@@ -16,15 +16,19 @@ namespace cpms_Application.Services
     {
         private readonly IUnitOfWork _uow;
         private readonly IMapper _mapper;
+        private readonly IClaimService? _claimService;
 
-        public SupplierService(IUnitOfWork uow, IMapper mapper)
+        public SupplierService(IUnitOfWork uow, IMapper mapper, IClaimService? claimService = null)
         {
             _uow = uow;
             _mapper = mapper;
+            _claimService = claimService;
         }
 
         public async Task<ApiResponse> CreateSupplierAsync(CreateSupplierRequest request)
         {
+            var denied = DenyAdministratorWrite();
+            if (denied != null) return denied;
             var companyName = request.CompanyName.Trim();
             var contactEmail = string.IsNullOrWhiteSpace(request.ContactEmail) ? null : request.ContactEmail.Trim().ToLowerInvariant();
             var duplicate = await _uow.Suppliers.GetAsync(s => !s.IsDeleted &&
@@ -57,6 +61,8 @@ namespace cpms_Application.Services
 
         public async Task<ApiResponse> UpdateSupplierAsync(int supplierId, UpdateSupplierRequest request)
         {
+            var denied = DenyAdministratorWrite();
+            if (denied != null) return denied;
             var supplier = await _uow.Suppliers.GetByIdAsync(supplierId);
             if (supplier == null || supplier.IsDeleted) return new ApiResponse().SetNotFound("Supplier not found.");
             var companyName = request.CompanyName.Trim();
@@ -75,6 +81,8 @@ namespace cpms_Application.Services
 
         public async Task<ApiResponse> DeactivateSupplierAsync(int supplierId)
         {
+            var denied = DenyAdministratorWrite();
+            if (denied != null) return denied;
             var supplier = await _uow.Suppliers.GetByIdAsync(supplierId);
             if (supplier == null || supplier.IsDeleted) return new ApiResponse().SetNotFound("Supplier not found.");
             var openOrder = await _uow.PurchaseOrders.GetAsync(order => order.SupplierId == supplierId &&
@@ -94,5 +102,10 @@ namespace cpms_Application.Services
             await _uow.SaveChangeAsync();
             return new ApiResponse().SetOk("Supplier deactivated and its catalog offers disabled.");
         }
+
+        private ApiResponse? DenyAdministratorWrite() =>
+            _claimService != null && string.Equals(_claimService.GetUserClaim().Role, Role.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase)
+                ? new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Administrators have read-only access.")
+                : null;
     }
 }

@@ -11,7 +11,6 @@ namespace cpms_Application.Request.MaterialRequest
         public int ProjectId { get; set; }
         public int? TaskId { get; set; }
         // Retained only for backwards-compatible model binding; the server resolves the canonical warehouse.
-        [Obsolete("Warehouse selection is server-controlled.")]
         public int? WarehouseId { get; set; }
         public decimal EstimatedCost { get; set; }
         public string? RequestNote { get; set; }

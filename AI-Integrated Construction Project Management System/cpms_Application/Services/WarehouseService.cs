@@ -25,53 +25,20 @@ namespace cpms_Application.Services
             _claimService = claimService;
         }
 
-        public async Task<ApiResponse> CreateWarehouseAsync(CreateWarehouseRequest request)
-        {
-            var user = _claimService.GetUserClaim();
-            if (!string.Equals(user.Role, Role.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase)) return Forbidden("Only administrators may create warehouses.");
-            var warehouse = _mapper.Map<Warehouse>(request);
-            warehouse.ManagerId = request.ManagerId > 0 ? request.ManagerId : user.Id;
-            var manager = await _uow.UserAccounts.GetByIdAsync(warehouse.ManagerId);
-            if (manager == null || manager.Role != Role.WAREHOUSE_MANAGER || manager.IsEmailVerified != true)
-                return new ApiResponse().SetBadRequest(message: "Warehouse manager must be a verified WAREHOUSE_MANAGER account.");
-            var duplicate = await _uow.Warehouses.GetAsync(w => w.WarehouseName == request.WarehouseName.Trim());
-            if (duplicate != null) return new ApiResponse().SetConflict("An active warehouse already uses this name.");
-            warehouse.WarehouseName = request.WarehouseName.Trim();
-            warehouse.Location = request.Location.Trim();
-            warehouse.Manager = manager;
-            await _uow.Warehouses.AddAsync(warehouse);
-            await _uow.SaveChangeAsync();
-            return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Created, true,
-                result: _mapper.Map<WarehouseResponse>(warehouse));
-        }
+        public Task<ApiResponse> CreateWarehouseAsync(CreateWarehouseRequest request) =>
+            Task.FromResult(Forbidden("Warehouse creation is disabled; use the canonical warehouse."));
 
-        public async Task<ApiResponse> UpdateWarehouseAsync(int warehouseId, UpdateWarehouseRequest request)
-        {
-            var user = _claimService.GetUserClaim();
-            if (!IsAdmin(user)) return Forbidden("Only administrators may update warehouses.");
-            var warehouse = await _uow.Warehouses.GetByIdAsync(warehouseId);
-            if (warehouse == null) return new ApiResponse().SetNotFound("Warehouse not found.");
-            var manager = await _uow.UserAccounts.GetByIdAsync(request.ManagerId);
-            if (manager == null || manager.Role != Role.WAREHOUSE_MANAGER || manager.IsEmailVerified != true)
-                return new ApiResponse().SetBadRequest("Warehouse manager must be a verified WAREHOUSE_MANAGER account.");
-            var normalizedName = request.WarehouseName.Trim();
-            var duplicate = await _uow.Warehouses.GetAsync(w => w.WarehouseId != warehouseId && w.WarehouseName == normalizedName);
-            if (duplicate != null) return new ApiResponse().SetConflict("Another active warehouse already uses this name.");
-            warehouse.WarehouseName = normalizedName;
-            warehouse.Location = request.Location.Trim();
-            warehouse.ManagerId = request.ManagerId;
-            warehouse.Manager = manager;
-            warehouse.ModifiedBy = user.Id;
-            warehouse.ModifiedDate = DateTime.UtcNow;
-            await _uow.SaveChangeAsync();
-            return new ApiResponse().SetOk(_mapper.Map<WarehouseResponse>(warehouse));
-        }
+        public Task<ApiResponse> UpdateWarehouseAsync(int warehouseId, UpdateWarehouseRequest request) =>
+            Task.FromResult(Forbidden("Warehouse updates are disabled; use the canonical warehouse."));
 
         public async Task<ApiResponse> GetAllWarehousesAsync()
         {
             var user = _claimService.GetUserClaim();
             if (!IsAdmin(user) && !IsWarehouseManager(user)) return Forbidden("Warehouse access is not allowed for this role.");
-            var list = await _uow.Warehouses.GetAllAsync(IsAdmin(user) ? null : w => w.ManagerId == user.Id,
+            var canonicalId = await CanonicalWarehousePolicy.ResolveIdAsync(_uow);
+            if (!canonicalId.HasValue) return new ApiResponse().SetConflict("No canonical warehouse is configured.");
+            var list = await _uow.Warehouses.GetAllAsync(w => w.WarehouseId == canonicalId.Value &&
+                (IsAdmin(user) || w.ManagerId == user.Id),
                 q => q.Include(w => w.Manager).Include(w => w.InventoryRecords));
             return new ApiResponse().SetOk(_mapper.Map<List<WarehouseResponse>>(list));
         }
@@ -110,6 +77,8 @@ namespace cpms_Application.Services
         {
             var user = _claimService.GetUserClaim();
             if (!IsWarehouseManager(user)) return Forbidden("Only warehouse managers may request inventory adjustments.");
+            var canonicalAccess = await ValidateCanonicalWarehouseAsync(request.WarehouseId);
+            if (canonicalAccess != null) return canonicalAccess;
             var warehouse = await _uow.Warehouses.GetByIdAsync(request.WarehouseId);
             if (warehouse == null) return new ApiResponse().SetNotFound("Warehouse not found.");
             if (warehouse.ManagerId != user.Id) return Forbidden("You may only request adjustments for a warehouse you manage.");
@@ -161,8 +130,9 @@ namespace cpms_Application.Services
         public async Task<ApiResponse> ReviewInventoryAdjustmentAsync(int adjustmentId, bool approve, ReviewInventoryAdjustmentRequest review)
         {
             var user = _claimService.GetUserClaim();
-            if (!IsAdmin(user)) return Forbidden("Only administrators may review inventory adjustments.");
-            var adjustment = await _uow.InventoryAdjustments.GetByIdAsync(adjustmentId);
+            if (IsAdmin(user)) return Forbidden("Administrators have read-only access.");
+            return Forbidden("Inventory adjustment review is disabled under the read-only administrator policy.");
+            /*var adjustment = await _uow.InventoryAdjustments.GetByIdAsync(adjustmentId);
             if (adjustment == null) return new ApiResponse().SetNotFound("Inventory adjustment not found.");
             if (adjustment.RequestedByUserId == user.Id) return new ApiResponse().SetConflict("The requester cannot approve their own adjustment.");
             if (adjustment.Status != InventoryAdjustmentStatuses.Pending) return new ApiResponse().SetConflict("Only pending adjustments can be reviewed.");
@@ -179,6 +149,7 @@ namespace cpms_Application.Services
             }
             adjustment.ReviewNote = review.ReviewNote;
             return await ApplyInventoryAdjustmentAsync(adjustment, user.Id);
+            */
         }
 
         private async Task<ApiResponse> ApplyInventoryAdjustmentAsync(InventoryAdjustment request, int reviewerId)
@@ -250,6 +221,9 @@ namespace cpms_Application.Services
             var user = _claimService.GetUserClaim();
             var isAdmin = IsAdmin(user);
             if (!isAdmin && !IsWarehouseManager(user)) return Forbidden("Warehouse transaction access is not allowed for this role.");
+            var canonicalId = await CanonicalWarehousePolicy.ResolveIdAsync(_uow);
+            if (!canonicalId.HasValue) return new ApiResponse().SetConflict("No canonical warehouse is configured.");
+            warehouseId = canonicalId.Value;
             if (warehouseId.HasValue && !isAdmin)
             {
                 var access = await AuthorizeReadAsync(warehouseId.Value);
@@ -257,7 +231,7 @@ namespace cpms_Application.Services
             }
             var managedWarehouseIds = isAdmin
                 ? new List<int>()
-                : (await _uow.Warehouses.GetAllAsync(w => w.ManagerId == user.Id)).Select(w => w.WarehouseId).ToList();
+                : (await _uow.Warehouses.GetAllAsync(w => w.WarehouseId == canonicalId.Value && w.ManagerId == user.Id)).Select(w => w.WarehouseId).ToList();
             var transactions = await _uow.InventoryTransactions.GetAllIgnoringQueryFiltersAsync(t =>
                 (!warehouseId.HasValue || t.WarehouseId == warehouseId.Value) &&
                 (!variantId.HasValue || t.VariantId == variantId.Value) &&
@@ -269,6 +243,8 @@ namespace cpms_Application.Services
         {
             var user = _claimService.GetUserClaim();
             if (!IsWarehouseManager(user)) return Forbidden("Only warehouse managers may start physical counts.");
+            var canonicalAccess = await ValidateCanonicalWarehouseAsync(request.WarehouseId);
+            if (canonicalAccess != null) return canonicalAccess;
             var warehouse = await _uow.Warehouses.GetByIdAsync(request.WarehouseId);
             if (warehouse == null) return new ApiResponse().SetNotFound("Warehouse not found.");
             if (warehouse.ManagerId != user.Id) return Forbidden("You may only count a warehouse you manage.");
@@ -343,8 +319,9 @@ namespace cpms_Application.Services
         public async Task<ApiResponse> ReviewPhysicalCountAsync(int sessionId, bool approve, ReviewPhysicalCountRequest request)
         {
             var user = _claimService.GetUserClaim();
-            if (!IsAdmin(user)) return Forbidden("Only administrators may review physical counts.");
-            await _uow.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            if (IsAdmin(user)) return Forbidden("Administrators have read-only access.");
+            return Forbidden("Physical-count review is disabled under the read-only administrator policy.");
+            /*await _uow.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             try
             {
                 var session = await _uow.PhysicalCountSessions.GetAsync(x => x.SessionId == sessionId,
@@ -397,12 +374,16 @@ namespace cpms_Application.Services
             }
             catch (DbUpdateConcurrencyException) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict("Inventory changed during count approval. Reload and retry."); }
             catch { await _uow.RollbackTransactionAsync(); throw; }
+            */
         }
 
         public async Task<ApiResponse> GetPhysicalCountsAsync(int? warehouseId, string? status)
         {
             var user = _claimService.GetUserClaim();
             if (!IsAdmin(user) && !IsWarehouseManager(user)) return Forbidden("Physical count access is not allowed.");
+            var canonicalId = await CanonicalWarehousePolicy.ResolveIdAsync(_uow);
+            if (!canonicalId.HasValue) return new ApiResponse().SetConflict("No canonical warehouse is configured.");
+            warehouseId = canonicalId.Value;
             var normalized = string.IsNullOrWhiteSpace(status) ? null : status.Trim().ToUpperInvariant();
             var sessions = await _uow.PhysicalCountSessions.GetAllAsync(x =>
                 (!warehouseId.HasValue || x.WarehouseId == warehouseId) &&
@@ -421,6 +402,8 @@ namespace cpms_Application.Services
         {
             var user = _claimService.GetUserClaim();
             if (!IsWarehouseManager(user)) return Forbidden("Only warehouse managers may record inventory returns.");
+            var canonicalAccess = await ValidateCanonicalWarehouseAsync(request.WarehouseId);
+            if (canonicalAccess != null) return canonicalAccess;
             if (request.MaterialRequestId <= 0)
                 return new ApiResponse().SetBadRequest(message: "MaterialRequestId is required. Use inventory adjustment for unlinked stock corrections.");
             var warehouse = await _uow.Warehouses.GetByIdAsync(request.WarehouseId);
@@ -562,11 +545,25 @@ namespace cpms_Application.Services
         private async Task<ApiResponse?> AuthorizeReadAsync(int warehouseId)
         {
             var user = _claimService.GetUserClaim();
+            var canonicalId = await CanonicalWarehousePolicy.ResolveIdAsync(_uow);
+            if (!canonicalId.HasValue) return new ApiResponse().SetConflict("No canonical warehouse is configured.");
+            if (warehouseId != canonicalId.Value)
+                return new ApiResponse().SetConflict("Only the canonical warehouse is active.");
             var warehouse = await _uow.Warehouses.GetByIdAsync(warehouseId);
             if (warehouse == null) return new ApiResponse().SetNotFound(message: "Warehouse not found.");
             return IsAdmin(user) || (IsWarehouseManager(user) && warehouse.ManagerId == user.Id)
                 ? null
                 : Forbidden("You do not manage this warehouse.");
+        }
+
+        private async Task<ApiResponse?> ValidateCanonicalWarehouseAsync(int warehouseId)
+        {
+            var canonicalId = await CanonicalWarehousePolicy.ResolveIdAsync(_uow);
+            if (!canonicalId.HasValue)
+                return new ApiResponse().SetConflict("No canonical warehouse is configured.");
+            return warehouseId == canonicalId.Value
+                ? null
+                : new ApiResponse().SetConflict("Only the canonical warehouse is active.");
         }
         private static bool IsAdmin(ClaimDTO user) => string.Equals(user.Role, Role.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase);
         private static bool IsWarehouseManager(ClaimDTO user) => string.Equals(user.Role, Role.WAREHOUSE_MANAGER.ToString(), StringComparison.OrdinalIgnoreCase);

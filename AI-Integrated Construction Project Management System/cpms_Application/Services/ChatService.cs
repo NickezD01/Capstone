@@ -28,6 +28,9 @@ namespace cpms_Application.Services
             var project = await _uow.Projects.GetByIdAsync(request.ProjectId);
             if (project == null)
                 return response.SetNotFound("Project not found.");
+            if (IsRole(currentUser, Role.ADMIN) || !await CanReadProjectAsync(project))
+                return response.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false,
+                    "You do not have permission to create a conversation for this project.");
 
             if (request.TaskId.HasValue)
             {
@@ -76,6 +79,10 @@ namespace cpms_Application.Services
         {
             var response = new ApiResponse();
             var currentUser = _claimService.GetUserClaim();
+            var project = await _uow.Projects.GetByIdAsync(projectId);
+            if (project == null) return response.SetNotFound("Project not found.");
+            if (!await CanReadProjectAsync(project))
+                return response.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You do not have access to this project.");
 
             var conversations = await _uow.ChatConversations.GetAllAsync(
                 filter: c => c.ProjectId == projectId && c.Participants.Any(p => p.UserId == currentUser.Id),
@@ -94,7 +101,13 @@ namespace cpms_Application.Services
         {
             var response = new ApiResponse();
             var currentUser = _claimService.GetUserClaim();
-            if (!await IsParticipantAsync(conversationId, currentUser.Id))
+            var conversation = await _uow.ChatConversations.GetAsync(c => c.ConversationId == conversationId,
+                query => query.Include(c => c.Project).Include(c => c.Participants));
+            if (conversation == null)
+                return response.SetNotFound("Conversation not found.");
+            if (!await CanReadProjectAsync(conversation.Project))
+                return response.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You do not have access to this project.");
+            if (!conversation.Participants.Any(p => p.UserId == currentUser.Id))
                 return response.SetBadRequest("You are not a participant in this conversation.");
 
             var messages = await _uow.ChatMessages.GetAllAsync(
@@ -118,10 +131,13 @@ namespace cpms_Application.Services
             var conversation = await _uow.ChatConversations.GetAsync(
                 c => c.ConversationId == conversationId,
                 include: query => query.Include(c => c.Participants)
+                    .Include(c => c.Project)
             );
 
             if (conversation == null)
                 return response.SetNotFound("Conversation not found.");
+            if (!await CanReadProjectAsync(conversation.Project))
+                return response.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You do not have access to this project.");
 
             if (!conversation.Participants.Any(p => p.UserId == currentUser.Id))
                 return response.SetBadRequest("You are not a participant in this conversation.");
@@ -151,9 +167,12 @@ namespace cpms_Application.Services
                 return response.SetBadRequest("Message body is required.");
 
             var currentUser = _claimService.GetUserClaim();
-            var message = await _uow.ChatMessages.GetAsync(m => m.MessageId == messageId, query => query.Include(m => m.Sender));
+            var message = await _uow.ChatMessages.GetAsync(m => m.MessageId == messageId,
+                query => query.Include(m => m.Sender).Include(m => m.Conversation).ThenInclude(c => c.Project));
             if (message == null)
                 return response.SetNotFound("Message not found.");
+            if (!await CanReadProjectAsync(message.Conversation.Project))
+                return response.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You do not have access to this project.");
 
             if (message.SenderId != currentUser.Id)
                 return response.SetBadRequest("Only the sender can edit this message.");
@@ -173,9 +192,12 @@ namespace cpms_Application.Services
         {
             var response = new ApiResponse();
             var currentUser = _claimService.GetUserClaim();
-            var message = await _uow.ChatMessages.GetAsync(m => m.MessageId == messageId, query => query.Include(m => m.Sender));
+            var message = await _uow.ChatMessages.GetAsync(m => m.MessageId == messageId,
+                query => query.Include(m => m.Sender).Include(m => m.Conversation).ThenInclude(c => c.Project));
             if (message == null)
                 return response.SetNotFound("Message not found.");
+            if (!await CanReadProjectAsync(message.Conversation.Project))
+                return response.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You do not have access to this project.");
 
             if (message.SenderId != currentUser.Id)
                 return response.SetBadRequest("Only the sender can delete this message.");
@@ -192,6 +214,12 @@ namespace cpms_Application.Services
         {
             var response = new ApiResponse();
             var currentUser = _claimService.GetUserClaim();
+            var conversation = await _uow.ChatConversations.GetAsync(c => c.ConversationId == conversationId,
+                query => query.Include(c => c.Project));
+            if (conversation == null)
+                return response.SetNotFound("Conversation not found.");
+            if (!await CanReadProjectAsync(conversation.Project))
+                return response.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You do not have access to this project.");
             var participant = await _uow.ChatParticipants.GetAsync(p => p.ConversationId == conversationId && p.UserId == currentUser.Id);
             if (participant == null)
                 return response.SetBadRequest("You are not a participant in this conversation.");
@@ -208,6 +236,22 @@ namespace cpms_Application.Services
             var participant = await _uow.ChatParticipants.GetAsync(p => p.ConversationId == conversationId && p.UserId == userId);
             return participant != null;
         }
+
+        private async Task<bool> CanReadProjectAsync(Project project)
+        {
+            var user = _claimService.GetUserClaim();
+            if (IsRole(user, Role.ADMIN)) return true;
+            if (IsRole(user, Role.PM)) return project.PMUserID == user.Id;
+            if (IsRole(user, Role.CUSTOMER)) return project.CustomerUserId == user.Id;
+            if (!IsRole(user, Role.WAREHOUSE_MANAGER)) return false;
+            return await _uow.MaterialRequests.GetAsync(r =>
+                       r.ProjectId == project.ProjectId && r.WarehouseId.HasValue && r.Warehouse!.ManagerId == user.Id) != null ||
+                   await _uow.PurchaseOrders.GetAsync(o =>
+                       o.ProjectId == project.ProjectId && o.Warehouse.ManagerId == user.Id) != null;
+        }
+
+        private static bool IsRole(ClaimDTO claim, Role role) =>
+            string.Equals(claim.Role, role.ToString(), StringComparison.OrdinalIgnoreCase);
 
         private static ConversationResponse MapConversation(ChatConversation conversation)
         {

@@ -28,6 +28,8 @@ namespace cpms_Application.Services
             try
             {
                 var claim = _claim.GetUserClaim();
+                if (string.Equals(claim.Role, cpms_Domain.Models.Role.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase))
+                    return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Administrators have read-only access.");
                 var user = await _unitOfWork.UserAccounts.GetAsync(x => x.Id == claim.Id);
                 if (user == null) return apiResponse.SetNotFound("User not found.");
                 var userResponse = _mapper.Map<UserProfileResponse>(user);
@@ -95,6 +97,9 @@ namespace cpms_Application.Services
             ApiResponse apiResponse = new ApiResponse();
             try
             {
+                var currentUser = _claim.GetUserClaim();
+                if (string.Equals(currentUser.Role, cpms_Domain.Models.Role.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase))
+                    return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Administrators have read-only access.");
                 if (!Enum.IsDefined(updateUserRoleRequest.Role))
                     return apiResponse.SetBadRequest(message: "Invalid account role.");
                 // Tìm customer theo ID

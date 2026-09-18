@@ -20,7 +20,7 @@ namespace cpms_API.Controllers
         }
 
         [HttpPost]
-        [Authorize(Roles = "ADMIN")]
+        [Authorize(Roles = "WAREHOUSE_MANAGER")]
         public async Task<IActionResult> Create([FromBody] CreateSupplierRequest request)
         {
             var response = await _supplierService.CreateSupplierAsync(request);
@@ -44,7 +44,7 @@ namespace cpms_API.Controllers
         }
 
         [HttpPut("{supplierId:int}")]
-        [Authorize(Roles = "ADMIN")]
+        [Authorize(Roles = "WAREHOUSE_MANAGER")]
         public async Task<IActionResult> Update(int supplierId, [FromBody] UpdateSupplierRequest request)
         {
             var response = await _supplierService.UpdateSupplierAsync(supplierId, request);
@@ -52,7 +52,7 @@ namespace cpms_API.Controllers
         }
 
         [HttpDelete("{supplierId:int}")]
-        [Authorize(Roles = "ADMIN")]
+        [Authorize(Roles = "WAREHOUSE_MANAGER")]
         public async Task<IActionResult> Deactivate(int supplierId)
         {
             var response = await _supplierService.DeactivateSupplierAsync(supplierId);

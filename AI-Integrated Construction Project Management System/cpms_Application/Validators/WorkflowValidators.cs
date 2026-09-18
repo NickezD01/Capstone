@@ -250,7 +250,6 @@ namespace cpms_Application.Validators
     {
         public ApproveMaterialRequestValidator()
         {
-            RuleFor(x => x.WarehouseId).GreaterThan(0);
             RuleFor(x => x.DecisionNote).MaximumLength(1000);
             RuleFor(x => x.Items).NotEmpty();
             RuleForEach(x => x.Items).ChildRules(item =>

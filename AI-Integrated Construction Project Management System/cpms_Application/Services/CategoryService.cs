@@ -17,16 +17,20 @@ namespace cpms_Application.Services
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
+        private readonly IClaimService? _claimService;
 
-        public CategoryService(IUnitOfWork unitOfWork, IMapper mapper)
+        public CategoryService(IUnitOfWork unitOfWork, IMapper mapper, IClaimService? claimService = null)
         {
             _unitOfWork = unitOfWork;
             _mapper = mapper;
+            _claimService = claimService;
         }
 
         public async Task<ApiResponse> CreateCategoryAsync(CreateCategoryRequest request)
         {
             var apiResponse = new ApiResponse();
+            var denied = DenyAdministratorWrite();
+            if (denied != null) return denied;
             try
             {
                 var category = _mapper.Map<Category>(request);
@@ -83,6 +87,8 @@ namespace cpms_Application.Services
         public async Task<ApiResponse> UpdateCategoryAsync(int id, UpdateCategoryRequest request)
         {
             var apiResponse = new ApiResponse();
+            var denied = DenyAdministratorWrite();
+            if (denied != null) return denied;
             try
             {
                 var category = await _unitOfWork.Categories.GetByIdAsync(id);
@@ -105,6 +111,8 @@ namespace cpms_Application.Services
         public async Task<ApiResponse> DeleteCategoryAsync(int id)
         {
             var apiResponse = new ApiResponse();
+            var denied = DenyAdministratorWrite();
+            if (denied != null) return denied;
             try
             {
                 var category = await _unitOfWork.Categories.GetByIdAsync(id);
@@ -120,5 +128,10 @@ namespace cpms_Application.Services
                 return apiResponse.SetConflict(message: "Cannot delete this category while it contains materials.");
             }
         }
+
+        private ApiResponse? DenyAdministratorWrite() =>
+            _claimService != null && string.Equals(_claimService.GetUserClaim().Role, Role.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase)
+                ? new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Administrators have read-only access.")
+                : null;
     }
 }

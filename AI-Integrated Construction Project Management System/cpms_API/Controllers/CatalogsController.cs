@@ -18,7 +18,7 @@ namespace cpms_API.Controllers
         }
 
         [HttpPost]
-        [Authorize(Roles = "ADMIN")]
+        [Authorize(Roles = "WAREHOUSE_MANAGER")]
         public async Task<IActionResult> AddMaterial([FromBody] CreateCatalogRequest request)
         {
             var response = await _catalogService.AddMaterialToCatalogAsync(request);
@@ -45,7 +45,7 @@ namespace cpms_API.Controllers
         }
 
         [HttpPut("{catalogId:int}")]
-        [Authorize(Roles = "ADMIN")]
+        [Authorize(Roles = "WAREHOUSE_MANAGER")]
         public async Task<IActionResult> UpdateOffer(int catalogId, [FromBody] UpdateCatalogRequest request)
         {
             var response = await _catalogService.UpdateCatalogOfferAsync(catalogId, request);
@@ -53,7 +53,7 @@ namespace cpms_API.Controllers
         }
 
         [HttpDelete("{catalogId:int}")]
-        [Authorize(Roles = "ADMIN")]
+        [Authorize(Roles = "WAREHOUSE_MANAGER")]
         public async Task<IActionResult> DeactivateOffer(int catalogId)
         {
             var response = await _catalogService.DeactivateCatalogOfferAsync(catalogId);

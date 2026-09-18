@@ -34,6 +34,10 @@ namespace cpms_Application.Services
             if (request.Items == null || request.Items.Count == 0) return new ApiResponse().SetBadRequest(message: "At least one order item is required.");
             if (request.ExpectedDeliveryDate.HasValue && request.ExpectedDeliveryDate.Value.Date < DateTime.UtcNow.Date)
                 return new ApiResponse().SetBadRequest(message: "ExpectedDeliveryDate cannot be in the past.");
+            var canonicalWarehouse = await CanonicalWarehousePolicy.ResolveAsync(_uow);
+            if (canonicalWarehouse == null)
+                return new ApiResponse().SetConflict(message: "No canonical warehouse is configured.");
+            var canonicalWarehouseId = canonicalWarehouse.WarehouseId;
             var linkedRequestItemIds = request.Items.Where(x => x.RequestItemId.HasValue).Select(x => x.RequestItemId!.Value).ToList();
             if (linkedRequestItemIds.Distinct().Count() != linkedRequestItemIds.Count)
                 return new ApiResponse().SetBadRequest(message: "A material request item may only appear once per purchase order.");
@@ -47,7 +51,7 @@ namespace cpms_Application.Services
                 }
 
                 var project = await _uow.Projects.GetAsync(p => p.ProjectId == request.ProjectId);
-                var warehouse = await _uow.Warehouses.GetAsync(w => w.WarehouseId == request.WarehouseId);
+                var warehouse = await _uow.Warehouses.GetAsync(w => w.WarehouseId == canonicalWarehouseId);
                 var supplier = await _uow.Suppliers.GetAsync(s => s.SupplierId == request.SupplierId);
                 if (project == null || supplier == null || supplier.IsDeleted || warehouse == null)
                     return await Abort(new ApiResponse().SetBadRequest(message: "Project, supplier, or warehouse does not exist."));
@@ -96,7 +100,7 @@ namespace cpms_Application.Services
                         if (materialRequest == null || materialRequest.ProjectId != request.ProjectId ||
                             materialRequest.Status is not (MaterialRequestStatuses.Approved or MaterialRequestStatuses.PartiallyApproved or MaterialRequestStatuses.Issued or MaterialRequestStatuses.PartiallyIssued))
                             return await Abort(new ApiResponse().SetBadRequest(message: "RequestItemId must belong to an approved material request for this project."));
-                        if (materialRequest.WarehouseId != request.WarehouseId)
+                        if (materialRequest.WarehouseId != canonicalWarehouseId)
                             return await Abort(new ApiResponse().SetConflict(message: "A shortage-linked purchase order must deliver to the warehouse assigned to its material request."));
                         var linkedTask = materialRequest.TaskItem ?? (materialRequest.TaskId.HasValue
                             ? await _uow.TaskItems.GetByIdAsync(materialRequest.TaskId.Value)
@@ -169,7 +173,7 @@ namespace cpms_Application.Services
                     Project = project,
                     SupplierId = request.SupplierId,
                     Supplier = supplier,
-                    WarehouseId = request.WarehouseId,
+                    WarehouseId = canonicalWarehouseId,
                     Warehouse = warehouse,
                     UserAccountId = user.Id,
                     TotalAmount = total,
@@ -556,7 +560,10 @@ namespace cpms_Application.Services
         {
             var po = await GetDetailsAsync(poId);
             if (po == null) return new ApiResponse().SetNotFound(message: "Purchase order not found.");
-            if (po.WarehouseId != warehouseId) return new ApiResponse().SetBadRequest(message: "The purchase order is allocated to a different warehouse.");
+            var canonicalWarehouseId = await CanonicalWarehousePolicy.ResolveIdAsync(_uow);
+            if (!canonicalWarehouseId.HasValue) return new ApiResponse().SetConflict(message: "No canonical warehouse is configured.");
+            if (po.WarehouseId != canonicalWarehouseId.Value)
+                return new ApiResponse().SetConflict(message: "The purchase order is allocated to a non-canonical warehouse and must be migrated.");
             return await ReceivePurchaseOrderAsync(poId, new ReceivePurchaseOrderRequest
             {
                 Items = po.OrderLineItems
@@ -774,10 +781,8 @@ namespace cpms_Application.Services
                 ? $"{variant.VariantName} (variant #{variant.VariantId})"
                 : $"{variant.VariantName} [SKU: {variant.SKU}]";
         private static bool IsPurchaseOrderApproverRole(ClaimDTO claim) =>
-            string.Equals(claim.Role, Role.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase) ||
             string.Equals(claim.Role, Role.PM.ToString(), StringComparison.OrdinalIgnoreCase);
         private static bool CanApprovePurchaseOrder(ClaimDTO claim, PurchaseOrder order) =>
-            string.Equals(claim.Role, Role.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase) ||
             (string.Equals(claim.Role, Role.PM.ToString(), StringComparison.OrdinalIgnoreCase) && order.Project.PMUserID == claim.Id);
         private static bool CanReadPurchaseOrder(ClaimDTO claim, PurchaseOrder order) =>
             string.Equals(claim.Role, Role.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase) ||

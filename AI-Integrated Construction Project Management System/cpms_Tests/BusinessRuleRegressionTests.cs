@@ -16,6 +16,7 @@ using cpms_Application.Response.SupplierCatalog;
 using cpms_Application.Response;
 using cpms_Application.Services;
 using cpms_Domain;
+using cpms_Domain.Ledger;
 using cpms_Domain.Models;
 using Microsoft.Extensions.Logging.Abstractions;
 using System.Net;
@@ -196,7 +197,7 @@ public class BusinessRuleRegressionTests
     }
 
     [Fact]
-    public async Task AdministratorCanAssignPrivilegedRoleDirectly()
+    public async Task AdministratorCannotAssignPrivilegedRoleDirectly()
     {
         var uow = new TestUnitOfWork();
         var account = new UserAccount
@@ -211,8 +212,8 @@ public class BusinessRuleRegressionTests
         var response = await new UserAccountService(uow, CreateMapper(), new FakeClaimService(1, Role.ADMIN))
             .UpdateUserRoleProfileAsync(account.Id, new UpdateUserRoleRequest { Role = Role.PM });
 
-        Assert.True(response.IsSuccess, response.ErrorMessage);
-        Assert.Equal(Role.PM, account.Role);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(Role.CUSTOMER, account.Role);
     }
 
     [Fact]
@@ -309,6 +310,39 @@ public class BusinessRuleRegressionTests
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         Assert.Contains("already has", response.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ActualCostCorrectionUsesActualDeltaAfterAReturn()
+    {
+        var uow = new TestUnitOfWork();
+        var project = new Project { ProjectId = 1, ProjectName = "P", PMUserID = 5, TotalProjectBudget = 1000 };
+        var warehouse = new Warehouse { WarehouseId = 1, WarehouseName = "Main", ManagerId = 10 };
+        var request = new MaterialRequest
+        {
+            RequestId = 1,
+            ProjectId = 1,
+            Project = project,
+            WarehouseId = 1,
+            Warehouse = warehouse,
+            Status = MaterialRequestStatuses.Issued,
+            ActualCost = 100,
+            BudgetDebitedAmount = 50,
+            RowVersion = Array.Empty<byte>()
+        };
+        uow.ProjectRecords.Add(project);
+        uow.WarehouseRecords.Add(warehouse);
+        uow.RequestRecords.Add(request);
+
+        var response = await new MaterialRequestService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
+            .UpdateActualCostAsync(1, new UpdateActualMaterialCostRequest { ActualCost = 120 });
+
+        Assert.True(response.IsSuccess, response.ErrorMessage);
+        Assert.Equal(70, request.BudgetDebitedAmount);
+        Assert.Equal(980, project.TotalProjectBudget);
+        var ledger = Assert.Single(uow.ProjectBudgetLedgerRecords);
+        Assert.Equal(ProjectBudgetLedgerEntryTypes.Correction, ledger.EntryType);
+        Assert.Equal(20, ledger.BudgetDebitedAmount);
     }
 
     [Fact]
@@ -438,6 +472,9 @@ public class BusinessRuleRegressionTests
         var transaction = Assert.Single(uow.TransactionRecords);
         Assert.Equal(12.5m, transaction.UnitCost);
         Assert.Equal(62.5m, transaction.TotalValue);
+        var ledgerEntry = Assert.Single(uow.ProjectBudgetLedgerRecords);
+        Assert.Equal(ProjectBudgetLedgerEntryTypes.Issue, ledgerEntry.EntryType);
+        Assert.Equal(62.5m, ledgerEntry.BudgetDebitedAmount);
     }
 
     [Fact]
@@ -1749,7 +1786,7 @@ public class BusinessRuleRegressionTests
             Status = cpms_Domain.Models.TaskStatus.PENDING
         });
 
-        var response = await new ProjectService(uow, CreateMapper(), new FakeClaimService(1, Role.ADMIN))
+        var response = await new ProjectService(uow, CreateMapper(), new FakeClaimService(5, Role.PM))
             .AdjustProjectBudgetAsync(new AdjustBudgetRequest { ProjectId = 1, Amount = -30, Reason = "Reduce" });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
@@ -1862,7 +1899,7 @@ public class BusinessRuleRegressionTests
     }
 
     [Fact]
-    public async Task WarehouseManagerCanBeReassignedByAdministrator()
+    public async Task AdministratorCannotReassignWarehouseManager()
     {
         var uow = new TestUnitOfWork();
         uow.WarehouseRecords.Add(new Warehouse { WarehouseId = 1, WarehouseName = "Old", Location = "A", ManagerId = 10 });
@@ -1882,9 +1919,9 @@ public class BusinessRuleRegressionTests
                 Location = "Site B"
             });
 
-        Assert.True(response.IsSuccess, response.ErrorMessage);
-        Assert.Equal(20, uow.WarehouseRecords[0].ManagerId);
-        Assert.Equal("Main Warehouse", uow.WarehouseRecords[0].WarehouseName);
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(10, uow.WarehouseRecords[0].ManagerId);
+        Assert.Equal("Old", uow.WarehouseRecords[0].WarehouseName);
     }
 
     [Fact]

@@ -10,8 +10,6 @@ namespace cpms_Application.Response.Tasks
         public int ProjectId { get; set; }
         public int PhaseId { get; set; }
         public PhaseResponse? Phase { get; set; }
-        [Obsolete("Use PhaseId and Phase object instead.")]
-        public string PhaseName { get; set; } = null!;
         public string TaskName { get; set; } = null!;
         public int AssignedToUserID { get; set; }
         public string AssignedToUserName { get; set; } = null!;

@@ -2,7 +2,6 @@ namespace cpms_Application.Request.MaterialRequest
 {
     public class ApproveMaterialRequest
     {
-        [Obsolete("Warehouse selection is server-controlled.")]
         public int WarehouseId { get; set; }
         public string? DecisionNote { get; set; }
         public List<ApproveMaterialItemRequest> Items { get; set; } = new();

@@ -297,15 +297,10 @@ public sealed class AuthService : IAuthService
     public async Task<ApiResponse> AdminResetPasswordAsync(int userId)
     {
         var claim = _claimService.GetUserClaim();
-        if (!string.Equals(claim.Role, Role.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase))
-            return new ApiResponse().SetApiResponse(HttpStatusCode.Forbidden, false, "Administrator access is required.");
-        var user = await _unitOfWork.UserAccounts.GetByIdAsync(userId);
-        if (user == null) return new ApiResponse().SetNotFound("User not found.");
-        var code = GenerateSecurityCode();
-        await ReplaceSecurityTokensAsync(user.Id, SecurityTokenPurposes.PasswordReset, code);
-        await QueueEmailAsync(user.Email!, BuildPasswordResetEmail(user.FirstName, user.Id, code));
-        await _unitOfWork.SaveChangeAsync();
-        return new ApiResponse().SetOk("Password reset instructions were queued for the user.");
+        return new ApiResponse().SetApiResponse(HttpStatusCode.Forbidden, false,
+            string.Equals(claim.Role, Role.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase)
+                ? "Administrators have read-only access."
+                : "Administrator password reset is disabled.");
     }
 
     private async Task<AuthTokenResponse> IssueSessionAsync(UserAccount user)

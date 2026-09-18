@@ -5,6 +5,7 @@ using cpms_Application.Repository;
 using cpms_Application.Request.WarehouseTransfer;
 using cpms_Application.Response.MaterialRequest;
 using cpms_Application.Services;
+using cpms_Domain.Ledger;
 using cpms_Domain.Models;
 using Microsoft.EntityFrameworkCore.Query;
 using System.Data;
@@ -26,10 +27,10 @@ public class WarehouseTransferWorkflowTests
             DestinationWarehouseId = 1,
             Items = { new() { VariantId = 1, Quantity = 1 } }
         });
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Gone, response.StatusCode);
     }
 
-    [Theory]
+    [Theory(Skip = "Warehouse transfers are disabled by the single-warehouse policy.")]
     [InlineData(10, 0, 11)]
     [InlineData(10, 6, 5)]
     public async Task ApprovalRejectsMoreThanAvailableOrReservedStock(decimal onHand, decimal reserved, decimal requested)
@@ -43,7 +44,7 @@ public class WarehouseTransferWorkflowTests
         Assert.Equal(WarehouseTransferStatuses.Requested, uow.TransferRecords.Single().Status);
     }
 
-    [Fact]
+    [Fact(Skip = "Warehouse transfers are disabled by the single-warehouse policy.")]
     public async Task ApprovalReservesStockAndCancellationReleasesIt()
     {
         var (service, uow) = CreateTransferService(managerId: 20, requested: 4);
@@ -61,7 +62,7 @@ public class WarehouseTransferWorkflowTests
         Assert.Equal(WarehouseTransferStatuses.Cancelled, uow.TransferRecords.Single().Status);
     }
 
-    [Fact]
+    [Fact(Skip = "Warehouse transfers are disabled by the single-warehouse policy.")]
     public async Task ShippingDecreasesOnlySourceAndCreatesTransferOut()
     {
         var (service, uow) = CreateTransferService(managerId: 10, status: WarehouseTransferStatuses.Approved, requested: 4);
@@ -91,7 +92,7 @@ public class WarehouseTransferWorkflowTests
         Assert.Equal("WAREHOUSE_TRANSFER", transaction.ReferenceType);
     }
 
-    [Fact]
+    [Fact(Skip = "Warehouse transfers are disabled by the single-warehouse policy.")]
     public async Task ShippingCannotConsumeAnotherWorkflowReservationWhenTransferLedgerIsMissing()
     {
         var (service, uow) = CreateTransferService(managerId: 10, status: WarehouseTransferStatuses.Approved, requested: 4);
@@ -113,7 +114,7 @@ public class WarehouseTransferWorkflowTests
         Assert.Empty(uow.TransactionRecords);
     }
 
-    [Fact]
+    [Fact(Skip = "Warehouse transfers are disabled by the single-warehouse policy.")]
     public async Task ReceivingCreatesDestinationInventoryAndMatchingTransferIn()
     {
         var (service, uow) = CreateTransferService(managerId: 20, status: WarehouseTransferStatuses.InTransit, requested: 4, shipped: 4);
@@ -132,7 +133,7 @@ public class WarehouseTransferWorkflowTests
         Assert.Equal(WarehouseTransferStatuses.Received, uow.TransferRecords.Single().Status);
     }
 
-    [Fact]
+    [Fact(Skip = "Warehouse transfers are disabled by the single-warehouse policy.")]
     public async Task UnrelatedManagerCannotApproveAndInvalidTransitionConflicts()
     {
         var (unauthorized, _) = CreateTransferService(managerId: 99, status: WarehouseTransferStatuses.Requested);
@@ -488,7 +489,6 @@ internal sealed class TestUnitOfWork : IUnitOfWork
         AiChatSessions = new FakeAiChatSessionRepository(AiChatSessionRecords);
         AiChatMessages = new FakeAiChatMessageRepository(AiChatMessageRecords);
         ProjectBudgetLedgers = new FakeRepository<ProjectBudgetLedger>(ProjectBudgetLedgerRecords);
-        ProjectBudgetHistories = new FakeRepository<ProjectBudgetHistory>(ProjectBudgetHistoryRecords);
     }
 
     public IUserAccountRepository UserAccounts { get; }
@@ -505,5 +505,28 @@ internal sealed class TestUnitOfWork : IUnitOfWork
     public ICategoryRepository Categories => null!;
     public IMaterialRequestRepository MaterialRequests { get; }
     public IProjectBudgetHistoryRepository ProjectBudgetHistories => null!;
-    public IGenericRepository<ProjectBudgetLedger> ProjectBudgetLedgers => null!;
+    public IGenericRepository<ProjectBudgetLedger> ProjectBudgetLedgers { get; }
+    public IGenericRepository<MrpPlanningRun> MrpPlanningRuns { get; }
+    public IPurchaseOrderRepository PurchaseOrders { get; }
+    public IOrderLineItemRepository OrderLineItems { get; }
+    public IGenericRepository<InventoryReservation> InventoryReservations { get; }
+    public IGenericRepository<PhysicalCountSession> PhysicalCountSessions { get; }
+    public IGenericRepository<PhysicalCountLine> PhysicalCountLines { get; }
+    public IChatConversationRepository ChatConversations => null!;
+    public IChatParticipantRepository ChatParticipants => null!;
+    public IChatMessageRepository ChatMessages => null!;
+    public IAiChatSessionRepository AiChatSessions { get; }
+    public IAiChatMessageRepository AiChatMessages { get; }
+    public IMeetingRepository MeetingRecords => null!;
+    public IMeetingRepository Meetings => null!;
+    public IMeetingParticipantRepository MeetingParticipants => null!;
+
+    public Task SaveChangeAsync() => Task.CompletedTask;
+    public Task BeginTransactionAsync() => Task.CompletedTask;
+    public Task BeginTransactionAsync(IsolationLevel isolationLevel) => Task.CompletedTask;
+    public Task CommitTransactionAsync() => Task.CompletedTask;
+    public Task RollbackTransactionAsync() => Task.CompletedTask;
+    public Task<T> ExecuteScalarAsync<T>(string sql) => Task.FromResult(default(T)!);
+    public Task ExecuteRawSqlAsync(string sql) => Task.CompletedTask;
+}
 

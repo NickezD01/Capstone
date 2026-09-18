@@ -17,15 +17,19 @@ namespace cpms_Application.Services
     {
         private readonly IUnitOfWork _uow;
         private readonly IMapper _mapper;
+        private readonly IClaimService? _claimService;
 
-        public CatalogService(IUnitOfWork uow, IMapper mapper)
+        public CatalogService(IUnitOfWork uow, IMapper mapper, IClaimService? claimService = null)
         {
             _uow = uow;
             _mapper = mapper;
+            _claimService = claimService;
         }
 
         public async Task<ApiResponse> AddMaterialToCatalogAsync(CreateCatalogRequest request)
         {
+            var denied = DenyAdministratorWrite();
+            if (denied != null) return denied;
             // Kiểm tra xem đã có cặp Supplier-Material này chưa để tránh trùng lặp
             var variantId = request.VariantId;
             if (variantId == 0)
@@ -111,6 +115,8 @@ namespace cpms_Application.Services
 
         public async Task<ApiResponse> UpdateCatalogOfferAsync(int catalogId, UpdateCatalogRequest request)
         {
+            var denied = DenyAdministratorWrite();
+            if (denied != null) return denied;
             var catalog = await _uow.SupplierCatalogs.GetByIdAsync(catalogId);
             if (catalog == null) return new ApiResponse().SetNotFound("Supplier catalog offer not found.");
             if (request.UnitPrice < 0 || request.MinimumOrderQuantity < 0 || request.LeadTimeDays < 0)
@@ -134,6 +140,8 @@ namespace cpms_Application.Services
 
         public async Task<ApiResponse> DeactivateCatalogOfferAsync(int catalogId)
         {
+            var denied = DenyAdministratorWrite();
+            if (denied != null) return denied;
             var catalog = await _uow.SupplierCatalogs.GetByIdAsync(catalogId);
             if (catalog == null) return new ApiResponse().SetNotFound("Supplier catalog offer not found.");
             catalog.IsAvailable = false;
@@ -165,5 +173,10 @@ namespace cpms_Application.Services
                 IsAvailable = catalog.IsAvailable
             };
         }
+
+        private ApiResponse? DenyAdministratorWrite() =>
+            _claimService != null && string.Equals(_claimService.GetUserClaim().Role, Role.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase)
+                ? new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Administrators have read-only access.")
+                : null;
     }
 }
