@@ -25,7 +25,7 @@ public sealed class PhasesController : ControllerBase
     }
 
     [HttpGet("api/Projects/{projectId:int}/phases")]
-    [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
+    [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER,CUSTOMER")]
     public async Task<IActionResult> GetProjectPhases(int projectId)
     {
         var response = await _phaseService.GetPhasesByProjectAsync(projectId);
@@ -33,7 +33,7 @@ public sealed class PhasesController : ControllerBase
     }
 
     [HttpGet("api/Phases/{phaseId:int}")]
-    [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
+    [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER,CUSTOMER")]
     public async Task<IActionResult> GetPhase(int phaseId)
     {
         var response = await _phaseService.GetPhaseByIdAsync(phaseId);

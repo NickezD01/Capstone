@@ -208,7 +208,7 @@ namespace cpms_Application.Services
 
                 var ordered = tasks
                     .OrderBy(t => t.Phase != null ? t.Phase.SequenceOrder : 0)
-                    .ThenBy(t => t.PhaseName)
+                    .ThenBy(t => t.Phase.Name)
                     .ThenBy(t => t.BaselineStart)
                     .ThenBy(t => t.TaskName);
 
@@ -322,7 +322,7 @@ namespace cpms_Application.Services
 
             try
             {
-                task.UpdatePlan(phase.PhaseId, phase.Name, request.TaskName, user.Id,
+                task.UpdatePlan(phase.PhaseId, request.TaskName, user.Id,
                     request.PlannedBudget, request.BaselineStart, request.BaselineEnd);
                 task.PhaseName = phase.Name;
                 await _uow.SaveChangeAsync();
@@ -399,6 +399,8 @@ namespace cpms_Application.Services
             if (string.Equals(user.Role, Role.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase)) return true;
             if (string.Equals(user.Role, Role.PM.ToString(), StringComparison.OrdinalIgnoreCase))
                 return project.PMUserID == user.Id;
+            if (string.Equals(user.Role, Role.CUSTOMER.ToString(), StringComparison.OrdinalIgnoreCase))
+                return project.CustomerUserId == user.Id;
             if (!string.Equals(user.Role, Role.WAREHOUSE_MANAGER.ToString(), StringComparison.OrdinalIgnoreCase)) return false;
 
             var request = await _uow.MaterialRequests.GetAsync(r =>

@@ -106,6 +106,7 @@ namespace cpms_Infrastructure
             MaterialReturns = new GenericRepository<cpms_Domain.Models.MaterialReturn>(context);
             TaskMaterialRequirements = new TaskMaterialRequirementRepository(context);
             ProjectBudgetHistories = new ProjectBudgetHistoryRepository(context);
+            ProjectBudgetLedgers = new GenericRepository<cpms_Domain.Ledger.ProjectBudgetLedger>(context);
             MrpPlanningRuns = new GenericRepository<cpms_Domain.Models.MrpPlanningRun>(context);
             WarehouseTransfers = new WarehouseTransferRepository(context);
             WarehouseTransferItems = new WarehouseTransferItemRepository(context);

@@ -20,7 +20,7 @@ namespace cpms_API.Controllers
 
         // POST: api/projects
         [HttpPost]
-        [Authorize(Roles = "PM")]
+        [Authorize(Policy = "PmWrite")]
         public async Task<IActionResult> CreateProject([FromBody] CreateProjectRequest request)
         {
             var response = await _projectService.CreateProjectAsync(request);
@@ -29,7 +29,7 @@ namespace cpms_API.Controllers
 
         // GET: api/projects
         [HttpGet]
-        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER,CUSTOMER")]
+        [Authorize(Policy = "OperationalRead")]
         public async Task<IActionResult> GetAllProjects()
         {
             var response = await _projectService.GetAllProjectsAsync();
@@ -38,7 +38,7 @@ namespace cpms_API.Controllers
 
         // GET: api/projects/{id}
         [HttpGet("{id}")]
-        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER,CUSTOMER")]
+        [Authorize(Policy = "OperationalRead")]
         public async Task<IActionResult> GetProjectById(int id)
         {
             var response = await _projectService.GetProjectByIdAsync(id);
@@ -89,7 +89,7 @@ namespace cpms_API.Controllers
             return StatusCode((int)response.StatusCode, response);
         }
         [HttpPost("adjust-budget")]
-        [Authorize(Roles = "ADMIN")]
+        [Authorize(Roles = "PM")]
         public async Task<IActionResult> AdjustProjectBudget([FromBody] AdjustBudgetRequest request)
         {
             var response = await _projectService.AdjustProjectBudgetAsync(request);
@@ -98,7 +98,7 @@ namespace cpms_API.Controllers
 
         // GET: api/projects/{projectId}/budget-histories
         [HttpGet("{projectId}/budget-histories")]
-        [Authorize(Roles = "ADMIN,PM")]
+        [Authorize(Roles = "ADMIN,PM,CUSTOMER")]
         public async Task<IActionResult> GetBudgetHistories(int projectId)
         {
             var response = await _projectService.GetBudgetHistoriesByProjectIdAsync(projectId);
@@ -114,23 +114,23 @@ namespace cpms_API.Controllers
         }
 
         [HttpPost("{projectId:int}/start")]
-        [Authorize(Roles = "PM,ADMIN")]
+        [Authorize(Roles = "PM")]
         public Task<IActionResult> Start(int projectId, ProjectLifecycleRequest request) => ChangeStatus(projectId, "start", request);
 
         [HttpPost("{projectId:int}/pause")]
-        [Authorize(Roles = "PM,ADMIN")]
+        [Authorize(Roles = "PM")]
         public Task<IActionResult> Pause(int projectId, ProjectLifecycleRequest request) => ChangeStatus(projectId, "pause", request);
 
         [HttpPost("{projectId:int}/cancel")]
-        [Authorize(Roles = "PM,ADMIN")]
+        [Authorize(Roles = "PM")]
         public Task<IActionResult> Cancel(int projectId, ProjectLifecycleRequest request) => ChangeStatus(projectId, "cancel", request);
 
         [HttpPost("{projectId:int}/reopen")]
-        [Authorize(Roles = "PM,ADMIN")]
+        [Authorize(Roles = "PM")]
         public Task<IActionResult> Reopen(int projectId, ProjectLifecycleRequest request) => ChangeStatus(projectId, "reopen", request);
 
         [HttpPost("{projectId:int}/complete")]
-        [Authorize(Roles = "PM,ADMIN")]
+        [Authorize(Roles = "PM")]
         public Task<IActionResult> Complete(int projectId, ProjectLifecycleRequest request) => ChangeStatus(projectId, "complete", request);
 
         private async Task<IActionResult> ChangeStatus(int projectId, string action, ProjectLifecycleRequest request)
@@ -140,7 +140,7 @@ namespace cpms_API.Controllers
         }
 
         [HttpPut("{projectId:int}/project-manager")]
-        [Authorize(Roles = "ADMIN")]
+        [Authorize(Roles = "PM")]
         public async Task<IActionResult> ReassignProjectManager(int projectId, ReassignProjectManagerRequest request)
         {
             var response = await _projectService.ReassignProjectManagerAsync(projectId, request);

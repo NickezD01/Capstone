@@ -31,16 +31,15 @@ namespace cpms_Domain.Models
         public virtual ICollection<ProgressReport> ProgressReports { get; set; } = new List<ProgressReport>();
         public virtual ICollection<TaskMaterialRequirement> MaterialRequirements { get; set; } = new List<TaskMaterialRequirement>();
 
-        public void UpdatePlan(int phaseId, string phaseName, string taskName, int assigneeId, decimal plannedBudget,
+        public void UpdatePlan(int phaseId, string taskName, int assigneeId, decimal plannedBudget,
             DateTime baselineStart, DateTime baselineEnd)
         {
             if (Status is TaskStatus.COMPLETED or TaskStatus.CANCELLED)
                 throw new InvalidOperationException("A closed task cannot be edited.");
-            if (phaseId <= 0 || string.IsNullOrWhiteSpace(phaseName) || string.IsNullOrWhiteSpace(taskName))
-                throw new ArgumentException("Phase and task name are required.");
+            if (phaseId <= 0 || string.IsNullOrWhiteSpace(taskName))
+                throw new ArgumentException("Phase ID and task name are required.");
             if (plannedBudget < 0 || baselineEnd < baselineStart) throw new ArgumentException("Task plan is invalid.");
             PhaseId = phaseId;
-            PhaseName = phaseName.Trim();
             TaskName = taskName.Trim();
             AssignedToUserID = assigneeId;
             PlannedBudget = plannedBudget;

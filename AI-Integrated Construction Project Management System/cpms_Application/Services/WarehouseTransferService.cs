@@ -21,6 +21,7 @@ namespace cpms_Application.Services
 
         public async Task<ApiResponse> CreateAsync(CreateWarehouseTransferRequest request)
         {
+            if (WarehouseTransfersDisabled) return Gone();
             var user = _claimService.GetUserClaim();
             if (request.SourceWarehouseId == request.DestinationWarehouseId)
                 return BadRequest("Source and destination warehouses must differ.");
@@ -132,6 +133,7 @@ namespace cpms_Application.Services
 
         public async Task<ApiResponse> ShipAsync(int transferId)
         {
+            if (WarehouseTransfersDisabled) return Gone();
             var user = _claimService.GetUserClaim();
             await _uow.BeginTransactionAsync();
             try
@@ -201,6 +203,7 @@ namespace cpms_Application.Services
 
         public async Task<ApiResponse> ReceiveAsync(int transferId, ReceiveWarehouseTransferRequest? request)
         {
+            if (WarehouseTransfersDisabled) return Gone();
             var user = _claimService.GetUserClaim();
             await _uow.BeginTransactionAsync();
             try
@@ -307,6 +310,7 @@ namespace cpms_Application.Services
 
         public async Task<ApiResponse> CancelAsync(int transferId)
         {
+            if (WarehouseTransfersDisabled) return Gone();
             var user = _claimService.GetUserClaim();
             await _uow.BeginTransactionAsync();
             try
@@ -356,6 +360,7 @@ namespace cpms_Application.Services
         private async Task<ApiResponse> MutateAsync(int transferId, string requiredStatus,
             Func<WarehouseTransfer, ClaimDTO, Task<ApiResponse?>> mutation)
         {
+            if (WarehouseTransfersDisabled) return Gone();
             var user = _claimService.GetUserClaim();
             await _uow.BeginTransactionAsync();
             try
@@ -459,6 +464,9 @@ namespace cpms_Application.Services
         private static ApiResponse BadRequest(string message) => new ApiResponse().SetBadRequest(message: message);
         private static ApiResponse NotFound(string message) => new ApiResponse().SetNotFound(message: message);
         private static ApiResponse Conflict(string message) => new ApiResponse().SetConflict(message: message);
+        private static ApiResponse Gone() => new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Gone, false,
+            "Warehouse transfers are disabled because the system operates with one canonical warehouse.");
+        private static bool WarehouseTransfersDisabled => true;
         private static ApiResponse InternalError(string message) =>
             new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.InternalServerError, false, message);
         private static ApiResponse Forbidden(string message) => new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, message);

@@ -2,6 +2,7 @@ namespace cpms_Application.Request.MaterialRequest
 {
     public class ApproveMaterialRequest
     {
+        [Obsolete("Warehouse selection is server-controlled.")]
         public int WarehouseId { get; set; }
         public string? DecisionNote { get; set; }
         public List<ApproveMaterialItemRequest> Items { get; set; } = new();
@@ -37,5 +38,19 @@ namespace cpms_Application.Request.MaterialRequest
     {
         public string RowVersion { get; set; } = string.Empty;
         public string? Reason { get; set; }
+    }
+
+    public sealed class IssueMaterialRequest
+    {
+        public decimal ActualCost { get; set; }
+        public string RowVersion { get; set; } = string.Empty;
+        public string? Note { get; set; }
+    }
+
+    public sealed class UpdateActualMaterialCostRequest
+    {
+        public decimal ActualCost { get; set; }
+        public string RowVersion { get; set; } = string.Empty;
+        public string? Note { get; set; }
     }
 }

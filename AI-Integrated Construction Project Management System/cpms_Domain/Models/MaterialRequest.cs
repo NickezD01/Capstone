@@ -19,6 +19,14 @@ namespace cpms_Domain.Models
         public int? ApprovedByUserId { get; set; }
         public DateTime? ApprovedAt { get; set; }
         public string? DecisionNote { get; set; }
+        // PM planning data. This is never treated as a warehouse spend.
+        public decimal EstimatedCost { get; set; }
+        // Warehouse-confirmed cost and its audit metadata.
+        public decimal ActualCost { get; set; }
+        public DateTime? ActualCostUpdatedAt { get; set; }
+        public int? ActualCostUpdatedByUserId { get; set; }
+        // Current net amount posted to the project budget. The immutable history is in ProjectBudgetLedgers.
+        public decimal BudgetDebitedAmount { get; set; }
         public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 
         // Navigation Properties

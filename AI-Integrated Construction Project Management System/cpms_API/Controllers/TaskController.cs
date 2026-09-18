@@ -46,7 +46,7 @@ namespace cpms_API.Controllers
         // GET: /api/Projects/{projectId}/tasks (and legacy alias /api/task/project/{projectId})
         [HttpGet("~/api/Projects/{projectId:int}/tasks")]
         [HttpGet("project/{projectId:int}")]
-        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
+        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER,CUSTOMER")]
         public async Task<IActionResult> GetTasksByProject(int projectId)
         {
             var response = await _taskService.GetTasksByProjectAsync(projectId);
@@ -55,7 +55,7 @@ namespace cpms_API.Controllers
 
         // GET: /api/Tasks/{taskId} (and legacy alias /api/task/{taskId})
         [HttpGet("{taskId:int}")]
-        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
+        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER,CUSTOMER")]
         public async Task<IActionResult> GetTaskById(int taskId)
         {
             var response = await _taskService.GetTaskByIdAsync(taskId);
@@ -65,7 +65,7 @@ namespace cpms_API.Controllers
         // GET: /api/Tasks/project/{projectId}/material-requirements (and legacy alias)
         [HttpGet("~/api/Projects/{projectId:int}/material-requirements")]
         [HttpGet("project/{projectId:int}/material-requirements")]
-        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
+        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER,CUSTOMER")]
         public async Task<IActionResult> GetMaterialRequirements(int projectId)
         {
             var response = await _taskService.GetMaterialRequirementsByProjectIdAsync(projectId);

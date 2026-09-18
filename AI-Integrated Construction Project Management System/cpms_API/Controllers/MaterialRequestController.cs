@@ -73,9 +73,17 @@ namespace cpms_API.Controllers
 
         [HttpPut("{requestId}/issue")]
         [Authorize(Roles = "WAREHOUSE_MANAGER")]
-        public async Task<IActionResult> IssueRequest(int requestId)
+        public async Task<IActionResult> IssueRequest(int requestId, [FromBody] IssueMaterialRequest request)
         {
-            var response = await _materialRequestService.IssueRequestAsync(requestId);
+            var response = await _materialRequestService.IssueRequestAsync(requestId, request);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpPut("{requestId}/actual-cost")]
+        [Authorize(Roles = "WAREHOUSE_MANAGER")]
+        public async Task<IActionResult> UpdateActualCost(int requestId, [FromBody] UpdateActualMaterialCostRequest request)
+        {
+            var response = await _materialRequestService.UpdateActualCostAsync(requestId, request);
             return StatusCode((int)response.StatusCode, response);
         }
 
@@ -89,7 +97,7 @@ namespace cpms_API.Controllers
 
         // GET: api/materialrequest (Lấy toàn bộ phiếu)
         [HttpGet]
-        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
+        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER,CUSTOMER")]
         public async Task<IActionResult> GetAllRequests()
         {
             var response = await _materialRequestService.GetAllRequestsAsync();
@@ -98,7 +106,7 @@ namespace cpms_API.Controllers
 
         // GET: api/materialrequest/{requestId} (Lấy chi tiết phiếu)
         [HttpGet("{requestId}")]
-        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
+        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER,CUSTOMER")]
         public async Task<IActionResult> GetRequestById(int requestId)
         {
             var response = await _materialRequestService.GetRequestByIdAsync(requestId);
@@ -107,7 +115,7 @@ namespace cpms_API.Controllers
 
         // GET: api/materialrequest/project/{projectId} (Lấy phiếu theo Project)
         [HttpGet("project/{projectId}")]
-        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
+        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER,CUSTOMER")]
         public async Task<IActionResult> GetRequestsByProject(int projectId)
         {
             var response = await _materialRequestService.GetRequestsByProjectAsync(projectId);

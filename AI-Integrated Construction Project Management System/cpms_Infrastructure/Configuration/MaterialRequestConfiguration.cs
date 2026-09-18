@@ -20,6 +20,9 @@ namespace cpms_Infrastructure.Configuration
             builder.Property(mr => mr.RequestDate).HasDefaultValueSql("GETUTCDATE()");
             builder.Property(mr => mr.RequestNote).HasMaxLength(1000);
             builder.Property(mr => mr.DecisionNote).HasMaxLength(1000);
+            builder.Property(mr => mr.EstimatedCost).HasColumnType("decimal(18,2)").HasDefaultValue(0m);
+            builder.Property(mr => mr.ActualCost).HasColumnType("decimal(18,2)").HasDefaultValue(0m);
+            builder.Property(mr => mr.BudgetDebitedAmount).HasColumnType("decimal(18,2)").HasDefaultValue(0m);
             builder.Property(mr => mr.RowVersion).IsRowVersion();
 
             builder.Property(mr => mr.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
@@ -53,6 +56,17 @@ namespace cpms_Infrastructure.Configuration
                    .WithMany()
                    .HasForeignKey(mr => mr.ApprovedByUserId)
                    .OnDelete(DeleteBehavior.Restrict);
+
+            builder.HasOne<UserAccount>()
+                   .WithMany()
+                   .HasForeignKey(mr => mr.ActualCostUpdatedByUserId)
+                   .OnDelete(DeleteBehavior.Restrict);
+            builder.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_MaterialsRequests_EstimatedCost", "[EstimatedCost] >= 0");
+                t.HasCheckConstraint("CK_MaterialsRequests_ActualCost", "[ActualCost] >= 0");
+                t.HasCheckConstraint("CK_MaterialsRequests_BudgetDebitedAmount", "[BudgetDebitedAmount] >= 0");
+            });
         }
     }
 }

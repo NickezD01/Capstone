@@ -17,6 +17,8 @@ namespace cpms_Application.Interfaces
         Task<ApiResponse> RejectRequestAsync(int requestId);
         Task<ApiResponse> RejectRequestAsync(int requestId, RejectMaterialRequest decision);
         Task<ApiResponse> IssueRequestAsync(int requestId);
+        Task<ApiResponse> IssueRequestAsync(int requestId, IssueMaterialRequest request);
+        Task<ApiResponse> UpdateActualCostAsync(int requestId, UpdateActualMaterialCostRequest request);
         Task<ApiResponse> ReleaseRequestAsync(int requestId);
         Task<ApiResponse> UpdatePendingRequestAsync(int requestId, UpdatePendingMaterialRequest request);
         Task<ApiResponse> CancelPendingRequestAsync(int requestId, CancelMaterialRequest request);

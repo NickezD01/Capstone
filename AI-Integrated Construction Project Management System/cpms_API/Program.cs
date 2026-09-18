@@ -137,6 +137,13 @@ builder.Services
         };
     });
 
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("PmWrite", policy => policy.RequireRole("PM"));
+    options.AddPolicy("WarehouseWrite", policy => policy.RequireRole("WAREHOUSE_MANAGER"));
+    options.AddPolicy("OperationalRead", policy => policy.RequireRole("ADMIN", "PM", "WAREHOUSE_MANAGER", "CUSTOMER"));
+});
+
 // ======================================================
 // SWAGGER / OPENAPI
 // ======================================================

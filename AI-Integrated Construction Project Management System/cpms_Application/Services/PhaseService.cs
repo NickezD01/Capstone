@@ -196,6 +196,8 @@ public sealed class PhaseService : IPhaseService
         var user = _claimService.GetUserClaim();
         if (IsRole(user, Role.ADMIN)) return true;
         if (IsRole(user, Role.PM)) return project.PMUserID == user.Id;
+        if (IsRole(user, Role.CUSTOMER))
+            return project.CustomerUserId == user.Id;
         if (!IsRole(user, Role.WAREHOUSE_MANAGER)) return false;
 
         var request = await _unitOfWork.MaterialRequests.GetAsync(materialRequest =>

@@ -671,6 +671,7 @@ namespace cpms_Application.Services
             {
                 if (request.Amount == 0 || string.IsNullOrWhiteSpace(request.Reason))
                     return apiResponse.SetBadRequest("A non-zero amount and a reason are required.");
+                var currentUser = _claimService.GetUserClaim();
                 await _unitOfWork.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
                 transactionStarted = true;
                 var project = await _unitOfWork.Projects.GetByIdAsync(request.ProjectId);
@@ -685,6 +686,12 @@ namespace cpms_Application.Services
                     await _unitOfWork.RollbackTransactionAsync();
                     transactionStarted = false;
                     return apiResponse.SetConflict("A closed project's budget cannot be changed.");
+                }
+                if (!IsRole(currentUser, Role.PM) || project.PMUserID != currentUser.Id)
+                {
+                    await _unitOfWork.RollbackTransactionAsync();
+                    transactionStarted = false;
+                    return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Only the owning project manager may adjust this project budget.");
                 }
 
                 decimal oldBudget = project.TotalProjectBudget;
@@ -752,7 +759,7 @@ namespace cpms_Application.Services
                 var project = await _unitOfWork.Projects.GetByIdAsync(projectId);
                 if (project == null) return apiResponse.SetNotFound("Project not found.");
                 var currentUser = _claimService.GetUserClaim();
-                if (!IsRole(currentUser, Role.ADMIN) && (!IsRole(currentUser, Role.PM) || project.PMUserID != currentUser.Id))
+                if (!await CanReadProjectAsync(project))
                     return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You do not have access to this project's budget history.");
                 // 1. Lấy dữ liệu từ Database
                 var histories = await _unitOfWork.ProjectBudgetHistories.GetAllAsync(h => h.ProjectId == projectId);
@@ -813,7 +820,7 @@ namespace cpms_Application.Services
                     query => query.Include(p => p.Tasks));
                 if (project == null) return await Abort(new ApiResponse().SetNotFound("Project not found."));
                 var user = _claimService.GetUserClaim();
-                if (!IsRole(user, Role.ADMIN) && (!IsRole(user, Role.PM) || project.PMUserID != user.Id))
+                if (!IsRole(user, Role.PM) || project.PMUserID != user.Id)
                     return await Abort(new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You cannot change this project."));
                 if (!MatchesRowVersion(project.RowVersion, request.RowVersion))
                     return await Abort(new ApiResponse().SetConflict("Project changed. Reload and retry."));
@@ -858,10 +865,10 @@ namespace cpms_Application.Services
         public async Task<ApiResponse> ReassignProjectManagerAsync(int projectId, ReassignProjectManagerRequest request)
         {
             var user = _claimService.GetUserClaim();
-            if (!IsRole(user, Role.ADMIN))
-                return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Administrator access is required.");
             var project = await _unitOfWork.Projects.GetByIdAsync(projectId);
             if (project == null) return new ApiResponse().SetNotFound("Project not found.");
+            if (!IsRole(user, Role.PM) || project.PMUserID != user.Id)
+                return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Only the owning project manager may reassign this project.");
             if (!MatchesRowVersion(project.RowVersion, request.RowVersion))
                 return new ApiResponse().SetConflict("Project changed. Reload and retry.");
             var manager = await _unitOfWork.UserAccounts.GetByIdAsync(request.ProjectManagerUserId);

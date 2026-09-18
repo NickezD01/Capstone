@@ -5,6 +5,7 @@ using cpms_Application.Response;
 using cpms_Application.Response.Inventory;
 using cpms_Application.Response.Warehouse;
 using cpms_Domain.Models;
+using cpms_Domain.Ledger;
 using cpms_Domain;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Cryptography;
@@ -434,7 +435,7 @@ namespace cpms_Application.Services
             {
                 var materialRequest = await _uow.MaterialRequests.GetAsync(
                     x => x.RequestId == request.MaterialRequestId,
-                    query => query.Include(x => x.Requisitions));
+                    query => query.Include(x => x.Project).Include(x => x.Requisitions));
                 if (materialRequest == null)
                     return await Rollback(new ApiResponse().SetBadRequest(message: "Referenced material request was not found."));
                 if (materialRequest.Status is not (MaterialRequestStatuses.Issued or MaterialRequestStatuses.PartiallyIssued))
@@ -512,6 +513,29 @@ namespace cpms_Application.Services
                     PerformedByUserId = user.Id,
                     TransactionDate = DateTime.UtcNow
                 });
+                var totalIssuedQuantity = materialRequest.Requisitions.Sum(x => x.IssuedQuantity);
+                var totalReturnedQuantity = previousReturns.Sum(x => x.Quantity) + request.Quantity;
+                var remainingCost = totalIssuedQuantity <= 0
+                    ? 0
+                    : materialRequest.ActualCost * Math.Max(0, totalIssuedQuantity - totalReturnedQuantity) / totalIssuedQuantity;
+                var reversal = remainingCost - materialRequest.BudgetDebitedAmount;
+                if (reversal < 0)
+                {
+                    materialRequest.Project.TotalProjectBudget -= reversal;
+                    materialRequest.BudgetDebitedAmount += reversal;
+                    await _uow.ProjectBudgetLedgers.AddAsync(new ProjectBudgetLedger
+                    {
+                        ProjectId = materialRequest.ProjectId,
+                        MaterialRequestId = materialRequest.RequestId,
+                        EstimatedCost = materialRequest.EstimatedCost,
+                        ActualCost = materialRequest.ActualCost,
+                        BudgetDebitedAmount = reversal,
+                        EntryType = ProjectBudgetLedgerEntryTypes.Return,
+                        RecordedByUserId = user.Id,
+                        RecordedAt = DateTime.UtcNow,
+                        Note = request.Note?.Trim() ?? "Material return reversal."
+                    });
+                }
                 await _uow.SaveChangeAsync();
                 await _uow.CommitTransactionAsync();
                 return await GetInventoryAsync(request.WarehouseId, request.VariantId);

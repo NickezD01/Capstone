@@ -227,7 +227,9 @@ public sealed class ProgressReportService : IProgressReportService
         var project = await _uow.Projects.GetByIdAsync(task.ProjectId);
         if (project == null) return new ApiResponse().SetNotFound("Project not found.");
         var user = _claimService.GetUserClaim();
-        if (!IsRole(user, Role.ADMIN) && !(IsRole(user, Role.PM) && project.PMUserID == user.Id))
+        if (!IsRole(user, Role.ADMIN) &&
+            !(IsRole(user, Role.PM) && project.PMUserID == user.Id) &&
+            !(IsRole(user, Role.CUSTOMER) && project.CustomerUserId == user.Id))
             return Forbidden("You do not have access to this task's progress reports.");
         var reports = await _uow.ProgressReports.GetAllAsync(r => r.TaskId == taskId,
             query => query.Include(r => r.Reporter).Include(r => r.Task));

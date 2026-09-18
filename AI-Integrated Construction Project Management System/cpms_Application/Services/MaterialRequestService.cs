@@ -4,6 +4,7 @@ using cpms_Application.Request.MaterialRequest;
 using cpms_Application.Response;
 using cpms_Application.Response.MaterialRequest;
 using cpms_Domain.Models;
+using cpms_Domain.Ledger;
 using cpms_Domain;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Cryptography;
@@ -27,10 +28,12 @@ namespace cpms_Application.Services
         {
             var user = _claimService.GetUserClaim();
             if (!IsRole(user, Role.PM)) return Forbidden("Only project managers may create material requests.");
-            if (request.Items == null || request.Items.Count == 0)
+                if (request.Items == null || request.Items.Count == 0)
                 return new ApiResponse().SetBadRequest(message: "At least one material item is required.");
-            if (!request.TaskId.HasValue)
-                return new ApiResponse().SetBadRequest(message: "TaskId is required so every request remains capped by an approved task material plan.");
+                if (!request.TaskId.HasValue)
+                    return new ApiResponse().SetBadRequest(message: "TaskId is required so every request remains capped by an approved task material plan.");
+            if (request.EstimatedCost < 0)
+                return new ApiResponse().SetBadRequest(message: "Estimated cost cannot be negative.");
 
             var project = await _uow.Projects.GetByIdAsync(request.ProjectId);
             if (project == null) return new ApiResponse().SetNotFound(message: "Project not found.");
@@ -128,6 +131,7 @@ namespace cpms_Application.Services
                     RequestDate = DateTime.UtcNow,
                     Status = MaterialRequestStatuses.Pending,
                     RequestNote = request.RequestNote
+                    ,EstimatedCost = request.EstimatedCost
                 };
                 await _uow.MaterialRequests.AddAsync(entity);
                 await _uow.SaveChangeAsync();
@@ -309,16 +313,25 @@ namespace cpms_Application.Services
             return await GetRequestByIdAsync(requestId);
         }
 
-        public async Task<ApiResponse> IssueRequestAsync(int requestId)
+        public Task<ApiResponse> IssueRequestAsync(int requestId) => IssueRequestCoreAsync(requestId, null);
+
+        public Task<ApiResponse> IssueRequestAsync(int requestId, IssueMaterialRequest request) =>
+            IssueRequestCoreAsync(requestId, request);
+
+        private async Task<ApiResponse> IssueRequestCoreAsync(int requestId, IssueMaterialRequest? issue)
         {
             var user = _claimService.GetUserClaim();
             if (!IsRole(user, Role.WAREHOUSE_MANAGER)) return Forbidden("Only warehouse managers may issue inventory.");
+            if (issue != null && issue.ActualCost < 0)
+                return new ApiResponse().SetBadRequest(message: "Actual cost cannot be negative.");
             await _uow.BeginTransactionAsync();
             try
             {
                 var request = await _uow.MaterialRequests.GetAsync(r => r.RequestId == requestId,
                     q => q.Include(r => r.Project).Include(r => r.Warehouse).Include(r => r.Requisitions).Include(r => r.Reservations).ThenInclude(r => r.InventoryRecord));
                 if (request == null) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetNotFound(message: "Material request not found."); }
+                if (issue != null && !MatchesRowVersion(request.RowVersion, issue.RowVersion))
+                { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "The request changed. Reload and retry."); }
                 if (request.Warehouse == null || request.Warehouse.ManagerId != user.Id)
                 { await _uow.RollbackTransactionAsync(); return Forbidden("You may only issue from a warehouse you manage."); }
                 if (request.Project.Status is ProjectStatus.CANCELLED or ProjectStatus.COMPLETED or ProjectStatus.PAUSED)
@@ -333,6 +346,12 @@ namespace cpms_Application.Services
                 { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "Only approved requests can be issued."); }
                 var active = request.Reservations.Where(r => r.Status == InventoryReservationStatuses.Active).ToList();
                 if (active.Count == 0) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "No active reservations exist for this request."); }
+
+                var calculatedIssueCost = active.Sum(r => r.Quantity * r.InventoryRecord.AverageUnitCost);
+                var newActualCost = issue?.ActualCost ?? request.ActualCost + calculatedIssueCost;
+                var budgetDelta = newActualCost - request.BudgetDebitedAmount;
+                if (budgetDelta > 0 && request.Project.TotalProjectBudget - budgetDelta < 0)
+                { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "Issuing this request would make the project budget negative."); }
 
                 foreach (var reservation in active)
                 {
@@ -367,6 +386,11 @@ namespace cpms_Application.Services
                 request.Status = request.Requisitions.Any(i => i.IssuedQuantity < i.Quantity)
                     ? MaterialRequestStatuses.PartiallyIssued
                     : MaterialRequestStatuses.Issued;
+                request.ActualCost = newActualCost;
+                request.ActualCostUpdatedAt = DateTime.UtcNow;
+                request.ActualCostUpdatedByUserId = user.Id;
+                if (budgetDelta != 0)
+                    await AppendBudgetLedgerAsync(request, budgetDelta, ProjectBudgetLedgerEntryTypes.Issue, user.Id, issue?.Note);
                 await _uow.SaveChangeAsync();
                 await _uow.CommitTransactionAsync();
                 return await GetRequestByIdAsync(requestId);
@@ -380,6 +404,49 @@ namespace cpms_Application.Services
             {
                 await _uow.RollbackTransactionAsync();
                 return InternalError("Unable to issue inventory.");
+            }
+        }
+
+        public async Task<ApiResponse> UpdateActualCostAsync(int requestId, UpdateActualMaterialCostRequest update)
+        {
+            var user = _claimService.GetUserClaim();
+            if (!IsRole(user, Role.WAREHOUSE_MANAGER)) return Forbidden("Only warehouse managers may update actual material cost.");
+            if (update.ActualCost < 0) return new ApiResponse().SetBadRequest(message: "Actual cost cannot be negative.");
+
+            await _uow.BeginTransactionAsync();
+            try
+            {
+                var request = await _uow.MaterialRequests.GetAsync(r => r.RequestId == requestId,
+                    q => q.Include(r => r.Project).Include(r => r.Warehouse));
+                if (request == null) return await RollbackAsync(new ApiResponse().SetNotFound(message: "Material request not found."));
+                if (request.Warehouse?.ManagerId != user.Id)
+                    return await RollbackAsync(Forbidden("You may only update costs for requests issued from a warehouse you manage."));
+                if (request.Status is not (MaterialRequestStatuses.Issued or MaterialRequestStatuses.PartiallyIssued))
+                    return await RollbackAsync(new ApiResponse().SetConflict(message: "Actual cost can only be corrected after issue."));
+                if (!MatchesRowVersion(request.RowVersion, update.RowVersion))
+                    return await RollbackAsync(new ApiResponse().SetConflict(message: "The request changed. Reload and retry."));
+
+                var delta = update.ActualCost - request.BudgetDebitedAmount;
+                if (delta > 0 && request.Project.TotalProjectBudget - delta < 0)
+                    return await RollbackAsync(new ApiResponse().SetConflict(message: "The correction would make the project budget negative."));
+                request.ActualCost = update.ActualCost;
+                request.ActualCostUpdatedAt = DateTime.UtcNow;
+                request.ActualCostUpdatedByUserId = user.Id;
+                if (delta != 0)
+                    await AppendBudgetLedgerAsync(request, delta, ProjectBudgetLedgerEntryTypes.Correction, user.Id, update.Note);
+                await _uow.SaveChangeAsync();
+                await _uow.CommitTransactionAsync();
+                return await GetRequestByIdAsync(requestId);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                await _uow.RollbackTransactionAsync();
+                return new ApiResponse().SetConflict(message: "The request or project budget changed. Reload and retry.");
+            }
+            catch
+            {
+                await _uow.RollbackTransactionAsync();
+                return InternalError("Unable to update actual material cost.");
             }
         }
 
@@ -509,6 +576,7 @@ namespace cpms_Application.Services
                 nameof(Role.WAREHOUSE_MANAGER) => r =>
                     (!r.WarehouseId.HasValue && r.Status == MaterialRequestStatuses.Pending) ||
                     (r.WarehouseId.HasValue && r.Warehouse!.ManagerId == user.Id),
+                nameof(Role.CUSTOMER) => r => r.Project.CustomerUserId == user.Id,
                 _ => r => false
             };
             var requests = await _uow.MaterialRequests.GetAllAsync(accessFilter, RequestIncludes());
@@ -525,6 +593,7 @@ namespace cpms_Application.Services
                 nameof(Role.WAREHOUSE_MANAGER) => r => r.ProjectId == projectId &&
                     ((!r.WarehouseId.HasValue && r.Status == MaterialRequestStatuses.Pending) ||
                      (r.WarehouseId.HasValue && r.Warehouse!.ManagerId == user.Id)),
+                nameof(Role.CUSTOMER) => r => r.ProjectId == projectId && r.Project.CustomerUserId == user.Id,
                 _ => r => false
             };
             var requests = await _uow.MaterialRequests.GetAllAsync(accessFilter, RequestIncludes());
@@ -536,6 +605,30 @@ namespace cpms_Application.Services
                   .Include(r => r.Requester)
                   .Include(r => r.Warehouse)
                   .Include(r => r.Requisitions).ThenInclude(i => i.Variant).ThenInclude(v => v.Material);
+
+        private async Task AppendBudgetLedgerAsync(MaterialRequest request, decimal delta, string entryType, int userId, string? note)
+        {
+            request.Project.TotalProjectBudget -= delta;
+            request.BudgetDebitedAmount += delta;
+            await _uow.ProjectBudgetLedgers.AddAsync(new ProjectBudgetLedger
+            {
+                ProjectId = request.ProjectId,
+                MaterialRequestId = request.RequestId,
+                EstimatedCost = request.EstimatedCost,
+                ActualCost = request.ActualCost,
+                BudgetDebitedAmount = delta,
+                EntryType = entryType,
+                RecordedByUserId = userId,
+                RecordedAt = DateTime.UtcNow,
+                Note = note?.Trim() ?? string.Empty
+            });
+        }
+
+        private async Task<ApiResponse> RollbackAsync(ApiResponse response)
+        {
+            await _uow.RollbackTransactionAsync();
+            return response;
+        }
 
         private async Task<List<MaterialRequestResponse>> MapResponsesAsync(IEnumerable<MaterialRequest> requests)
         {
@@ -611,6 +704,7 @@ namespace cpms_Application.Services
         private static bool CanReadRequest(ClaimDTO claim, MaterialRequest request) =>
             IsRole(claim, Role.ADMIN) ||
             (IsRole(claim, Role.PM) && request.Project.PMUserID == claim.Id) ||
+            (IsRole(claim, Role.CUSTOMER) && request.Project.CustomerUserId == claim.Id) ||
             (IsRole(claim, Role.WAREHOUSE_MANAGER) &&
              ((!request.WarehouseId.HasValue && request.Status == MaterialRequestStatuses.Pending) ||
               request.Warehouse?.ManagerId == claim.Id));
