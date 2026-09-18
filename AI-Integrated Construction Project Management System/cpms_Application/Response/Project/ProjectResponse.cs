@@ -35,6 +35,10 @@ namespace cpms_Application.Response.Project
         public int PMUserID { get; set; }
         public string PMName { get; set; } = null!;
 
+        // Khách hàng được gán cho dự án (có thể null)
+        public int? CustomerUserId { get; set; }
+        public string? CustomerName { get; set; }
+
         // 5. Thống kê (Không bắt buộc nhưng FE rất thích)
         public int TotalTasks { get; set; }
         public int TotalAIAlerts { get; set; }

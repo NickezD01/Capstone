@@ -55,9 +55,18 @@ namespace cpms_Application.Services
                     return apiResponse.SetNotFound("Project manager not found.");
                 }
 
+                UserAccount? customer = null;
+                if (request.CustomerUserId.HasValue)
+                {
+                    customer = await _unitOfWork.UserAccounts.GetByIdAsync(request.CustomerUserId.Value);
+                    if (customer == null || customer.Role != Role.CUSTOMER || customer.IsEmailVerified != true)
+                        return apiResponse.SetBadRequest("The assigned customer must be a verified account with the CUSTOMER role.");
+                }
+
                 // Mapping Request -> Entity
                 var project = _mapper.Map<Project>(request);
                 project.Status = ProjectStatus.PLANNING;
+                project.Customer = customer;
 
                 // Lưu Project
                 await _unitOfWork.Projects.AddAsync(project);
@@ -68,6 +77,7 @@ namespace cpms_Application.Services
                     filter: p => p.ProjectId == project.ProjectId,
                     include: query => query
                         .Include(p => p.ProjectManager)
+                        .Include(p => p.Customer)
                         .Include(p => p.Tasks)
                         .Include(p => p.PurchaseOrders).ThenInclude(o => o.OrderLineItems)
                         .Include(p => p.AIAlerts)
@@ -103,12 +113,14 @@ namespace cpms_Application.Services
                     nameof(Role.WAREHOUSE_MANAGER) => p =>
                         p.MaterialRequests.Any(r => r.WarehouseId.HasValue && r.Warehouse!.ManagerId == currentUser.Id) ||
                         p.PurchaseOrders.Any(o => o.Warehouse.ManagerId == currentUser.Id),
+                    nameof(Role.CUSTOMER) => p => p.CustomerUserId.HasValue && p.CustomerUserId.Value == currentUser.Id,
                     _ => p => false
                 };
                 var projects = await _unitOfWork.Projects.GetAllAsync(
                     filter: accessFilter,
                     include: query => query
                         .Include(p => p.ProjectManager)
+                        .Include(p => p.Customer)
                         .Include(p => p.Tasks)
                         .Include(p => p.PurchaseOrders).ThenInclude(o => o.OrderLineItems)
                         .Include(p => p.AIAlerts)
@@ -134,6 +146,7 @@ namespace cpms_Application.Services
                     filter: p => p.ProjectId == id,
                     include: query => query
                         .Include(p => p.ProjectManager)
+                        .Include(p => p.Customer)
                         .Include(p => p.Tasks)
                         .Include(p => p.PurchaseOrders).ThenInclude(o => o.OrderLineItems)
                         .Include(p => p.AIAlerts)
@@ -143,7 +156,7 @@ namespace cpms_Application.Services
                 {
                     return apiResponse.SetNotFound("Project not found or has been deleted.");
                 }
-                if (!await CanReadProjectAsync(id, project.PMUserID))
+                if (!await CanReadProjectAsync(project))
                     return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You do not have access to this project.");
 
                 var response = _mapper.Map<ProjectResponse>(project);
@@ -368,7 +381,7 @@ namespace cpms_Application.Services
                     return apiResponse.SetNotFound("Project not found.");
                 if (project.Status is ProjectStatus.COMPLETED or ProjectStatus.CANCELLED)
                     return apiResponse.SetConflict("MRP cannot be recalculated for a closed project.");
-                if (!await CanReadProjectAsync(projectId, project.PMUserID))
+                if (!await CanReadProjectAsync(project))
                     return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You do not have access to this project's material requirements.");
 
                 var projectRequirements = await _unitOfWork.TaskMaterialRequirements.GetAllAsync(
@@ -859,6 +872,34 @@ namespace cpms_Application.Services
             return await GetProjectByIdAsync(projectId);
         }
 
+        public async Task<ApiResponse> AssignCustomerAsync(int projectId, AssignCustomerRequest request)
+        {
+            var user = _claimService.GetUserClaim();
+            if (!IsRole(user, Role.PM))
+                return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Only the owning project manager may assign a customer.");
+            var project = await _unitOfWork.Projects.GetByIdAsync(projectId);
+            if (project == null) return new ApiResponse().SetNotFound("Project not found.");
+            if (project.PMUserID != user.Id)
+                return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Only the owning project manager may assign a customer.");
+            if (project.Status is ProjectStatus.COMPLETED or ProjectStatus.CANCELLED)
+                return new ApiResponse().SetConflict("A closed project's customer cannot be changed.");
+            if (!MatchesRowVersion(project.RowVersion, request.RowVersion))
+                return new ApiResponse().SetConflict("Project changed. Reload and retry.");
+
+            UserAccount? customer = null;
+            if (request.CustomerUserId.HasValue)
+            {
+                customer = await _unitOfWork.UserAccounts.GetByIdAsync(request.CustomerUserId.Value);
+                if (customer == null || customer.Role != Role.CUSTOMER || customer.IsEmailVerified != true)
+                    return new ApiResponse().SetBadRequest("The assigned customer must be a verified account with the CUSTOMER role.");
+            }
+
+            project.CustomerUserId = request.CustomerUserId;
+            project.Customer = customer;
+            await _unitOfWork.SaveChangeAsync();
+            return await GetProjectByIdAsync(projectId);
+        }
+
         private static bool MatchesRowVersion(byte[] current, string supplied) =>
             !string.IsNullOrWhiteSpace(supplied) && Convert.ToBase64String(current).Equals(supplied, StringComparison.Ordinal);
 
@@ -892,18 +933,20 @@ namespace cpms_Application.Services
                 : "Approve or reject pending progress reports before closing the project.";
         }
 
-        private async Task<bool> CanReadProjectAsync(int projectId, int projectManagerId)
+        private async Task<bool> CanReadProjectAsync(Project project)
         {
             var currentUser = _claimService.GetUserClaim();
             if (IsRole(currentUser, Role.ADMIN)) return true;
-            if (IsRole(currentUser, Role.PM)) return projectManagerId == currentUser.Id;
+            if (IsRole(currentUser, Role.PM)) return project.PMUserID == currentUser.Id;
+            if (IsRole(currentUser, Role.CUSTOMER))
+                return project.CustomerUserId.HasValue && project.CustomerUserId.Value == currentUser.Id;
             if (!IsRole(currentUser, Role.WAREHOUSE_MANAGER)) return false;
 
             var linkedRequest = await _unitOfWork.MaterialRequests.GetAsync(r =>
-                r.ProjectId == projectId && r.WarehouseId.HasValue && r.Warehouse!.ManagerId == currentUser.Id);
+                r.ProjectId == project.ProjectId && r.WarehouseId.HasValue && r.Warehouse!.ManagerId == currentUser.Id);
             if (linkedRequest != null) return true;
             var linkedOrder = await _unitOfWork.PurchaseOrders.GetAsync(o =>
-                o.ProjectId == projectId && o.Warehouse.ManagerId == currentUser.Id);
+                o.ProjectId == project.ProjectId && o.Warehouse.ManagerId == currentUser.Id);
             return linkedOrder != null;
         }
 

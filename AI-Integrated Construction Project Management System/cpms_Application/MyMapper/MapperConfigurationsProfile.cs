@@ -59,6 +59,12 @@ namespace cpms_Application.MyMapper
                 ? $"{src.ProjectManager.LastName} {src.ProjectManager.FirstName}".Trim()
                 : string.Empty))
 
+    .ForMember(dest => dest.CustomerName,
+        opt => opt.MapFrom(src =>
+            src.Customer != null
+                ? $"{src.Customer.LastName} {src.Customer.FirstName}".Trim()
+                : null))
+
     .ForMember(dest => dest.TotalTasks,
         opt => opt.MapFrom(src => src.Tasks.Count))
 
@@ -167,10 +173,14 @@ namespace cpms_Application.MyMapper
             // === TASKS ===
             CreateMap<CreateTaskRequest, TaskItem>()
                 .ForMember(dest => dest.TaskId, opt => opt.Ignore())
+                .ForMember(dest => dest.ProjectId, opt => opt.Ignore())
+                .ForMember(dest => dest.Project, opt => opt.Ignore())
+                .ForMember(dest => dest.PhaseId, opt => opt.Ignore())
+                .ForMember(dest => dest.Phase, opt => opt.Ignore())
+                .ForMember(dest => dest.PhaseName, opt => opt.Ignore())
                 .ForMember(dest => dest.Status, opt => opt.Ignore())
                 .ForMember(dest => dest.ActualCost, opt => opt.Ignore())
                 .ForMember(dest => dest.ActualProgressPct, opt => opt.Ignore())
-                .ForMember(dest => dest.Project, opt => opt.Ignore())
                 .ForMember(dest => dest.AssignedToUser, opt => opt.Ignore())
                 .ForMember(dest => dest.MaterialRequirements, opt => opt.Ignore())
                 .ForMember(dest => dest.ProgressReports, opt => opt.Ignore());

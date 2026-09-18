@@ -1,12 +1,16 @@
-﻿using cpms_Application.Interfaces;
+using cpms_Application.Interfaces;
 using cpms_Application.Request.Tasks;
+using cpms_Application.Response;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using System.Net;
 using System.Threading.Tasks;
 
 namespace cpms_API.Controllers
 {
-    [Route("api/[controller]")]
+    [Route("api/Tasks")]
+    [Route("api/task")]
     [ApiController]
     [Authorize] // Bảo mật endpoint bằng JWT Token
     public class TaskController : ControllerBase
@@ -18,17 +22,30 @@ namespace cpms_API.Controllers
             _taskService = taskService;
         }
 
-        // POST: api/task
-        [HttpPost]
+        // POST: /api/Phases/{phaseId}/tasks
+        [HttpPost("~/api/Phases/{phaseId:int}/tasks")]
         [Authorize(Roles = "PM")]
-        public async Task<IActionResult> CreateTask([FromBody] CreateTaskRequest request)
+        public async Task<IActionResult> CreateTaskUnderPhase(int phaseId, [FromBody] CreateTaskRequest request)
         {
-            var response = await _taskService.CreateTaskAsync(request);
+            var response = await _taskService.CreateTaskAsync(phaseId, request);
             return StatusCode((int)response.StatusCode, response);
         }
 
-        // GET: api/task/project/{projectId}
-        [HttpGet("project/{projectId}")]
+        // DEPRECATED POST: /api/task -> returns 410 Gone pointing to POST /api/Phases/{phaseId}/tasks
+        [HttpPost]
+        [Authorize(Roles = "PM")]
+        public IActionResult DeprecatedCreateTask()
+        {
+            var response = new ApiResponse().SetApiResponse(
+                HttpStatusCode.Gone,
+                false,
+                "POST /api/task is deprecated. Use POST /api/Phases/{phaseId}/tasks instead.");
+            return StatusCode(StatusCodes.Status410Gone, response);
+        }
+
+        // GET: /api/Projects/{projectId}/tasks (and legacy alias /api/task/project/{projectId})
+        [HttpGet("~/api/Projects/{projectId:int}/tasks")]
+        [HttpGet("project/{projectId:int}")]
         [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
         public async Task<IActionResult> GetTasksByProject(int projectId)
         {
@@ -36,6 +53,7 @@ namespace cpms_API.Controllers
             return StatusCode((int)response.StatusCode, response);
         }
 
+        // GET: /api/Tasks/{taskId} (and legacy alias /api/task/{taskId})
         [HttpGet("{taskId:int}")]
         [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
         public async Task<IActionResult> GetTaskById(int taskId)
@@ -44,16 +62,17 @@ namespace cpms_API.Controllers
             return StatusCode((int)response.StatusCode, response);
         }
 
-        [HttpGet("project/{projectId}/material-requirements")]
+        // GET: /api/Tasks/project/{projectId}/material-requirements (and legacy alias)
+        [HttpGet("~/api/Projects/{projectId:int}/material-requirements")]
+        [HttpGet("project/{projectId:int}/material-requirements")]
         [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
         public async Task<IActionResult> GetMaterialRequirements(int projectId)
         {
-            // Lưu ý: Đảm bảo trong ITaskService đã khai báo hàm này 
-            // Hoặc nếu bạn đặt nó bên IProjectService thì gọi qua _projectService nhé.
             var response = await _taskService.GetMaterialRequirementsByProjectIdAsync(projectId);
             return StatusCode((int)response.StatusCode, response);
         }
 
+        // GET: /api/Tasks/assigned (and legacy alias /api/task/assigned)
         [HttpGet("assigned")]
         [Authorize(Roles = "PM")]
         public async Task<IActionResult> GetAssignedTasks()
@@ -62,6 +81,7 @@ namespace cpms_API.Controllers
             return StatusCode((int)response.StatusCode, response);
         }
 
+        // PUT: /api/Tasks/{taskId} (and legacy alias /api/task/{taskId})
         [HttpPut("{taskId:int}")]
         [Authorize(Roles = "PM")]
         public async Task<IActionResult> UpdateTask(int taskId, UpdateTaskRequest request)
@@ -70,14 +90,17 @@ namespace cpms_API.Controllers
             return StatusCode((int)response.StatusCode, response);
         }
 
+        // POST: /api/Tasks/{taskId}/cancel
         [HttpPost("{taskId:int}/cancel")]
         [Authorize(Roles = "PM")]
         public Task<IActionResult> Cancel(int taskId, TaskLifecycleRequest request) => ChangeStatus(taskId, "cancel", request);
 
+        // POST: /api/Tasks/{taskId}/reject
         [HttpPost("{taskId:int}/reject")]
         [Authorize(Roles = "PM")]
         public Task<IActionResult> Reject(int taskId, TaskLifecycleRequest request) => ChangeStatus(taskId, "reject", request);
 
+        // POST: /api/Tasks/{taskId}/reopen
         [HttpPost("{taskId:int}/reopen")]
         [Authorize(Roles = "PM")]
         public Task<IActionResult> Reopen(int taskId, TaskLifecycleRequest request) => ChangeStatus(taskId, "reopen", request);

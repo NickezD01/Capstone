@@ -30,7 +30,7 @@ Use this as the high-level menu/sidebar rule:
 | Categories write | yes | no | no | no |
 | Materials read | yes | yes | yes | yes, if logged in |
 | Materials write | yes | no | no | no |
-| Projects read | yes | yes | yes | no |
+| Projects read | yes | yes | yes | assigned only (CUSTOMER); no (SUPPLIER, WORKER) |
 | Projects create/import/update owned | no by route for create/update, yes for status actions | yes | no | no |
 | Project budget adjustment / manager reassignment | yes | no | no | no |
 | Tasks read | yes | yes | yes | no |
@@ -143,16 +143,18 @@ Only `PM` can call these by controller attribute.
 
 | Method | API | Purpose / Extra Rule |
 | --- | --- | --- |
-| POST | `/api/Projects` | Create project. Service requires `PMUserID` to equal the current PM's user id. |
+| POST | `/api/Projects` | Create project. Service requires `PMUserID` to equal the current PM's user id. Optional `customerUserId` must be a verified `CUSTOMER`. |
+| PUT | `/api/Projects/{projectId}/customer` | Assign or clear the project customer. Service requires owning PM, non-closed project, and `rowVersion`. |
 | POST | `/api/Projects/import-word` | Import project from Word. Service requires PM role/current user. |
 | POST | `/api/Projects/tasks/{taskId}/materials` | Assign planned material requirement to task. Service requires PM manages the project. |
 | PUT | `/api/Projects/{projectId}` | Update project. Service requires owning PM and `rowVersion`. |
-| POST | `/api/Task` | Create task. |
-| GET | `/api/Task/assigned` | Get tasks assigned to current PM by service logic. |
-| PUT | `/api/Task/{taskId}` | Update task. |
-| POST | `/api/Task/{taskId}/cancel` | Cancel task. |
-| POST | `/api/Task/{taskId}/reject` | Reject task. |
-| POST | `/api/Task/{taskId}/reopen` | Reopen task. |
+| POST | `/api/Phases/{phaseId}/tasks` | Create task under a phase. Service requires owning PM; phase/project must not be completed or cancelled. |
+| POST | `/api/task` | Deprecated. Returns `410 Gone` pointing to `POST /api/Phases/{phaseId}/tasks`. |
+| GET | `/api/Tasks/assigned` | Get tasks assigned to current PM by service logic. |
+| PUT | `/api/Tasks/{taskId}` | Update task. Service requires owning PM, row version, and the target phase must belong to the same project. |
+| POST | `/api/Tasks/{taskId}/cancel` | Cancel task. |
+| POST | `/api/Tasks/{taskId}/reject` | Reject task. |
+| POST | `/api/Tasks/{taskId}/reopen` | Reopen task. |
 | POST | `/api/ProgressReport` | Submit progress report. |
 | POST | `/api/ProgressReport/{reportId}/approve` | Approve progress report. |
 | POST | `/api/ProgressReport/{reportId}/reject` | Reject progress report. |
@@ -233,8 +235,8 @@ These are the main shared business read APIs.
 | GET | `/api/MaterialRequest` | List material requests. |
 | GET | `/api/MaterialRequest/{requestId}` | Material request detail. |
 | GET | `/api/MaterialRequest/project/{projectId}` | Material requests by project. |
-| GET | `/api/Projects` | List projects. Service may filter/limit by role/ownership. |
-| GET | `/api/Projects/{id}` | Project detail. PM requires access to their project; service checks ownership. |
+| GET | `/api/Projects` | List projects. PM sees owned projects; CUSTOMER sees only projects assigned to them; warehouse manager sees operationally linked projects. |
+| GET | `/api/Projects/{id}` | Project detail. PM requires ownership; CUSTOMER requires that the project's `customerUserId` equals their user id. |
 | GET | `/api/Projects/{projectId}/material-requirements` | Project material requirements. |
 | POST | `/api/Projects/{projectId}/mrp-runs` | Calculate MRP. PM must own project; warehouse manager must select a warehouse they manage. |
 | GET | `/api/Projects/{projectId}/mrp-runs/latest` | Latest MRP run. PM must own project; warehouse manager must manage warehouse. |
@@ -243,13 +245,15 @@ These are the main shared business read APIs.
 | POST | `/api/PurchaseOrders/{poId}/cancel` | Cancel PO. Service restricts by role/status: warehouse manager can cancel own managed pending PO; ADMIN/owning PM can cancel approvable POs. |
 | GET | `/api/Suppliers` | List suppliers. |
 | GET | `/api/Suppliers/{supplierId}` | Supplier detail. |
-| GET | `/api/Task/project/{projectId}` | Tasks by project. |
-| GET | `/api/Task/{taskId}` | Task detail. |
-| GET | `/api/Task/project/{projectId}/material-requirements` | Task/project material requirements. |
+| GET | `/api/Projects/{projectId}/tasks` | Tasks by project. Legacy alias `GET /api/task/project/{projectId}` still works. |
+| GET | `/api/Tasks/{taskId}` | Task detail. Legacy alias `GET /api/task/{taskId}` still works. |
+| GET | `/api/Projects/{projectId}/material-requirements` | Task/project material requirements. Legacy alias `GET /api/task/project/{projectId}/material-requirements` still works. |
 
 ## APIs Not Intended for CUSTOMER, SUPPLIER, WORKER
 
-Even though these roles exist in the domain enum, the controller attributes do not grant them access to the main project/procurement/warehouse/user-admin APIs.
+`SUPPLIER`, `CUSTOMER`, and `WORKER` exist in the domain enum, but the controller attributes do not grant them access to the main project/procurement/warehouse/user-admin APIs.
+
+`CUSTOMER` has one exception: `GET /api/Projects` and `GET /api/Projects/{id}` allow `CUSTOMER`, scoped by service logic to projects where `customerUserId` equals the caller's user id.
 
 They cannot access APIs restricted to:
 
@@ -258,7 +262,7 @@ They cannot access APIs restricted to:
 - `WAREHOUSE_MANAGER`
 - `ADMIN,PM`
 - `ADMIN,WAREHOUSE_MANAGER`
-- `ADMIN,PM,WAREHOUSE_MANAGER`
+- `ADMIN,PM,WAREHOUSE_MANAGER` (except the customer-scoped project read routes noted above)
 
 They can access:
 
@@ -286,7 +290,7 @@ So for frontend:
 
 ## Phase APIs (Implemented)
 
-Phase endpoints are now available as the first additive restructuring slice. Existing task APIs still use `PhaseName` for compatibility; `TaskItem.PhaseId` is nullable until the task migration is completed.
+Phase endpoints are now available as the first additive restructuring slice. The task-to-phase migration is complete: `TaskItem.PhaseId` is required and every task belongs to a phase. `TaskItems.PhaseName` is retained as a denormalized display copy synced from `Phase.Name` during create/update. Tasks are created under a phase via `POST /api/Phases/{phaseId}/tasks`; the legacy `POST /api/task` returns `410 Gone`.
 
 | Method | API | Allowed role | Service-level rule |
 | --- | --- | --- | --- |

@@ -29,7 +29,7 @@ namespace cpms_API.Controllers
 
         // GET: api/projects
         [HttpGet]
-        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
+        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER,CUSTOMER")]
         public async Task<IActionResult> GetAllProjects()
         {
             var response = await _projectService.GetAllProjectsAsync();
@@ -38,7 +38,7 @@ namespace cpms_API.Controllers
 
         // GET: api/projects/{id}
         [HttpGet("{id}")]
-        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
+        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER,CUSTOMER")]
         public async Task<IActionResult> GetProjectById(int id)
         {
             var response = await _projectService.GetProjectByIdAsync(id);
@@ -144,6 +144,14 @@ namespace cpms_API.Controllers
         public async Task<IActionResult> ReassignProjectManager(int projectId, ReassignProjectManagerRequest request)
         {
             var response = await _projectService.ReassignProjectManagerAsync(projectId, request);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpPut("{projectId:int}/customer")]
+        [Authorize(Roles = "PM")]
+        public async Task<IActionResult> AssignCustomer(int projectId, AssignCustomerRequest request)
+        {
+            var response = await _projectService.AssignCustomerAsync(projectId, request);
             return StatusCode((int)response.StatusCode, response);
         }
     }

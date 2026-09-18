@@ -100,9 +100,9 @@ Base path: `/api/Projects`
 
 | Method | Path | Auth | Body / Query | Result |
 | --- | --- | --- | --- | --- |
-| POST | `/` | `PM` | `CreateProjectRequest` | `ProjectResponse` |
-| GET | `/` | `ADMIN,PM,WAREHOUSE_MANAGER` | none | `ProjectResponse[]` |
-| GET | `/{id}` | `ADMIN,PM,WAREHOUSE_MANAGER` | none | `ProjectResponse` |
+| POST | `/` | `PM` | `CreateProjectRequest` (optional `customerUserId`) | `ProjectResponse` |
+| GET | `/` | `ADMIN,PM,WAREHOUSE_MANAGER,CUSTOMER` | none | `ProjectResponse[]` |
+| GET | `/{id}` | `ADMIN,PM,WAREHOUSE_MANAGER,CUSTOMER` | none | `ProjectResponse` |
 | POST | `/import-word` | `PM` | multipart form-data field `file`, `.docx`, max 10 MB | imported `ProjectResponse` |
 | POST | `/tasks/{taskId}/materials` | `PM` | `CreateTaskMaterialRequirementRequest` | task material requirement response/object |
 | GET | `/{projectId}/material-requirements` | `ADMIN,PM,WAREHOUSE_MANAGER` | none | `TaskMaterialResponse[]` |
@@ -117,29 +117,36 @@ Base path: `/api/Projects`
 | POST | `/{projectId}/reopen` | `PM,ADMIN` | `ProjectLifecycleRequest` | `{ projectId, status, rowVersion }` |
 | POST | `/{projectId}/complete` | `PM,ADMIN` | `ProjectLifecycleRequest` | `{ projectId, status, rowVersion }` |
 | PUT | `/{projectId}/project-manager` | `ADMIN` | `ReassignProjectManagerRequest` | updated project/status object |
+| PUT | `/{projectId}/customer` | `PM` | `AssignCustomerRequest` (`customerUserId?`, `rowVersion`) | updated `ProjectResponse` |
 
 Project access rules:
 
 - PMs can create only projects assigned to themselves.
 - PMs can read/update/change projects they own.
 - Warehouse managers can read project/MRP data only in allowed contexts; MRP requires a warehouse they manage.
+- CUSTOMER accounts can read only projects explicitly assigned to them (`customerUserId`). Assigning or clearing the customer is done by the owning PM via `PUT /{projectId}/customer`; the target account must be a verified `CUSTOMER`. Reassignment revokes the former customer's access immediately. A closed (`COMPLETED`/`CANCELLED`) project cannot change its customer.
 - Closed projects cannot accept many downstream changes.
 
 ### Tasks
 
-Base path: `/api/Task`
+Canonical base path: `/api/Tasks` (controller also exposes the case-insensitive legacy alias `/api/task`).
 
 | Method | Path | Auth | Body | Result |
 | --- | --- | --- | --- | --- |
-| POST | `/` | `PM` | `CreateTaskRequest` | `TaskResponse` |
-| GET | `/project/{projectId}` | `ADMIN,PM,WAREHOUSE_MANAGER` | none | `TaskResponse[]` |
-| GET | `/{taskId}` | `ADMIN,PM,WAREHOUSE_MANAGER` | none | `TaskResponse` |
-| GET | `/project/{projectId}/material-requirements` | `ADMIN,PM,WAREHOUSE_MANAGER` | none | `TaskMaterialResponse[]` |
-| GET | `/assigned` | `PM` | none | `TaskResponse[]` |
-| PUT | `/{taskId}` | `PM` | `UpdateTaskRequest` | updated task/status object |
-| POST | `/{taskId}/cancel` | `PM` | `TaskLifecycleRequest` | `{ taskId, status, rowVersion }` |
-| POST | `/{taskId}/reject` | `PM` | `TaskLifecycleRequest` | `{ taskId, status, rowVersion }` |
-| POST | `/{taskId}/reopen` | `PM` | `TaskLifecycleRequest` | `{ taskId, status, rowVersion }` |
+| POST | `/api/Phases/{phaseId}/tasks` | `PM` | `CreateTaskRequest` (no `ProjectId`/`PhaseName`; project is derived from the phase) | `TaskResponse` |
+| POST | `/api/task` | `PM` | none | `410 Gone` - deprecated. Use `POST /api/Phases/{phaseId}/tasks`. |
+| GET | `/api/Projects/{projectId}/tasks` | `ADMIN,PM,WAREHOUSE_MANAGER` | none | `TaskResponse[]` |
+| GET | `/api/Tasks/{taskId}` | `ADMIN,PM,WAREHOUSE_MANAGER` | none | `TaskResponse` |
+| GET | `/api/Projects/{projectId}/material-requirements` | `ADMIN,PM,WAREHOUSE_MANAGER` | none | `TaskMaterialResponse[]` |
+| GET | `/api/Tasks/assigned` | `PM` | none | `TaskResponse[]` |
+| PUT | `/api/Tasks/{taskId}` | `PM` | `UpdateTaskRequest` (has `PhaseId`; the target phase must belong to the same project) | updated task/status object |
+| POST | `/api/Tasks/{taskId}/cancel` | `PM` | `TaskLifecycleRequest` | `{ taskId, status, rowVersion }` |
+| POST | `/api/Tasks/{taskId}/reject` | `PM` | `TaskLifecycleRequest` | `{ taskId, status, rowVersion }` |
+| POST | `/api/Tasks/{taskId}/reopen` | `PM` | `TaskLifecycleRequest` | `{ taskId, status, rowVersion }` |
+
+Legacy read aliases remain available (`GET /api/task/project/{projectId}`, `GET /api/task/{taskId}`, `GET /api/task/project/{projectId}/material-requirements`, `GET /api/task/assigned`, `PUT /api/task/{taskId}`, lifecycle under `/api/task/...`).
+
+`CreateTaskRequest` body: `taskName`, `assignedToUserID`, `plannedBudget`, `baselineStart`, `baselineEnd`, `materials[]. Task dates must stay inside both the project and the phase baseline. Creating or updating a task under a `COMPLETED`/`CANCELLED` phase returns 409.
 
 ### Progress Reports
 
@@ -519,10 +526,11 @@ Auth and users:
 
 Project/task/progress:
 
-- `CreateProjectRequest`: `projectName`, `address?`, `totalProjectBudget`, `startDate`, `pmUserID`, `baselineStart`, `baselineEnd`
+- `CreateProjectRequest`: `projectName`, `address?`, `totalProjectBudget`, `startDate`, `pmUserID`, `baselineStart`, `baselineEnd`, `customerUserId?`
 - `UpdateProjectRequest`: `projectName`, `address?`, `startDate`, `baselineStart`, `baselineEnd`, `rowVersion`
 - `ProjectLifecycleRequest`: `rowVersion`
 - `ReassignProjectManagerRequest`: `projectManagerUserId`, `rowVersion`
+- `AssignCustomerRequest`: `customerUserId?` (null clears the assignment), `rowVersion`
 - `AdjustBudgetRequest`: `projectId`, `amount`, `reason`
 - `CreateTaskRequest`: `projectId`, `phaseName`, `taskName`, `assignedToUserID`, `plannedBudget`, `baselineStart`, `baselineEnd`, `materials[]`
 - `TaskMaterialRequest`: `variantId`, `materialId`, `grossQuantityRequired`
@@ -602,7 +610,7 @@ Use these as the shape inside `result`.
 - `AuthTokenResponse`: `accessToken`, `refreshToken`, `accessTokenExpiresAt`, `refreshTokenExpiresAt`
 - `UserProfileResponse`: `id`, `firstName`, `lastName`, `email`, `phoneNumber`, `imgUrl?`, `role`
 - `AccountResponse`: `id`, `firstName`, `lastName`, `email`, `phoneNumber`, `role`
-- `ProjectResponse`: `projectId`, `projectName`, `address?`, `status`, `createdDate`, `startDate`, `baselineStart`, `baselineEnd`, `totalProjectBudget`, `budgetConfigured`, `actualCost`, `plannedTaskBudget`, `reportedTaskActualCost`, `purchaseOrderCommittedCost`, `purchaseOrderReceivedCost`, `remainingProcurementBudget`, `currency`, `pmUserID`, `pmName`, `totalTasks`, `totalAIAlerts`, `rowVersion`
+- `ProjectResponse`: `projectId`, `projectName`, `address?`, `status`, `createdDate`, `startDate`, `baselineStart`, `baselineEnd`, `totalProjectBudget`, `budgetConfigured`, `actualCost`, `plannedTaskBudget`, `reportedTaskActualCost`, `purchaseOrderCommittedCost`, `purchaseOrderReceivedCost`, `remainingProcurementBudget`, `currency`, `pmUserID`, `pmName`, `customerUserId?`, `customerName?`, `totalTasks`, `totalAIAlerts`, `rowVersion`
 - `ProjectBudgetHistoryResponse`: `id`, `projectId`, `amountChanged`, `previousBudget`, `newBudget`, `currency`, `reason`, `updatedByUserId`, `createdAt`
 - `TaskResponse`: `taskId`, `projectId`, `phaseName`, `taskName`, `assignedToUserID`, `assignedToUserName`, `plannedBudget`, `actualCost`, `actualProgressPct`, `status`, `baselineStart`, `baselineEnd`, `rowVersion`, `materialRequirements[]`
 - `TaskMaterialResponse`: `variantId`, `materialId`, `materialName`, `variantName`, `taskName?`, `grossQuantityRequired`, `unit`
@@ -766,7 +774,7 @@ Phase request fields:
 
 Phase status values are `PLANNED`, `IN_PROGRESS`, `COMPLETED`, and `CANCELLED`. Phase names are unique within a project. Phase dates must remain inside the project baseline. Keep the latest `rowVersion` and send it on updates and cancellation; stale values return HTTP 409.
 
-Customer phase access will be enabled with the customer-assignment API and shared project-access policy. Until then, the implemented phase routes authorize `ADMIN`, `PM`, and `WAREHOUSE_MANAGER` according to their project scope.
+Project customer assignment is now implemented (see Projects), so an assigned customer can read their project. The phase routes below still authorize only `ADMIN`, `PM`, and `WAREHOUSE_MANAGER`; enabling customer phase reads is a follow-up that will reuse the same project-access check.
 
 ## Validation Highlights
 

@@ -1,4 +1,4 @@
-﻿using cpms_Domain.Models;
+using cpms_Domain.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using System;
@@ -13,6 +13,7 @@ namespace cpms_Infrastructure.Configuration
             builder.ToTable("TaskItems");
             builder.HasKey(t => t.TaskId);
 
+            builder.Property(t => t.PhaseId).IsRequired();
             builder.Property(t => t.PhaseName).IsRequired().HasMaxLength(100);
             builder.Property(t => t.TaskName).IsRequired().HasMaxLength(200);
 
@@ -47,6 +48,7 @@ namespace cpms_Infrastructure.Configuration
             builder.HasOne(t => t.Phase)
                    .WithMany(p => p.Tasks)
                    .HasForeignKey(t => t.PhaseId)
+                   .IsRequired()
                    .OnDelete(DeleteBehavior.Restrict);
 
             // 🚀 BỔ SUNG: Cấu hình khóa ngoại liên kết tới người được giao việc (AssignedToUser)

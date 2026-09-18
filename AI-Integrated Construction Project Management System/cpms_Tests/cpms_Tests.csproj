@@ -17,5 +17,6 @@
   <ItemGroup>
     <ProjectReference Include="..\cpms_Domain\cpms_Domain.csproj" />
     <ProjectReference Include="..\cpms_Infrastructure\cpms_Infrastructure.csproj" />
+    <ProjectReference Include="..\cpms_API\cpms_API.csproj" />
   </ItemGroup>
 </Project>

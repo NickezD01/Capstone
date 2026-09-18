@@ -18,5 +18,8 @@ namespace cpms_Application.Request.Project
         public int PMUserID { get; set; }
         public DateTime BaselineStart { get; set; }
         public DateTime BaselineEnd { get; set; }
+
+        // Khách hàng tùy chọn được gán ngay khi tạo dự án
+        public int? CustomerUserId { get; set; }
     }
 }

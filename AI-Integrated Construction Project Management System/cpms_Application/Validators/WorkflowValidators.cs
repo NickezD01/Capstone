@@ -90,6 +90,15 @@ namespace cpms_Application.Validators
         }
     }
 
+    public class AssignCustomerRequestValidator : AbstractValidator<AssignCustomerRequest>
+    {
+        public AssignCustomerRequestValidator()
+        {
+            RuleFor(x => x.RowVersion).NotEmpty();
+            RuleFor(x => x.CustomerUserId).GreaterThan(0).When(x => x.CustomerUserId.HasValue);
+        }
+    }
+
     public class UpdateProjectRequestValidator : AbstractValidator<UpdateProjectRequest>
     {
         public UpdateProjectRequestValidator()
@@ -362,9 +371,7 @@ namespace cpms_Application.Validators
     {
         public CreateTaskRequestValidator()
         {
-            RuleFor(x => x.ProjectId).GreaterThan(0);
             RuleFor(x => x.AssignedToUserID).GreaterThan(0);
-            RuleFor(x => x.PhaseName).NotEmpty().MaximumLength(100);
             RuleFor(x => x.TaskName).NotEmpty().MaximumLength(200);
             RuleFor(x => x.PlannedBudget).GreaterThanOrEqualTo(0);
             RuleFor(x => x.BaselineEnd).GreaterThanOrEqualTo(x => x.BaselineStart);
@@ -427,7 +434,7 @@ namespace cpms_Application.Validators
         public UpdateTaskRequestValidator()
         {
             RuleFor(x => x.AssignedToUserID).GreaterThan(0);
-            RuleFor(x => x.PhaseName).NotEmpty().MaximumLength(100);
+            RuleFor(x => x.PhaseId).GreaterThan(0);
             RuleFor(x => x.TaskName).NotEmpty().MaximumLength(200);
             RuleFor(x => x.PlannedBudget).GreaterThanOrEqualTo(0);
             RuleFor(x => x.BaselineEnd).GreaterThanOrEqualTo(x => x.BaselineStart);

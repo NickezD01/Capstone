@@ -20,3 +20,10 @@ public sealed class ReassignProjectManagerRequest
     public int ProjectManagerUserId { get; set; }
     public string RowVersion { get; set; } = string.Empty;
 }
+
+public sealed class AssignCustomerRequest
+{
+    // Set to null to clear the current customer assignment.
+    public int? CustomerUserId { get; set; }
+    public string RowVersion { get; set; } = string.Empty;
+}

@@ -107,7 +107,7 @@ public class EfModelTests
     }
 
     [Fact]
-    public void Phase_HasProjectRelationshipUniquenessConcurrencyAndNullableTaskLink()
+    public void Phase_HasProjectRelationshipUniquenessConcurrencyAndRequiredTaskLink()
     {
         using var context = CreateContext();
         var phase = context.Model.FindEntityType(typeof(Phase))!;
@@ -122,10 +122,24 @@ public class EfModelTests
 
         var task = context.Model.FindEntityType(typeof(TaskItem))!;
         var phaseFk = Assert.Single(task.GetForeignKeys(), fk => fk.PrincipalEntityType.ClrType == typeof(Phase));
-        Assert.True(phaseFk.IsRequired == false);
+        Assert.True(phaseFk.IsRequired);
         Assert.Equal(DeleteBehavior.Restrict, phaseFk.DeleteBehavior);
         Assert.NotNull(task.FindProperty(nameof(TaskItem.PhaseName)));
         Assert.False(task.FindProperty(nameof(TaskItem.PhaseName))!.IsNullable);
+        Assert.False(task.FindProperty(nameof(TaskItem.PhaseId))!.IsNullable);
+    }
+
+    [Fact]
+    public void Project_HasOptionalCustomerAssignmentWithLookupIndex()
+    {
+        using var context = CreateContext();
+        var project = context.Model.FindEntityType(typeof(Project))!;
+        var customerFk = Assert.Single(project.GetForeignKeys(), fk =>
+            fk.Properties.Any(p => p.Name == nameof(Project.CustomerUserId)));
+        Assert.False(customerFk.IsRequired);
+        Assert.Equal(DeleteBehavior.Restrict, customerFk.DeleteBehavior);
+        Assert.Contains(project.GetIndexes(), index =>
+            index.Properties.Select(p => p.Name).SequenceEqual(new[] { nameof(Project.CustomerUserId) }));
     }
 
     [Fact]

@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 
 namespace cpms_Domain.Models
@@ -7,7 +7,7 @@ namespace cpms_Domain.Models
     {
         public int TaskId { get; set; } // TaskID (PK)
         public int ProjectId { get; set; } // ProjectID (FK)
-        public int? PhaseId { get; set; }
+        public int PhaseId { get; set; }
         public string PhaseName { get; set; } = null!;
         public string TaskName { get; set; } = null!;
 
@@ -27,16 +27,19 @@ namespace cpms_Domain.Models
 
         // Navigation Properties
         public virtual Project Project { get; set; } = null!;
-        public virtual Phase? Phase { get; set; }
+        public virtual Phase Phase { get; set; } = null!;
         public virtual ICollection<ProgressReport> ProgressReports { get; set; } = new List<ProgressReport>();
         public virtual ICollection<TaskMaterialRequirement> MaterialRequirements { get; set; } = new List<TaskMaterialRequirement>();
 
-        public void UpdatePlan(string phaseName, string taskName, int assigneeId, decimal plannedBudget,
+        public void UpdatePlan(int phaseId, string phaseName, string taskName, int assigneeId, decimal plannedBudget,
             DateTime baselineStart, DateTime baselineEnd)
         {
             if (Status is TaskStatus.COMPLETED or TaskStatus.CANCELLED)
                 throw new InvalidOperationException("A closed task cannot be edited.");
+            if (phaseId <= 0 || string.IsNullOrWhiteSpace(phaseName) || string.IsNullOrWhiteSpace(taskName))
+                throw new ArgumentException("Phase and task name are required.");
             if (plannedBudget < 0 || baselineEnd < baselineStart) throw new ArgumentException("Task plan is invalid.");
+            PhaseId = phaseId;
             PhaseName = phaseName.Trim();
             TaskName = taskName.Trim();
             AssignedToUserID = assigneeId;

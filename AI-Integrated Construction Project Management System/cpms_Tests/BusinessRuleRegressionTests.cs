@@ -10,8 +10,10 @@ using cpms_Application.Request.Tasks;
 using cpms_Application.Request.User;
 using cpms_Application.Request.Warehouse;
 using cpms_Application.Response.MaterialRequest;
+using cpms_Application.Response.Project;
 using cpms_Application.Response.PurchaseOrder;
 using cpms_Application.Response.SupplierCatalog;
+using cpms_Application.Response;
 using cpms_Application.Services;
 using cpms_Domain;
 using cpms_Domain.Models;
@@ -500,13 +502,20 @@ public class BusinessRuleRegressionTests
             BaselineEnd = start.AddMonths(2),
             TotalProjectBudget = 100
         });
-        uow.TaskRecords.Add(new TaskItem { TaskId = 1, ProjectId = 1, TaskName = "Existing", PhaseName = "P", PlannedBudget = 80 });
-
-        var response = await new TaskService(uow, null!, new FakeClaimService(5, Role.PM)).CreateTaskAsync(new CreateTaskRequest
+        uow.PhaseRecords.Add(new Phase
         {
+            PhaseId = 1,
             ProjectId = 1,
+            Name = "P",
+            BaselineStart = start,
+            BaselineEnd = start.AddMonths(2),
+            Status = PhaseStatus.PLANNED
+        });
+        uow.TaskRecords.Add(new TaskItem { TaskId = 1, ProjectId = 1, PhaseId = 1, TaskName = "Existing", PhaseName = "P", PlannedBudget = 80 });
+
+        var response = await new TaskService(uow, null!, new FakeClaimService(5, Role.PM)).CreateTaskAsync(1, new CreateTaskRequest
+        {
             AssignedToUserID = 9,
-            PhaseName = "P",
             TaskName = "New",
             PlannedBudget = 30,
             BaselineStart = start,
@@ -530,6 +539,15 @@ public class BusinessRuleRegressionTests
             BaselineEnd = start.AddMonths(2),
             TotalProjectBudget = 1000
         });
+        uow.PhaseRecords.Add(new Phase
+        {
+            PhaseId = 1,
+            ProjectId = 1,
+            Name = "Foundation",
+            BaselineStart = start,
+            BaselineEnd = start.AddMonths(2),
+            Status = PhaseStatus.PLANNED
+        });
         uow.UserAccountRecords.Add(new UserAccount
         {
             Id = 9,
@@ -539,11 +557,9 @@ public class BusinessRuleRegressionTests
         });
 
         var response = await new TaskService(uow, CreateMapper(), new FakeClaimService(5, Role.PM))
-            .CreateTaskAsync(new CreateTaskRequest
+            .CreateTaskAsync(1, new CreateTaskRequest
             {
-                ProjectId = 1,
                 AssignedToUserID = 9,
-                PhaseName = "Foundation",
                 TaskName = "Excavation",
                 PlannedBudget = 100,
                 BaselineStart = start,
@@ -552,6 +568,8 @@ public class BusinessRuleRegressionTests
 
         Assert.True(response.IsSuccess, response.ErrorMessage);
         var task = Assert.Single(uow.TaskRecords);
+        Assert.Equal(1, task.PhaseId);
+        Assert.Equal("Foundation", task.PhaseName);
         Assert.Equal(5, task.AssignedToUserID);
         Assert.Equal(0, task.ActualCost);
         Assert.Equal(0, task.ActualProgressPct);
@@ -571,13 +589,20 @@ public class BusinessRuleRegressionTests
             BaselineStart = start,
             BaselineEnd = start.AddMonths(2)
         });
+        uow.PhaseRecords.Add(new Phase
+        {
+            PhaseId = 1,
+            ProjectId = 1,
+            Name = "Foundation",
+            BaselineStart = start,
+            BaselineEnd = start.AddMonths(2),
+            Status = PhaseStatus.PLANNED
+        });
 
         var response = await new TaskService(uow, CreateMapper(), new FakeClaimService(6, Role.PM))
-            .CreateTaskAsync(new CreateTaskRequest
+            .CreateTaskAsync(1, new CreateTaskRequest
             {
-                ProjectId = 1,
                 AssignedToUserID = 6,
-                PhaseName = "Foundation",
                 TaskName = "Excavation",
                 PlannedBudget = 100,
                 BaselineStart = start,
@@ -603,10 +628,20 @@ public class BusinessRuleRegressionTests
             BaselineEnd = start.AddMonths(2),
             TotalProjectBudget = 1000
         });
+        uow.PhaseRecords.Add(new Phase
+        {
+            PhaseId = 1,
+            ProjectId = 1,
+            Name = "New phase",
+            BaselineStart = start,
+            BaselineEnd = start.AddMonths(2),
+            Status = PhaseStatus.PLANNED
+        });
         var task = new TaskItem
         {
             TaskId = 1,
             ProjectId = 1,
+            PhaseId = 1,
             AssignedToUserID = 9,
             PhaseName = "Old phase",
             TaskName = "Old task",
@@ -620,8 +655,8 @@ public class BusinessRuleRegressionTests
         var response = await new TaskService(uow, CreateMapper(), new FakeClaimService(5, Role.PM))
             .UpdateTaskAsync(1, new UpdateTaskRequest
             {
+                PhaseId = 1,
                 AssignedToUserID = 11,
-                PhaseName = "New phase",
                 TaskName = "New task",
                 PlannedBudget = 75,
                 BaselineStart = start.AddDays(1),
@@ -632,6 +667,7 @@ public class BusinessRuleRegressionTests
         Assert.True(response.IsSuccess, response.ErrorMessage);
         Assert.Equal(5, task.AssignedToUserID);
         Assert.Equal("New task", task.TaskName);
+        Assert.Equal("New phase", task.PhaseName);
         Assert.Equal(75, task.PlannedBudget);
     }
 
@@ -648,13 +684,20 @@ public class BusinessRuleRegressionTests
             BaselineStart = start,
             BaselineEnd = start.AddMonths(2)
         });
+        uow.PhaseRecords.Add(new Phase
+        {
+            PhaseId = 1,
+            ProjectId = 1,
+            Name = "Foundation",
+            BaselineStart = start,
+            BaselineEnd = start.AddMonths(2),
+            Status = PhaseStatus.PLANNED
+        });
 
         var response = await new TaskService(uow, CreateMapper(), new FakeClaimService(5, Role.PM))
-            .CreateTaskAsync(new CreateTaskRequest
+            .CreateTaskAsync(1, new CreateTaskRequest
             {
-                ProjectId = 1,
                 AssignedToUserID = 5,
-                PhaseName = "Foundation",
                 TaskName = "Excavation",
                 PlannedBudget = 100,
                 BaselineStart = start.AddDays(-1),
@@ -665,6 +708,164 @@ public class BusinessRuleRegressionTests
         Assert.Empty(uow.TaskRecords);
     }
 
+    [Fact]
+    public async Task TaskBaselineDatesMustRemainInsidePhaseBaseline()
+    {
+        var uow = new TestUnitOfWork();
+        var start = DateTime.UtcNow.Date;
+        uow.ProjectRecords.Add(new Project
+        {
+            ProjectId = 1,
+            ProjectName = "P",
+            PMUserID = 5,
+            BaselineStart = start,
+            BaselineEnd = start.AddMonths(3)
+        });
+        uow.PhaseRecords.Add(new Phase
+        {
+            PhaseId = 1,
+            ProjectId = 1,
+            Name = "Foundation",
+            BaselineStart = start.AddDays(5),
+            BaselineEnd = start.AddDays(20),
+            Status = PhaseStatus.PLANNED
+        });
+
+        var response = await new TaskService(uow, CreateMapper(), new FakeClaimService(5, Role.PM))
+            .CreateTaskAsync(1, new CreateTaskRequest
+            {
+                AssignedToUserID = 5,
+                TaskName = "Excavation",
+                PlannedBudget = 100,
+                BaselineStart = start,
+                BaselineEnd = start.AddDays(15)
+            });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("phase baseline", response.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(uow.TaskRecords);
+    }
+
+    [Fact]
+    public async Task CreateTask_RejectsClosedOrCancelledPhase()
+    {
+        var uow = new TestUnitOfWork();
+        var start = DateTime.UtcNow.Date;
+        uow.ProjectRecords.Add(new Project
+        {
+            ProjectId = 1,
+            ProjectName = "P",
+            PMUserID = 5,
+            BaselineStart = start,
+            BaselineEnd = start.AddMonths(3)
+        });
+        uow.PhaseRecords.Add(new Phase
+        {
+            PhaseId = 1,
+            ProjectId = 1,
+            Name = "Completed Phase",
+            BaselineStart = start,
+            BaselineEnd = start.AddMonths(1),
+            Status = PhaseStatus.COMPLETED
+        });
+
+        var response = await new TaskService(uow, CreateMapper(), new FakeClaimService(5, Role.PM))
+            .CreateTaskAsync(1, new CreateTaskRequest
+            {
+                AssignedToUserID = 5,
+                TaskName = "Late Task",
+                PlannedBudget = 50,
+                BaselineStart = start.AddDays(1),
+                BaselineEnd = start.AddDays(5)
+            });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Contains("Closed or cancelled phases", response.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task UpdateTask_RejectsPhaseFromAnotherProject()
+    {
+        var uow = new TestUnitOfWork();
+        var start = DateTime.UtcNow.Date;
+        var rowVersion = new byte[] { 1, 2, 3 };
+        uow.ProjectRecords.Add(new Project
+        {
+            ProjectId = 1,
+            ProjectName = "P1",
+            PMUserID = 5,
+            BaselineStart = start,
+            BaselineEnd = start.AddMonths(2)
+        });
+        uow.ProjectRecords.Add(new Project
+        {
+            ProjectId = 2,
+            ProjectName = "P2",
+            PMUserID = 5,
+            BaselineStart = start,
+            BaselineEnd = start.AddMonths(2)
+        });
+        uow.PhaseRecords.Add(new Phase
+        {
+            PhaseId = 1,
+            ProjectId = 1,
+            Name = "P1 Phase",
+            BaselineStart = start,
+            BaselineEnd = start.AddMonths(1),
+            Status = PhaseStatus.PLANNED
+        });
+        uow.PhaseRecords.Add(new Phase
+        {
+            PhaseId = 2,
+            ProjectId = 2,
+            Name = "P2 Phase",
+            BaselineStart = start,
+            BaselineEnd = start.AddMonths(1),
+            Status = PhaseStatus.PLANNED
+        });
+        var task = new TaskItem
+        {
+            TaskId = 1,
+            ProjectId = 1,
+            PhaseId = 1,
+            AssignedToUserID = 5,
+            PhaseName = "P1 Phase",
+            TaskName = "Task in P1",
+            PlannedBudget = 50,
+            BaselineStart = start,
+            BaselineEnd = start.AddDays(5),
+            RowVersion = rowVersion
+        };
+        uow.TaskRecords.Add(task);
+
+        var response = await new TaskService(uow, CreateMapper(), new FakeClaimService(5, Role.PM))
+            .UpdateTaskAsync(1, new UpdateTaskRequest
+            {
+                PhaseId = 2,
+                AssignedToUserID = 5,
+                TaskName = "Moved Task",
+                PlannedBudget = 50,
+                BaselineStart = start,
+                BaselineEnd = start.AddDays(5),
+                RowVersion = Convert.ToBase64String(rowVersion)
+            });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("Target phase does not belong to this project", response.ErrorMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void DeprecatedCreateTask_Returns410Gone()
+    {
+        var controller = new cpms_API.Controllers.TaskController(null!);
+        var result = controller.DeprecatedCreateTask() as Microsoft.AspNetCore.Mvc.ObjectResult;
+        Assert.NotNull(result);
+        Assert.Equal(410, result!.StatusCode);
+        var apiResponse = result.Value as ApiResponse;
+        Assert.NotNull(apiResponse);
+        Assert.False(apiResponse!.IsSuccess);
+        Assert.Contains("POST /api/Phases/{phaseId}/tasks", apiResponse.ErrorMessage);
+    }
     [Fact]
     public async Task PurchaseOrderRejectsDuplicateResolvedVariants()
     {
@@ -2141,6 +2342,121 @@ public class BusinessRuleRegressionTests
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         Assert.Equal(PurchaseOrderStatus.APPROVED, order.Status);
+    }
+
+    [Fact]
+    public async Task OwningPmAssignsVerifiedCustomerToProject()
+    {
+        var uow = new TestUnitOfWork();
+        var project = new Project { ProjectId = 1, ProjectName = "P", PMUserID = 5, Status = ProjectStatus.IN_PROGRESS, RowVersion = [1] };
+        var customer = new UserAccount { Id = 20, Role = Role.CUSTOMER, IsEmailVerified = true, FirstName = "Cara", LastName = "Client" };
+        uow.ProjectRecords.Add(project);
+        uow.UserAccountRecords.Add(customer);
+
+        var response = await new ProjectService(uow, CreateMapper(), new FakeClaimService(5, Role.PM))
+            .AssignCustomerAsync(1, new AssignCustomerRequest { CustomerUserId = 20, RowVersion = "AQ==" });
+
+        Assert.True(response.IsSuccess, response.ErrorMessage);
+        Assert.Equal(20, project.CustomerUserId);
+        Assert.Equal("Client Cara", Assert.IsType<ProjectResponse>(response.Result).CustomerName);
+    }
+
+    [Fact]
+    public async Task AssignCustomerRejectsNonCustomerAccount()
+    {
+        var uow = new TestUnitOfWork();
+        var project = new Project { ProjectId = 1, ProjectName = "P", PMUserID = 5, Status = ProjectStatus.IN_PROGRESS, RowVersion = [1] };
+        var manager = new UserAccount { Id = 20, Role = Role.PM, IsEmailVerified = true };
+        uow.ProjectRecords.Add(project);
+        uow.UserAccountRecords.Add(manager);
+
+        var response = await new ProjectService(uow, CreateMapper(), new FakeClaimService(5, Role.PM))
+            .AssignCustomerAsync(1, new AssignCustomerRequest { CustomerUserId = 20, RowVersion = "AQ==" });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Null(project.CustomerUserId);
+    }
+
+    [Fact]
+    public async Task NonOwningPmCannotAssignCustomer()
+    {
+        var uow = new TestUnitOfWork();
+        var project = new Project { ProjectId = 1, ProjectName = "P", PMUserID = 5, Status = ProjectStatus.IN_PROGRESS, RowVersion = [1] };
+        uow.ProjectRecords.Add(project);
+        uow.UserAccountRecords.Add(new UserAccount { Id = 20, Role = Role.CUSTOMER, IsEmailVerified = true });
+
+        var response = await new ProjectService(uow, CreateMapper(), new FakeClaimService(6, Role.PM))
+            .AssignCustomerAsync(1, new AssignCustomerRequest { CustomerUserId = 20, RowVersion = "AQ==" });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Null(project.CustomerUserId);
+    }
+
+    [Fact]
+    public async Task ClosedProjectRejectsCustomerAssignment()
+    {
+        var uow = new TestUnitOfWork();
+        var project = new Project { ProjectId = 1, ProjectName = "P", PMUserID = 5, Status = ProjectStatus.COMPLETED, RowVersion = [1] };
+        uow.ProjectRecords.Add(project);
+        uow.UserAccountRecords.Add(new UserAccount { Id = 20, Role = Role.CUSTOMER, IsEmailVerified = true });
+
+        var response = await new ProjectService(uow, CreateMapper(), new FakeClaimService(5, Role.PM))
+            .AssignCustomerAsync(1, new AssignCustomerRequest { CustomerUserId = 20, RowVersion = "AQ==" });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Null(project.CustomerUserId);
+    }
+
+    [Fact]
+    public async Task AssignedCustomerCanReadProjectButAnotherCustomerCannot()
+    {
+        var uow = new TestUnitOfWork();
+        uow.ProjectRecords.Add(new Project { ProjectId = 1, ProjectName = "P", PMUserID = 5, Status = ProjectStatus.IN_PROGRESS, CustomerUserId = 20 });
+
+        var assigned = await new ProjectService(uow, CreateMapper(), new FakeClaimService(20, Role.CUSTOMER))
+            .GetProjectByIdAsync(1);
+        var stranger = await new ProjectService(uow, CreateMapper(), new FakeClaimService(21, Role.CUSTOMER))
+            .GetProjectByIdAsync(1);
+
+        Assert.True(assigned.IsSuccess, assigned.ErrorMessage);
+        Assert.Equal(HttpStatusCode.Forbidden, stranger.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetAllProjectsReturnsOnlyAssignedProjectsForCustomer()
+    {
+        var uow = new TestUnitOfWork();
+        uow.ProjectRecords.Add(new Project { ProjectId = 1, ProjectName = "Mine", PMUserID = 5, Status = ProjectStatus.IN_PROGRESS, CustomerUserId = 20 });
+        uow.ProjectRecords.Add(new Project { ProjectId = 2, ProjectName = "Other", PMUserID = 6, Status = ProjectStatus.IN_PROGRESS, CustomerUserId = 21 });
+
+        var response = await new ProjectService(uow, CreateMapper(), new FakeClaimService(20, Role.CUSTOMER))
+            .GetAllProjectsAsync();
+
+        Assert.True(response.IsSuccess, response.ErrorMessage);
+        var projects = Assert.IsType<List<ProjectResponse>>(response.Result);
+        Assert.Equal(1, Assert.Single(projects).ProjectId);
+    }
+
+    [Fact]
+    public async Task CreateProjectRejectsNonCustomerAssignment()
+    {
+        var uow = new TestUnitOfWork();
+        uow.UserAccountRecords.Add(new UserAccount { Id = 5, Role = Role.PM, IsEmailVerified = true, FirstName = "Pat", LastName = "Manager" });
+        uow.UserAccountRecords.Add(new UserAccount { Id = 20, Role = Role.WORKER, IsEmailVerified = true });
+
+        var response = await new ProjectService(uow, CreateMapper(), new FakeClaimService(5, Role.PM))
+            .CreateProjectAsync(new CreateProjectRequest
+            {
+                ProjectName = "P",
+                PMUserID = 5,
+                StartDate = DateTime.UtcNow.Date,
+                BaselineStart = DateTime.UtcNow.Date,
+                BaselineEnd = DateTime.UtcNow.Date.AddDays(30),
+                CustomerUserId = 20
+            });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty(uow.ProjectRecords);
     }
 
     private static IMapper CreateMapper() => new MapperConfiguration(configuration =>

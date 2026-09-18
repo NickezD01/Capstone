@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using cpms_Infrastructure;
 
@@ -11,9 +12,11 @@ using cpms_Infrastructure;
 namespace cpms_Infrastructure.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260917200607_BackfillGeneralPhasesAndRequireTaskPhaseId")]
+    partial class BackfillGeneralPhasesAndRequireTaskPhaseId
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1878,9 +1881,6 @@ namespace cpms_Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<int?>("CustomerUserId")
-                        .HasColumnType("int");
-
                     b.Property<bool>("IsDeleted")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
@@ -1918,8 +1918,6 @@ namespace cpms_Infrastructure.Migrations
                         .HasColumnType("decimal(18,2)");
 
                     b.HasKey("ProjectId");
-
-                    b.HasIndex("CustomerUserId");
 
                     b.HasIndex("PMUserID");
 
@@ -3436,18 +3434,11 @@ namespace cpms_Infrastructure.Migrations
 
             modelBuilder.Entity("cpms_Domain.Models.Project", b =>
                 {
-                    b.HasOne("cpms_Domain.Models.UserAccount", "Customer")
-                        .WithMany()
-                        .HasForeignKey("CustomerUserId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
                     b.HasOne("cpms_Domain.Models.UserAccount", "ProjectManager")
                         .WithMany("ManagedProjects")
                         .HasForeignKey("PMUserID")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
-
-                    b.Navigation("Customer");
 
                     b.Navigation("ProjectManager");
                 });
