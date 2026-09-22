@@ -14,15 +14,10 @@ namespace cpms_API.Controllers
         private readonly IWarehouseTransferService _service;
         public WarehouseTransfersController(IWarehouseTransferService service) => _service = service;
 
+        // Warehouse-transfer writes are retired: the application now uses a single active warehouse.
         [HttpPost]
         [Authorize(Roles = "WAREHOUSE_MANAGER")]
-        public async Task<IActionResult> Create([FromBody] CreateWarehouseTransferRequest request)
-        {
-            var response = await _service.CreateAsync(request);
-            if (response.IsSuccess && response.Result is cpms_Application.Response.WarehouseTransfer.WarehouseTransferResponse created)
-                return CreatedAtAction(nameof(GetById), new { id = created.TransferId }, response);
-            return StatusCode((int)response.StatusCode, response);
-        }
+        public IActionResult Create([FromBody] CreateWarehouseTransferRequest request) => Gone();
 
         [HttpGet]
         [Authorize(Roles = "ADMIN,WAREHOUSE_MANAGER")]
@@ -34,24 +29,28 @@ namespace cpms_API.Controllers
 
         [HttpPut("{id:int}/approve")]
         [Authorize(Roles = "ADMIN,WAREHOUSE_MANAGER")]
-        public async Task<IActionResult> Approve(int id) => ToResult(await _service.ApproveAsync(id));
+        public IActionResult Approve(int id) => Gone();
 
         [HttpPut("{id:int}/reject")]
         [Authorize(Roles = "ADMIN,WAREHOUSE_MANAGER")]
-        public async Task<IActionResult> Reject(int id) => ToResult(await _service.RejectAsync(id));
+        public IActionResult Reject(int id) => Gone();
 
         [HttpPost("{id:int}/ship")]
         [Authorize(Roles = "WAREHOUSE_MANAGER")]
-        public async Task<IActionResult> Ship(int id) => ToResult(await _service.ShipAsync(id));
+        public IActionResult Ship(int id) => Gone();
 
         [HttpPost("{id:int}/receive")]
         [Authorize(Roles = "WAREHOUSE_MANAGER")]
-        public async Task<IActionResult> Receive(int id, [FromBody] ReceiveWarehouseTransferRequest? request) =>
-            ToResult(await _service.ReceiveAsync(id, request));
+        public IActionResult Receive(int id, [FromBody] ReceiveWarehouseTransferRequest? request) => Gone();
 
         [HttpPut("{id:int}/cancel")]
         [Authorize(Roles = "WAREHOUSE_MANAGER")]
-        public async Task<IActionResult> Cancel(int id) => ToResult(await _service.CancelAsync(id));
+        public IActionResult Cancel(int id) => Gone();
+
+        private ObjectResult Gone() =>
+            StatusCode((int)System.Net.HttpStatusCode.Gone,
+                new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Gone, false,
+                    "Warehouse transfers are no longer supported. The application uses a single active warehouse."));
 
         private ObjectResult ToResult(ApiResponse response) => StatusCode((int)response.StatusCode, response);
     }

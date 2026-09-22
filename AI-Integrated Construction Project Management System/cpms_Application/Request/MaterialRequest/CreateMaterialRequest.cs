@@ -10,8 +10,13 @@ namespace cpms_Application.Request.MaterialRequest
     {
         public int ProjectId { get; set; }
         public int? TaskId { get; set; }
-        public int? WarehouseId { get; set; }
         public string? RequestNote { get; set; }
+
+        /// <summary>
+        /// Step 10: PM planning estimate. Must be non-negative; display only and
+        /// never debits the project budget.
+        /// </summary>
+        public decimal EstimatedCost { get; set; }
         public List<MaterialItemRequest> Items { get; set; } = new List<MaterialItemRequest>();
     }
 

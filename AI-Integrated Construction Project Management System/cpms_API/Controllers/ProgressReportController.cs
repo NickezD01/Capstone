@@ -29,7 +29,7 @@ namespace cpms_API.Controllers
 
         // GET: api/progressreport/task/{taskId}
         [HttpGet("task/{taskId}")]
-        [Authorize(Roles = "ADMIN,PM")]
+        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
         public async Task<IActionResult> GetReportsByTaskId(int taskId)
         {
             var response = await _progressReportService.GetReportsByTaskIdAsync(taskId);

@@ -14,6 +14,8 @@ namespace cpms_Application.Interfaces
         Task<ApiResponse> UpdateUserProfileAsync(UpdateUserRequest updateUserRequest);
         Task<ApiResponse> UpdateUserRoleProfileAsync(int Id, UpdateUserRoleRequest updateUserRoleRequest);
         Task<ApiResponse> GetAllAccountAsync();
+        Task<ApiResponse> CreateAccountAsync(CreateUserAccountRequest request);
+        Task<ApiResponse> GetCustomersAsync(string? search);
         Task<ApiResponse> GetUserIdAsync();
         Task<ApiResponse> CountUser();
         //Task<ApiResponse> GetMemberAccount();

@@ -64,6 +64,7 @@ namespace cpms_Infrastructure
         public DbSet<MaterialRequest> MaterialRequests { get; set; }
         public DbSet<MaterialRequisition> MaterialRequisitions { get; set; }
         public DbSet<MaterialReturn> MaterialReturns { get; set; }
+        public DbSet<MaterialBudgetTransaction> MaterialBudgetTransactions { get; set; }
 
         // ========================================================
         // SUPPLIERS & PURCHASING ORDERS

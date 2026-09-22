@@ -13,7 +13,6 @@ namespace cpms_Application.Interfaces
         Task<ApiResponse> CreateTaskAsync(int phaseId, CreateTaskRequest request);
         Task<ApiResponse> GetTaskByIdAsync(int taskId);
         Task<ApiResponse> GetTasksByProjectAsync(int projectId);
-        Task<ApiResponse> GetMaterialRequirementsByProjectIdAsync(int projectId);
         Task<ApiResponse> GetAssignedTasksAsync();
         Task<ApiResponse> UpdateTaskAsync(int taskId, UpdateTaskRequest request);
         Task<ApiResponse> ChangeTaskStatusAsync(int taskId, string action, TaskLifecycleRequest request);

@@ -1,3 +1,4 @@
+using cpms_Application.Response.Phase;
 using System;
 using System.Collections.Generic;
 
@@ -9,6 +10,7 @@ namespace cpms_Application.Response.Tasks
         public int ProjectId { get; set; }
         public int PhaseId { get; set; }
         public string PhaseName { get; set; } = null!;
+        public PhaseSummaryResponse? Phase { get; set; }
         public string TaskName { get; set; } = null!;
         public int AssignedToUserID { get; set; }
         public string AssignedToUserName { get; set; } = null!;

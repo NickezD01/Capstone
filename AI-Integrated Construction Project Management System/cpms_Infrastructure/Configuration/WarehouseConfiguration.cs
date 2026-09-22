@@ -25,6 +25,13 @@ namespace cpms_Infrastructure.Configuration
                    .HasForeignKey(w => w.ManagerId)
                    .OnDelete(DeleteBehavior.Restrict);
 
+            builder.Property(w => w.IsActive).HasDefaultValue(true);
+
+            // Enforce a single active operational warehouse at the database level.
+            builder.HasIndex(w => w.IsActive)
+                   .IsUnique()
+                   .HasFilter("[IsActive] = 1 AND [IsDeleted] = 0");
+
             builder.Property(w => w.CreatedDate).HasDefaultValueSql("GETUTCDATE()");
             builder.Property(w => w.IsDeleted).HasDefaultValue(false);
             builder.HasQueryFilter(w => !w.IsDeleted);

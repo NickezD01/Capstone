@@ -3,9 +3,11 @@ using cpms_Application.Interfaces;
 using cpms_Application.Request.User;
 using cpms_Application.Response;
 using cpms_Application.Response.UserAccount;
+using cpms_Application.Security;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -71,6 +73,74 @@ namespace cpms_Application.Services
             }
         }
 
+        public async Task<ApiResponse> CreateAccountAsync(CreateUserAccountRequest request)
+        {
+            ApiResponse apiResponse = new ApiResponse();
+            try
+            {
+                if (request.Password != request.ConfirmPassword ||
+                    !PasswordSecurity.IsStrongPassword(request.Password))
+                    return apiResponse.SetBadRequest("The password does not satisfy the security policy.");
+                if (!Enum.IsDefined(request.Role))
+                    return apiResponse.SetBadRequest("Invalid account role.");
+                if (request.Role == cpms_Domain.Models.Role.SUPPLIER)
+                    return apiResponse.SetBadRequest("Supplier accounts are retired and cannot be assigned.");
+                var normalizedEmail = request.Email.Trim().ToUpperInvariant();
+                var existing = await _unitOfWork.UserAccounts.GetAsync(x =>
+                    x.NormalizedEmail == normalizedEmail || (x.Email != null && x.Email.ToUpper() == normalizedEmail));
+                if (existing != null)
+                    return apiResponse.SetApiResponse(HttpStatusCode.Conflict, false,
+                        "An account with this email already exists.");
+                var (hash, salt) = PasswordSecurity.CreateHash(request.Password);
+                var user = new cpms_Domain.Models.UserAccount
+                {
+                    PasswordHash = hash,
+                    PasswordSalt = salt,
+                    Email = request.Email.Trim().ToLowerInvariant(),
+                    FirstName = request.FirstName.Trim(),
+                    LastName = request.LastName.Trim(),
+                    PhoneNumber = string.IsNullOrWhiteSpace(request.PhoneNumber) ? null : request.PhoneNumber.Trim(),
+                    Role = request.Role,
+                    IsEmailVerified = true,
+                    PasswordChangedAt = DateTime.UtcNow
+                };
+                await _unitOfWork.UserAccounts.AddAsync(user);
+                await _unitOfWork.SaveChangeAsync();
+                return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Created, true,
+                    "Account created and verified.", user.Id);
+            }
+            catch (Exception)
+            {
+                return InternalError("Unable to create the account.");
+            }
+        }
+        public async Task<ApiResponse> GetCustomersAsync(string? search)
+        {
+            ApiResponse apiResponse = new ApiResponse();
+            try
+            {
+                var term = string.IsNullOrWhiteSpace(search) ? null : search.Trim().ToLower();
+                var customers = await _unitOfWork.UserAccounts.GetAllAsync(x =>
+                    x.Role == cpms_Domain.Models.Role.CUSTOMER && x.IsEmailVerified == true &&
+                    (term == null || ((x.FirstName ?? "") + " " + (x.LastName ?? "") + " " + (x.Email ?? "")).ToLower().Contains(term)));
+                var result = customers
+                    .OrderBy(x => x.LastName)
+                    .ThenBy(x => x.FirstName)
+                    .Select(x => new CustomerListResponse
+                    {
+                        Id = x.Id,
+                        FirstName = x.FirstName ?? string.Empty,
+                        LastName = x.LastName ?? string.Empty,
+                        Email = x.Email ?? string.Empty
+                    })
+                    .ToList();
+                return apiResponse.SetOk(result);
+            }
+            catch (Exception)
+            {
+                return InternalError("Unable to retrieve customers.");
+            }
+        }
         public Task<ApiResponse> GetUserIdAsync()
         {
             ApiResponse apiResponse = new ApiResponse();
@@ -97,6 +167,8 @@ namespace cpms_Application.Services
             {
                 if (!Enum.IsDefined(updateUserRoleRequest.Role))
                     return apiResponse.SetBadRequest(message: "Invalid account role.");
+                if (updateUserRoleRequest.Role == cpms_Domain.Models.Role.SUPPLIER)
+                    return apiResponse.SetBadRequest(message: "Supplier accounts are retired and cannot be assigned.");
                 // Tìm customer theo ID
                 var customer = await _unitOfWork.UserAccounts.GetAsync(s => s.Id == Id);
                 if (customer == null)

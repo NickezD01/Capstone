@@ -479,11 +479,11 @@ public sealed class AuthService : IAuthService
 
     private PasswordDTO CreatePasswordHash(string password)
     {
-        var salt = RandomNumberGenerator.GetBytes(32);
+        var (hash, salt) = Security.PasswordSecurity.CreateHash(password);
         return new PasswordDTO
         {
             PasswordSalt = salt,
-            PasswordHash = Rfc2898DeriveBytes.Pbkdf2(password, salt, PasswordIterations, HashAlgorithmName.SHA512, 64)
+            PasswordHash = hash
         };
     }
 
@@ -509,9 +509,7 @@ public sealed class AuthService : IAuthService
     private static bool FixedTimeEquals(string left, string right) =>
         CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(left), Encoding.ASCII.GetBytes(right));
 
-    private static bool IsStrongPassword(string password) =>
-        !string.IsNullOrWhiteSpace(password) && password.Length is >= 10 and <= 128 &&
-        password.Any(char.IsUpper) && password.Any(char.IsLower) && password.Any(char.IsDigit);
+    private static bool IsStrongPassword(string password) => Security.PasswordSecurity.IsStrongPassword(password);
 
     private static string BuildVerificationEmail(string? firstName, string code) =>
         $"Dear {WebUtility.HtmlEncode(firstName)},<br/>Use this verification code: <strong>{code}</strong>.<br/>It expires in 5 minutes.";

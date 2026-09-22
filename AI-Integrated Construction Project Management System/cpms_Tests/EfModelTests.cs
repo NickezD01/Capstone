@@ -143,6 +143,17 @@ public class EfModelTests
     }
 
     [Fact]
+    public void Warehouse_HasSingleActiveInvariant()
+    {
+        using var context = CreateContext();
+        var warehouse = context.Model.FindEntityType(typeof(Warehouse))!;
+        Assert.Equal(true, warehouse.FindProperty(nameof(Warehouse.IsActive))!.GetDefaultValue());
+        Assert.Contains(warehouse.GetIndexes(), index => index.IsUnique &&
+            index.Properties.Select(p => p.Name).SequenceEqual(new[] { nameof(Warehouse.IsActive) }) &&
+            index.GetFilter() == "[IsActive] = 1 AND [IsDeleted] = 0");
+    }
+
+    [Fact]
     public void GovernanceModels_HaveRequiredConcurrencyAndUniqueness()
     {
         using var context = CreateContext();

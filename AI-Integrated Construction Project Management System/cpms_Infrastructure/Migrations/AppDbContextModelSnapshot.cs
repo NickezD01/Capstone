@@ -952,6 +952,70 @@ namespace cpms_Infrastructure.Migrations
                     b.ToTable("Materials", (string)null);
                 });
 
+            modelBuilder.Entity("cpms_Domain.Models.MaterialBudgetTransaction", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("datetime2")
+                        .HasDefaultValueSql("GETUTCDATE()");
+
+                    b.Property<decimal>("DebitedAfter")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal>("DebitedBefore")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int?>("ItemId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("NewActualCost")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<decimal>("OldActualCost")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("PerformedByUserId")
+                        .HasColumnType("int");
+
+                    b.Property<int>("ProjectId")
+                        .HasColumnType("int");
+
+                    b.Property<decimal>("Quantity")
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<int>("RequestId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("TransactionType")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<int?>("VariantId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId");
+
+                    b.HasIndex("RequestId");
+
+                    b.ToTable("MaterialBudgetTransactions", (string)null);
+                });
+
             modelBuilder.Entity("cpms_Domain.Models.MaterialRequest", b =>
                 {
                     b.Property<int>("RequestId")
@@ -960,11 +1024,27 @@ namespace cpms_Infrastructure.Migrations
 
                     SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("RequestId"));
 
+                    b.Property<decimal>("ActualCost")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
+
+                    b.Property<DateTime?>("ActualCostUpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<int?>("ActualCostUpdatedByUserId")
+                        .HasColumnType("int");
+
                     b.Property<DateTime?>("ApprovedAt")
                         .HasColumnType("datetime2");
 
                     b.Property<int?>("ApprovedByUserId")
                         .HasColumnType("int");
+
+                    b.Property<decimal>("BudgetDebitedAmount")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
 
                     b.Property<int?>("CreatedBy")
                         .HasColumnType("int");
@@ -977,6 +1057,11 @@ namespace cpms_Infrastructure.Migrations
                     b.Property<string>("DecisionNote")
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
+
+                    b.Property<decimal>("EstimatedCost")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
 
                     b.Property<bool>("IsDeleted")
                         .ValueGeneratedOnAdd()
@@ -1035,7 +1120,14 @@ namespace cpms_Infrastructure.Migrations
 
                     b.HasIndex("WarehouseId");
 
-                    b.ToTable("MaterialsRequests", (string)null);
+                    b.ToTable("MaterialsRequests", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_MaterialsRequests_ActualCost", "[ActualCost] >= 0");
+
+                            t.HasCheckConstraint("CK_MaterialsRequests_BudgetDebited", "[BudgetDebitedAmount] >= 0");
+
+                            t.HasCheckConstraint("CK_MaterialsRequests_EstimatedCost", "[EstimatedCost] >= 0");
+                        });
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.MaterialRequisition", b =>
@@ -1090,6 +1182,11 @@ namespace cpms_Infrastructure.Migrations
                     b.Property<int>("RequestId")
                         .HasColumnType("int");
 
+                    b.Property<decimal>("UnitActualCost")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("decimal(18,2)")
+                        .HasDefaultValue(0m);
+
                     b.Property<int>("VariantId")
                         .HasColumnType("int");
 
@@ -1106,6 +1203,8 @@ namespace cpms_Infrastructure.Migrations
                             t.HasCheckConstraint("CK_MaterialsRequisitions_IssuedQuantity", "[IssuedQuantity] >= 0 AND [IssuedQuantity] <= [ApprovedQuantity]");
 
                             t.HasCheckConstraint("CK_MaterialsRequisitions_Quantity", "[Quantity] > 0");
+
+                            t.HasCheckConstraint("CK_MaterialsRequisitions_UnitActualCost", "[UnitActualCost] >= 0");
                         });
                 });
 
@@ -2681,6 +2780,11 @@ namespace cpms_Infrastructure.Migrations
                         .HasColumnType("datetime2")
                         .HasDefaultValueSql("GETUTCDATE()");
 
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
                     b.Property<bool>("IsDeleted")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("bit")
@@ -2706,6 +2810,10 @@ namespace cpms_Infrastructure.Migrations
                         .HasColumnType("nvarchar(250)");
 
                     b.HasKey("WarehouseId");
+
+                    b.HasIndex("IsActive")
+                        .IsUnique()
+                        .HasFilter("[IsActive] = 1 AND [IsDeleted] = 0");
 
                     b.HasIndex("ManagerId");
 
@@ -3133,6 +3241,25 @@ namespace cpms_Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Category");
+                });
+
+            modelBuilder.Entity("cpms_Domain.Models.MaterialBudgetTransaction", b =>
+                {
+                    b.HasOne("cpms_Domain.Models.Project", "Project")
+                        .WithMany()
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("cpms_Domain.Models.MaterialRequest", "MaterialRequest")
+                        .WithMany()
+                        .HasForeignKey("RequestId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("MaterialRequest");
+
+                    b.Navigation("Project");
                 });
 
             modelBuilder.Entity("cpms_Domain.Models.MaterialRequest", b =>

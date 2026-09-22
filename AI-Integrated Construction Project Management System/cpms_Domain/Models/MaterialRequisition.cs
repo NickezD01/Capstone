@@ -14,6 +14,11 @@ namespace cpms_Domain.Models
         public decimal Quantity { get; set; }
         public decimal ApprovedQuantity { get; set; }
         public decimal IssuedQuantity { get; set; }
+
+        // Step 10: per-line actual unit cost maintained by the warehouse manager.
+        // Zero means unset; issue falls back to the inventory average unit cost
+        // and records it here so the ledger stays explicit.
+        public decimal UnitActualCost { get; set; }
         public DateTime NeededByDate { get; set; }
         public string? Note { get; set; }
 

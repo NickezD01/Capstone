@@ -1,6 +1,7 @@
 using cpms_Application.Interfaces;
 using cpms_Application.Request.Supplier;
 using cpms_Application.Request.SupplierRecommendation;
+using cpms_Application.Response;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 
@@ -60,10 +61,9 @@ namespace cpms_API.Controllers
         }
 
         [HttpPost("recommendations/balanced")]
-        public async Task<IActionResult> RecommendBalancedSuppliers([FromBody] BalancedSupplierRecommendationRequest request)
-        {
-            var response = await _supplierRecommendationService.RecommendBalancedSuppliersAsync(request);
-            return response.IsSuccess ? Ok(response) : BadRequest(response);
-        }
+        public IActionResult RecommendBalancedSuppliers([FromBody] BalancedSupplierRecommendationRequest request) =>
+            StatusCode((int)System.Net.HttpStatusCode.Gone,
+                new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Gone, false,
+                    "Supplier recommendations are no longer supported."));
     }
 }

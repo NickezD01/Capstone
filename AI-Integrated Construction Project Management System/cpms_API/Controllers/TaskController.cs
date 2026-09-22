@@ -10,7 +10,6 @@ using System.Threading.Tasks;
 namespace cpms_API.Controllers
 {
     [Route("api/Tasks")]
-    [Route("api/task")]
     [ApiController]
     [Authorize] // Bảo mật endpoint bằng JWT Token
     public class TaskController : ControllerBase
@@ -32,7 +31,7 @@ namespace cpms_API.Controllers
         }
 
         // DEPRECATED POST: /api/task -> returns 410 Gone pointing to POST /api/Phases/{phaseId}/tasks
-        [HttpPost]
+        [HttpPost("~/api/task")]
         [Authorize(Roles = "PM")]
         public IActionResult DeprecatedCreateTask()
         {
@@ -43,17 +42,16 @@ namespace cpms_API.Controllers
             return StatusCode(StatusCodes.Status410Gone, response);
         }
 
-        // GET: /api/Projects/{projectId}/tasks (and legacy alias /api/task/project/{projectId})
+        // GET: /api/Projects/{projectId}/tasks
         [HttpGet("~/api/Projects/{projectId:int}/tasks")]
-        [HttpGet("project/{projectId:int}")]
-        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
+        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER,CUSTOMER")]
         public async Task<IActionResult> GetTasksByProject(int projectId)
         {
             var response = await _taskService.GetTasksByProjectAsync(projectId);
             return StatusCode((int)response.StatusCode, response);
         }
 
-        // GET: /api/Tasks/{taskId} (and legacy alias /api/task/{taskId})
+        // GET: /api/Tasks/{taskId}
         [HttpGet("{taskId:int}")]
         [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
         public async Task<IActionResult> GetTaskById(int taskId)
@@ -62,17 +60,7 @@ namespace cpms_API.Controllers
             return StatusCode((int)response.StatusCode, response);
         }
 
-        // GET: /api/Tasks/project/{projectId}/material-requirements (and legacy alias)
-        [HttpGet("~/api/Projects/{projectId:int}/material-requirements")]
-        [HttpGet("project/{projectId:int}/material-requirements")]
-        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
-        public async Task<IActionResult> GetMaterialRequirements(int projectId)
-        {
-            var response = await _taskService.GetMaterialRequirementsByProjectIdAsync(projectId);
-            return StatusCode((int)response.StatusCode, response);
-        }
-
-        // GET: /api/Tasks/assigned (and legacy alias /api/task/assigned)
+        // GET: /api/Tasks/assigned
         [HttpGet("assigned")]
         [Authorize(Roles = "PM")]
         public async Task<IActionResult> GetAssignedTasks()
@@ -81,7 +69,7 @@ namespace cpms_API.Controllers
             return StatusCode((int)response.StatusCode, response);
         }
 
-        // PUT: /api/Tasks/{taskId} (and legacy alias /api/task/{taskId})
+        // PUT: /api/Tasks/{taskId}
         [HttpPut("{taskId:int}")]
         [Authorize(Roles = "PM")]
         public async Task<IActionResult> UpdateTask(int taskId, UpdateTaskRequest request)

@@ -20,12 +20,14 @@ namespace cpms_Application.Services
         private readonly IUnitOfWork _uow;
         private readonly IMapper _mapper;
         private readonly IClaimService _claimService;
+        private readonly IProjectAccessService _projectAccess;
 
-        public TaskService(IUnitOfWork uow, IMapper mapper, IClaimService claimService)
+        public TaskService(IUnitOfWork uow, IMapper mapper, IClaimService claimService, IProjectAccessService? projectAccess = null)
         {
             _uow = uow;
             _mapper = mapper;
             _claimService = claimService;
+            _projectAccess = projectAccess ?? new ProjectAccessService(uow, claimService);
         }
 
         public async Task<ApiResponse> CreateTaskAsync(int phaseId, CreateTaskRequest request)
@@ -193,7 +195,7 @@ namespace cpms_Application.Services
             {
                 var project = await _uow.Projects.GetByIdAsync(projectId);
                 if (project == null) return response.SetNotFound("Project not found.");
-                if (!await CanReadProjectAsync(project))
+                if (!await _projectAccess.CanReadProjectAsync(project))
                     return response.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You do not have access to this project's tasks.");
 
                 var tasks = await _uow.TaskItems.GetAllAsync(
@@ -208,7 +210,7 @@ namespace cpms_Application.Services
 
                 var ordered = tasks
                     .OrderBy(t => t.Phase != null ? t.Phase.SequenceOrder : 0)
-                    .ThenBy(t => t.PhaseName)
+                    .ThenBy(t => t.Phase != null ? t.Phase.Name : t.PhaseName)
                     .ThenBy(t => t.BaselineStart)
                     .ThenBy(t => t.TaskName);
 
@@ -236,39 +238,6 @@ namespace cpms_Application.Services
                 return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false,
                     "You do not have access to this task.");
             return new ApiResponse().SetOk(_mapper.Map<TaskResponse>(task));
-        }
-
-        public async Task<ApiResponse> GetMaterialRequirementsByProjectIdAsync(int projectId)
-        {
-            var apiResponse = new ApiResponse();
-            try
-            {
-                var project = await _uow.Projects.GetAsync(p => p.ProjectId == projectId);
-                if (project == null)
-                    return apiResponse.SetNotFound("Project not found.");
-                if (!await CanReadProjectAsync(project))
-                    return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You do not have access to this project's material requirements.");
-
-                var projectRequirements = await _uow.TaskMaterialRequirements.GetAllAsync(
-                    filter: r => r.TaskItem.ProjectId == projectId,
-                    include: query => query
-                        .Include(r => r.Variant)
-                            .ThenInclude(v => v.Material)
-                        .Include(r => r.TaskItem)
-                );
-
-                if (!projectRequirements.Any())
-                {
-                    return apiResponse.SetOk(new List<TaskMaterialResponse>());
-                }
-
-                var responseData = _mapper.Map<List<TaskMaterialResponse>>(projectRequirements);
-                return apiResponse.SetOk(responseData);
-            }
-            catch (Exception)
-            {
-                return apiResponse.SetApiResponse(System.Net.HttpStatusCode.InternalServerError, false, "Unable to retrieve material requirements.");
-            }
         }
 
         public async Task<ApiResponse> GetAssignedTasksAsync()
@@ -322,6 +291,7 @@ namespace cpms_Application.Services
 
             try
             {
+                task.Phase = phase;
                 task.UpdatePlan(phase.PhaseId, phase.Name, request.TaskName, user.Id,
                     request.PlannedBudget, request.BaselineStart, request.BaselineEnd);
                 await _uow.SaveChangeAsync();
@@ -392,19 +362,6 @@ namespace cpms_Application.Services
         private static bool MatchesRowVersion(byte[] current, string supplied) =>
             !string.IsNullOrWhiteSpace(supplied) && Convert.ToBase64String(current).Equals(supplied, StringComparison.Ordinal);
 
-        private async Task<bool> CanReadProjectAsync(Project project)
-        {
-            var user = _claimService.GetUserClaim();
-            if (string.Equals(user.Role, Role.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase)) return true;
-            if (string.Equals(user.Role, Role.PM.ToString(), StringComparison.OrdinalIgnoreCase))
-                return project.PMUserID == user.Id;
-            if (!string.Equals(user.Role, Role.WAREHOUSE_MANAGER.ToString(), StringComparison.OrdinalIgnoreCase)) return false;
-
-            var request = await _uow.MaterialRequests.GetAsync(r =>
-                r.ProjectId == project.ProjectId && r.WarehouseId.HasValue && r.Warehouse!.ManagerId == user.Id);
-            if (request != null) return true;
-            return await _uow.PurchaseOrders.GetAsync(o =>
-                o.ProjectId == project.ProjectId && o.Warehouse.ManagerId == user.Id) != null;
-        }
+        private Task<bool> CanReadProjectAsync(Project project) => _projectAccess.CanViewProjectAsStaffAsync(project);
     }
 }

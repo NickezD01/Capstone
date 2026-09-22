@@ -31,6 +31,23 @@ namespace cpms_Application.Validators
         }
     }
 
+    public class CreateUserAccountRequestValidator : AbstractValidator<CreateUserAccountRequest>
+    {
+        public CreateUserAccountRequestValidator()
+        {
+            RuleFor(x => x.FirstName).NotEmpty().MaximumLength(100);
+            RuleFor(x => x.LastName).NotEmpty().MaximumLength(100);
+            RuleFor(x => x.Email).NotEmpty().EmailAddress().MaximumLength(150);
+            RuleFor(x => x.PhoneNumber).MaximumLength(30);
+            RuleFor(x => x.Role).IsInEnum();
+            RuleFor(x => x.Password).NotEmpty().MinimumLength(10).MaximumLength(128)
+                .Matches("[A-Z]").WithMessage("Password must contain an uppercase letter.")
+                .Matches("[a-z]").WithMessage("Password must contain a lowercase letter.")
+                .Matches("[0-9]").WithMessage("Password must contain a number.");
+            RuleFor(x => x.ConfirmPassword).Equal(x => x.Password).WithMessage("Passwords do not match.");
+        }
+    }
+
     public class LoginRequestValidator : AbstractValidator<LoginRequest>
     {
         public LoginRequestValidator()
@@ -250,7 +267,6 @@ namespace cpms_Application.Validators
     {
         public ApproveMaterialRequestValidator()
         {
-            RuleFor(x => x.WarehouseId).GreaterThan(0);
             RuleFor(x => x.DecisionNote).MaximumLength(1000);
             RuleFor(x => x.Items).NotEmpty();
             RuleForEach(x => x.Items).ChildRules(item =>
@@ -307,7 +323,6 @@ namespace cpms_Application.Validators
     {
         public InventoryAdjustmentRequestValidator()
         {
-            RuleFor(x => x.WarehouseId).GreaterThan(0);
             RuleFor(x => x.VariantId).GreaterThan(0);
             RuleFor(x => x.QuantityDelta).NotEqual(0);
             RuleFor(x => x.ReasonCode).Must(reason => InventoryAdjustmentReasons.All.Contains(reason))
@@ -320,7 +335,6 @@ namespace cpms_Application.Validators
     {
         public InventoryReturnRequestValidator()
         {
-            RuleFor(x => x.WarehouseId).GreaterThan(0);
             RuleFor(x => x.VariantId).GreaterThan(0);
             RuleFor(x => x.Quantity).GreaterThan(0);
             RuleFor(x => x.MaterialRequestId).GreaterThan(0).WithMessage("MaterialRequestId is required for a material return.");

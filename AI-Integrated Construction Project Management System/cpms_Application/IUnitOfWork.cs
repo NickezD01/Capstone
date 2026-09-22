@@ -38,6 +38,7 @@ namespace cpms_Application
         IMaterialRequestRepository MaterialRequests { get; }
         IMaterialRequisitionRepository MaterialRequisitions { get; }
         IGenericRepository<MaterialReturn> MaterialReturns { get; }
+        IGenericRepository<MaterialBudgetTransaction> MaterialBudgetTransactions { get; }
         IProjectBudgetHistoryRepository ProjectBudgetHistories { get; }
         IGenericRepository<MrpPlanningRun> MrpPlanningRuns { get; }
 

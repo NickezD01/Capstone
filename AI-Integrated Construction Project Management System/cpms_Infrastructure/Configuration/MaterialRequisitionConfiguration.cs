@@ -17,6 +17,7 @@ namespace cpms_Infrastructure.Configuration
             builder.HasKey(mreq => mreq.ItemId);
 
             builder.Property(mreq => mreq.Quantity).HasColumnType("decimal(18,4)").HasDefaultValue(0);
+            builder.Property(mreq => mreq.UnitActualCost).HasColumnType("decimal(18,2)").HasDefaultValue(0);
             builder.Property(mreq => mreq.ApprovedQuantity).HasColumnType("decimal(18,4)").HasDefaultValue(0);
             builder.Property(mreq => mreq.IssuedQuantity).HasColumnType("decimal(18,4)").HasDefaultValue(0);
             builder.Property(mreq => mreq.NeededByDate).IsRequired();
@@ -26,6 +27,7 @@ namespace cpms_Infrastructure.Configuration
                 t.HasCheckConstraint("CK_MaterialsRequisitions_Quantity", "[Quantity] > 0");
                 t.HasCheckConstraint("CK_MaterialsRequisitions_ApprovedQuantity", "[ApprovedQuantity] >= 0 AND [ApprovedQuantity] <= [Quantity]");
                 t.HasCheckConstraint("CK_MaterialsRequisitions_IssuedQuantity", "[IssuedQuantity] >= 0 AND [IssuedQuantity] <= [ApprovedQuantity]");
+                t.HasCheckConstraint("CK_MaterialsRequisitions_UnitActualCost", "[UnitActualCost] >= 0");
             });
 
             builder.Property(mreq => mreq.CreatedDate).HasDefaultValueSql("GETUTCDATE()");

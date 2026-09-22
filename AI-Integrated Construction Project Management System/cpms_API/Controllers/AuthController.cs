@@ -17,46 +17,21 @@ namespace cpms_API.Controllers
         }
 
         [HttpPost("register")]
-        public async Task<IActionResult> Register(UserRegisterRequest user)
-        {
-            if (!ModelState.IsValid)
-            {
-                var errors = ModelState.Values
-                    .SelectMany(v => v.Errors)
-                    .Select(e => e.ErrorMessage)
-                    .ToList();
+        public IActionResult Register(UserRegisterRequest user) =>
+            Gone("Self-registration is no longer supported. Accounts are created by an administrator.");
 
-                return BadRequest(new
-                {
-                    statusCode = 400,
-                    isSuccess = false,
-                    errorMessage = string.Join("; ", errors),
-                    result = (object?)null
-                });
-            }
-            var result = await _service.RegisterAsync(user);
-            return StatusCode((int)result.StatusCode, result);
-        }
+        [HttpPost("Verification")]
+        public IActionResult Verification(VerificationEmailRequest request) =>
+            Gone("Email verification is retired. Accounts created by an administrator are verified automatically.");
+
+        [HttpPost("resend-verification")]
+        public IActionResult ResendVerification(ResendVerificationRequest request) =>
+            Gone("Email verification is retired. Accounts created by an administrator are verified automatically.");
 
         [HttpPost("login")]
         public async Task<IActionResult> Login(LoginRequest user)
         {
             var result = await _service.LoginAsync(user);
-            return StatusCode((int)result.StatusCode, result);
-        }
-
-        [HttpPost("Verification")]
-        public async Task<IActionResult> Verification(VerificationEmailRequest request)
-        {
-
-            var result = await _service.VerifyEmailAsync(request.UserId, request.VerificationCode);
-            return StatusCode((int)result.StatusCode, result);
-        }
-
-        [HttpPost("resend-verification")]
-        public async Task<IActionResult> ResendVerification(ResendVerificationRequest request)
-        {
-            var result = await _service.ResendVerificationAsync(request.Email);
             return StatusCode((int)result.StatusCode, result);
         }
 
@@ -104,5 +79,9 @@ namespace cpms_API.Controllers
             return StatusCode((int)result.StatusCode, result);
         }
 
+        private ObjectResult Gone(string message) =>
+            StatusCode((int)System.Net.HttpStatusCode.Gone,
+                new cpms_Application.Response.ApiResponse().SetApiResponse(
+                    System.Net.HttpStatusCode.Gone, false, message));
     }
 }

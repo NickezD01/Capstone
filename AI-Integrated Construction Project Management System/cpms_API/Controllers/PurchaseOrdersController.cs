@@ -1,6 +1,7 @@
 ﻿using cpms_Application.Interfaces;
 using cpms_Application.Request.PurchaseOrder;
 using cpms_Application.Request.Warehouse;
+using cpms_Application.Response;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Threading.Tasks;
@@ -19,25 +20,10 @@ namespace cpms_API.Controllers
             _poService = poService;
         }
 
-        // POST: api/PurchaseOrders
+        // POST: api/PurchaseOrders (retired - procurement writes return 410 Gone)
         [HttpPost]
         [Authorize(Roles = "WAREHOUSE_MANAGER")]
-        public async Task<IActionResult> CreatePurchaseOrder([FromBody] CreatePurchaseOrderRequest request)
-        {
-            if (!ModelState.IsValid)
-            {
-                return BadRequest(ModelState);
-            }
-
-            var response = await _poService.CreatePurchaseOrderAsync(request);
-
-            if (!response.IsSuccess)
-            {
-                return StatusCode((int)response.StatusCode, response);
-            }
-
-            return StatusCode((int)response.StatusCode, response);
-        }
+        public IActionResult CreatePurchaseOrder([FromBody] CreatePurchaseOrderRequest request) => Gone();
 
         // GET: api/PurchaseOrders
         [HttpGet]
@@ -64,65 +50,39 @@ namespace cpms_API.Controllers
             return StatusCode((int)result.StatusCode, result);
         }
 
-        // PUT: api/PurchaseOrders/{id}/approve
+        // PUT: api/PurchaseOrders/{id}/approve (retired)
         [HttpPut("{id}/approve")]
         [Authorize(Roles = "ADMIN,PM")]
-        public async Task<IActionResult> Approve(int id, [FromBody] PurchaseOrderActionRequest? request)
-        {
-            var result = await _poService.ApprovePurchaseOrderAsync(id, request);
-            return StatusCode((int)result.StatusCode, result);
-        }
+        public IActionResult Approve(int id, [FromBody] PurchaseOrderActionRequest? request) => Gone();
 
-        // PUT: api/PurchaseOrders/{id}/reject
-        // 🚀 BỔ SUNG: Endpoint xử lý từ chối đơn mua hàng công trình
+        // PUT: api/PurchaseOrders/{id}/reject (retired)
         [HttpPut("{id}/reject")]
         [Authorize(Roles = "ADMIN,PM")]
-        public async Task<IActionResult> Reject(int id, [FromBody] PurchaseOrderActionRequest? request)
-        {
-            var result = await _poService.RejectPurchaseOrderAsync(id, request);
-            return StatusCode((int)result.StatusCode, result);
-        }
+        public IActionResult Reject(int id, [FromBody] PurchaseOrderActionRequest? request) => Gone();
 
         [HttpPost("from-shortages")]
         [Authorize(Roles = "WAREHOUSE_MANAGER")]
-        public async Task<IActionResult> CreateFromShortages([FromBody] CreatePurchaseOrderRequest request)
-        {
-            if (request.Items.Any(item => !item.RequestItemId.HasValue))
-                return BadRequest("Every shortage line must include RequestItemId.");
-            var response = await _poService.CreatePurchaseOrderAsync(request);
-            return StatusCode((int)response.StatusCode, response);
-        }
+        public IActionResult CreateFromShortages([FromBody] CreatePurchaseOrderRequest request) => Gone();
 
         [HttpPost("{poId}/receive")]
         [Authorize(Roles = "WAREHOUSE_MANAGER")]
-        public async Task<IActionResult> Receive(int poId, [FromBody] ReceivePurchaseOrderRequest request)
-        {
-            var result = await _poService.ReceivePurchaseOrderAsync(poId, request);
-            return result.IsSuccess ? Ok(result) : StatusCode((int)result.StatusCode, result);
-        }
+        public IActionResult Receive(int poId, [FromBody] ReceivePurchaseOrderRequest request) => Gone();
 
         [HttpPost("{poId}/ship")]
         [Authorize(Roles = "WAREHOUSE_MANAGER")]
-        public async Task<IActionResult> Ship(int poId, [FromBody] PurchaseOrderActionRequest? request)
-        {
-            var result = await _poService.MarkShippedAsync(poId, request);
-            return StatusCode((int)result.StatusCode, result);
-        }
+        public IActionResult Ship(int poId, [FromBody] PurchaseOrderActionRequest? request) => Gone();
 
         [HttpPost("{poId}/processing")]
         [Authorize(Roles = "WAREHOUSE_MANAGER")]
-        public async Task<IActionResult> MarkProcessing(int poId, [FromBody] PurchaseOrderActionRequest? request)
-        {
-            var result = await _poService.MarkProcessingAsync(poId, request);
-            return StatusCode((int)result.StatusCode, result);
-        }
+        public IActionResult MarkProcessing(int poId, [FromBody] PurchaseOrderActionRequest? request) => Gone();
 
         [HttpPost("{poId}/cancel")]
         [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
-        public async Task<IActionResult> Cancel(int poId, [FromBody] PurchaseOrderActionRequest? request)
-        {
-            var result = await _poService.CancelPurchaseOrderAsync(poId, request);
-            return StatusCode((int)result.StatusCode, result);
-        }
+        public IActionResult Cancel(int poId, [FromBody] PurchaseOrderActionRequest? request) => Gone();
+
+        private ObjectResult Gone() =>
+            StatusCode((int)System.Net.HttpStatusCode.Gone,
+                new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Gone, false,
+                    "Purchase-order workflows are no longer supported. Material costs are managed through material requests and warehouse actual-cost accounting."));
     }
 }

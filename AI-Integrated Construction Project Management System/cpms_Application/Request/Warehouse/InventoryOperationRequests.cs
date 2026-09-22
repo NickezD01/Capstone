@@ -5,7 +5,6 @@ namespace cpms_Application.Request.Warehouse
 {
     public class InventoryAdjustmentRequest
     {
-        public int WarehouseId { get; set; }
         public int VariantId { get; set; }
         public decimal QuantityDelta { get; set; }
         public string ReasonCode { get; set; } = string.Empty;
@@ -21,7 +20,6 @@ namespace cpms_Application.Request.Warehouse
 
     public class InventoryReturnRequest
     {
-        public int WarehouseId { get; set; }
         public int VariantId { get; set; }
         public decimal Quantity { get; set; }
         [Required]

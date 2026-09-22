@@ -24,9 +24,9 @@ public sealed class PhasesController : ControllerBase
         return StatusCode((int)response.StatusCode, response);
     }
 
-    [HttpGet("api/Projects/{projectId:int}/phases")]
-    [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
-    public async Task<IActionResult> GetProjectPhases(int projectId)
+        [HttpGet("api/Projects/{projectId:int}/phases")]
+        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER,CUSTOMER")]
+        public async Task<IActionResult> GetProjectPhases(int projectId)
     {
         var response = await _phaseService.GetPhasesByProjectAsync(projectId);
         return StatusCode((int)response.StatusCode, response);

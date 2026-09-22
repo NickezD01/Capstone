@@ -12,12 +12,14 @@ public sealed class PhaseService : IPhaseService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IMapper _mapper;
     private readonly IClaimService _claimService;
+    private readonly IProjectAccessService _projectAccess;
 
-    public PhaseService(IUnitOfWork unitOfWork, IMapper mapper, IClaimService claimService)
+    public PhaseService(IUnitOfWork unitOfWork, IMapper mapper, IClaimService claimService, IProjectAccessService? projectAccess = null)
     {
         _unitOfWork = unitOfWork;
         _mapper = mapper;
         _claimService = claimService;
+        _projectAccess = projectAccess ?? new ProjectAccessService(unitOfWork, claimService);
     }
 
     public async Task<ApiResponse> CreatePhaseAsync(int projectId, CreatePhaseRequest request)
@@ -63,7 +65,7 @@ public sealed class PhaseService : IPhaseService
         var response = new ApiResponse();
         var project = await _unitOfWork.Projects.GetByIdAsync(projectId);
         if (project == null) return response.SetNotFound("Project not found.");
-        if (!await CanReadProjectAsync(project))
+        if (!await _projectAccess.CanReadProjectAsync(project))
             return response.SetApiResponse(HttpStatusCode.Forbidden, false, "You do not have access to this project's phases.");
 
         var phases = await _unitOfWork.Phases.GetAllAsync(phase => phase.ProjectId == projectId);
@@ -191,23 +193,7 @@ public sealed class PhaseService : IPhaseService
         return null;
     }
 
-    private async Task<bool> CanReadProjectAsync(Project project)
-    {
-        var user = _claimService.GetUserClaim();
-        if (IsRole(user, Role.ADMIN)) return true;
-        if (IsRole(user, Role.PM)) return project.PMUserID == user.Id;
-        if (!IsRole(user, Role.WAREHOUSE_MANAGER)) return false;
-
-        var request = await _unitOfWork.MaterialRequests.GetAsync(materialRequest =>
-            materialRequest.ProjectId == project.ProjectId &&
-            materialRequest.WarehouseId.HasValue &&
-            materialRequest.Warehouse!.ManagerId == user.Id);
-        if (request != null) return true;
-
-        var purchaseOrder = await _unitOfWork.PurchaseOrders.GetAsync(order =>
-            order.ProjectId == project.ProjectId && order.Warehouse.ManagerId == user.Id);
-        return purchaseOrder != null;
-    }
+    private Task<bool> CanReadProjectAsync(Project project) => _projectAccess.CanViewProjectAsStaffAsync(project);
 
     private static bool IsRole(ClaimDTO user, Role role) =>
         string.Equals(user.Role, role.ToString(), StringComparison.OrdinalIgnoreCase);

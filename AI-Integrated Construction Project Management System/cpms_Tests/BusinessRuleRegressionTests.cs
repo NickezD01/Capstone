@@ -13,6 +13,8 @@ using cpms_Application.Response.MaterialRequest;
 using cpms_Application.Response.Project;
 using cpms_Application.Response.PurchaseOrder;
 using cpms_Application.Response.SupplierCatalog;
+using cpms_Application.Response.Tasks;
+using cpms_Application.Response.UserAccount;
 using cpms_Application.Response;
 using cpms_Application.Services;
 using cpms_Domain;
@@ -216,6 +218,121 @@ public class BusinessRuleRegressionTests
     }
 
     [Fact]
+    public async Task AdministratorCanCreateVerifiedAccount()
+    {
+        var uow = new TestUnitOfWork();
+
+        var response = await new UserAccountService(uow, CreateMapper(), new FakeClaimService(1, Role.ADMIN))
+            .CreateAccountAsync(new CreateUserAccountRequest
+            {
+                FirstName = "Pat",
+                LastName = "Manager",
+                Email = "pm@example.com",
+                Role = Role.PM,
+                Password = "StrongPass123",
+                ConfirmPassword = "StrongPass123"
+            });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var created = Assert.Single(uow.UserAccountRecords);
+        Assert.Equal("pm@example.com", created.Email);
+        Assert.Equal(Role.PM, created.Role);
+        Assert.True(created.IsEmailVerified);
+        Assert.NotEmpty(created.PasswordHash);
+    }
+
+    [Fact]
+    public async Task CreateAccountRejectsDuplicateWeakPasswordAndSupplier()
+    {
+        var uow = new TestUnitOfWork();
+        uow.UserAccountRecords.Add(new UserAccount
+        {
+            Id = 20,
+            Email = "pm@example.com",
+            IsEmailVerified = true,
+            Role = Role.CUSTOMER
+        });
+        var service = new UserAccountService(uow, CreateMapper(), new FakeClaimService(1, Role.ADMIN));
+
+        var duplicate = await service.CreateAccountAsync(new CreateUserAccountRequest
+        {
+            FirstName = "Pat",
+            LastName = "Manager",
+            Email = "PM@EXAMPLE.COM",
+            Role = Role.PM,
+            Password = "StrongPass123",
+            ConfirmPassword = "StrongPass123"
+        });
+        Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode);
+
+        var weak = await service.CreateAccountAsync(new CreateUserAccountRequest
+        {
+            FirstName = "Pat",
+            LastName = "Manager",
+            Email = "new@example.com",
+            Role = Role.PM,
+            Password = "weak",
+            ConfirmPassword = "weak"
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, weak.StatusCode);
+
+        var supplier = await service.CreateAccountAsync(new CreateUserAccountRequest
+        {
+            FirstName = "Sup",
+            LastName = "Plier",
+            Email = "supplier@example.com",
+            Role = Role.SUPPLIER,
+            Password = "StrongPass123",
+            ConfirmPassword = "StrongPass123"
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, supplier.StatusCode);
+        Assert.Equal(1, uow.UserAccountRecords.Count);
+    }
+
+    [Fact]
+    public async Task CustomerListReturnsOnlyVerifiedCustomersWithSafeFields()
+    {
+        var uow = new TestUnitOfWork();
+        uow.UserAccountRecords.AddRange(new[]
+        {
+            new UserAccount { Id = 20, Role = Role.CUSTOMER, IsEmailVerified = true, FirstName = "Cara", LastName = "Client", Email = "cara@example.com", PhoneNumber = "0123" },
+            new UserAccount { Id = 21, Role = Role.CUSTOMER, IsEmailVerified = false, FirstName = "Unverified", LastName = "User", Email = "unverified@example.com" },
+            new UserAccount { Id = 22, Role = Role.PM, IsEmailVerified = true, FirstName = "Pat", LastName = "Manager", Email = "pm@example.com" }
+        });
+
+        var response = await new UserAccountService(uow, CreateMapper(), new FakeClaimService(5, Role.PM))
+            .GetCustomersAsync(null);
+
+        Assert.True(response.IsSuccess, response.ErrorMessage);
+        var customers = Assert.IsType<List<CustomerListResponse>>(response.Result);
+        var customer = Assert.Single(customers);
+        Assert.Equal(20, customer.Id);
+        Assert.Equal("Cara", customer.FirstName);
+        Assert.Equal("cara@example.com", customer.Email);
+    }
+
+    [Fact]
+    public async Task CustomerListSearchFiltersByNameOrEmail()
+    {
+        var uow = new TestUnitOfWork();
+        uow.UserAccountRecords.AddRange(new[]
+        {
+            new UserAccount { Id = 20, Role = Role.CUSTOMER, IsEmailVerified = true, FirstName = "Cara", LastName = "Client", Email = "cara@example.com" },
+            new UserAccount { Id = 21, Role = Role.CUSTOMER, IsEmailVerified = true, FirstName = "Dan", LastName = "Builder", Email = "dan@example.com" }
+        });
+        var service = new UserAccountService(uow, CreateMapper(), new FakeClaimService(5, Role.PM));
+
+        var byName = await service.GetCustomersAsync("dan");
+        Assert.Equal(21, Assert.Single(Assert.IsType<List<CustomerListResponse>>(byName.Result)).Id);
+
+        var byEmail = await service.GetCustomersAsync("CARA@EXAMPLE.COM");
+        Assert.Equal(20, Assert.Single(Assert.IsType<List<CustomerListResponse>>(byEmail.Result)).Id);
+
+        var none = await service.GetCustomersAsync("nobody");
+        Assert.Empty(Assert.IsType<List<CustomerListResponse>>(none.Result));
+    }
+
+    [Fact]
     public async Task ReturnCannotExceedIssuedQuantityAfterPreviousReturns()
     {
         var uow = new TestUnitOfWork();
@@ -248,7 +365,6 @@ public class BusinessRuleRegressionTests
         var response = await new WarehouseService(uow, null!, new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
             .ReturnInventoryAsync(new InventoryReturnRequest
             {
-                WarehouseId = 1,
                 VariantId = 1,
                 Quantity = 7,
                 MaterialRequestId = 1
@@ -340,19 +456,59 @@ public class BusinessRuleRegressionTests
     }
 
     [Fact]
-    public async Task AssignedRequestCannotBeApprovedIntoAnotherWarehouse()
+    public async Task ApprovalUsesActiveWarehouse()
+    {
+        var uow = new TestUnitOfWork();
+        var active = new Warehouse { WarehouseId = 1, WarehouseName = "Active", ManagerId = 10 };
+        uow.WarehouseRecords.AddRange(new[]
+        {
+            active,
+            new Warehouse { WarehouseId = 2, WarehouseName = "Retired", ManagerId = 20, IsActive = false }
+        });
+        var project = new Project { ProjectId = 1, ProjectName = "P", PMUserID = 5, Status = ProjectStatus.IN_PROGRESS };
+        var variant = new MaterialVariant { VariantId = 1, MaterialId = 1, VariantName = "Steel", Unit = "kg", IsActive = true };
+        var item = new MaterialRequisition { ItemId = 1, RequestId = 1, VariantId = 1, Variant = variant, Quantity = 5 };
+        var request = new MaterialRequest
+        {
+            RequestId = 1,
+            ProjectId = 1,
+            Project = project,
+            Warehouse = active,
+            Status = MaterialRequestStatuses.Pending,
+            Requisitions = new List<MaterialRequisition> { item }
+        };
+        item.MaterialRequest = request;
+        uow.ProjectRecords.Add(project);
+        uow.VariantRecords.Add(variant);
+        uow.InventoryRecords.Add(new InventoryRecord { InventoryId = 1, WarehouseId = 1, VariantId = 1, QuantityOnHand = 10 });
+        uow.RequestRecords.Add(request);
+        uow.RequisitionRecords.Add(item);
+
+        var response = await new MaterialRequestService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
+            .ApproveRequestAsync(1, new ApproveMaterialRequest
+            {
+                Items = { new() { ItemId = 1, ApprovedQuantity = 5 } }
+            });
+
+        Assert.True(response.IsSuccess, response.ErrorMessage);
+        Assert.Equal(1, request.WarehouseId);
+        Assert.Equal(5, uow.InventoryRecords.Single().ReservedQuantity);
+        Assert.Single(uow.ReservationRecords);
+    }
+
+    [Fact]
+    public async Task ApprovalRequiresTheActiveWarehouseManager()
     {
         var uow = new TestUnitOfWork();
         uow.WarehouseRecords.AddRange(new[]
         {
-            new Warehouse { WarehouseId = 1, WarehouseName = "Assigned", ManagerId = 10 },
-            new Warehouse { WarehouseId = 2, WarehouseName = "Other", ManagerId = 20 }
+            new Warehouse { WarehouseId = 1, WarehouseName = "Active", ManagerId = 10 },
+            new Warehouse { WarehouseId = 2, WarehouseName = "Retired", ManagerId = 20, IsActive = false }
         });
         uow.RequestRecords.Add(new MaterialRequest
         {
             RequestId = 1,
             ProjectId = 1,
-            WarehouseId = 1,
             Status = MaterialRequestStatuses.Pending,
             Requisitions = new List<MaterialRequisition>
             {
@@ -363,7 +519,6 @@ public class BusinessRuleRegressionTests
         var response = await new MaterialRequestService(uow, CreateMapper(), new FakeClaimService(20, Role.WAREHOUSE_MANAGER))
             .ApproveRequestAsync(1, new ApproveMaterialRequest
             {
-                WarehouseId = 2,
                 Items = { new() { ItemId = 1, ApprovedQuantity = 5 } }
             });
 
@@ -477,7 +632,6 @@ public class BusinessRuleRegressionTests
         var response = await new WarehouseService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
             .ReturnInventoryAsync(new InventoryReturnRequest
             {
-                WarehouseId = 1,
                 VariantId = 1,
                 MaterialRequestId = 1,
                 Quantity = 2
@@ -574,6 +728,14 @@ public class BusinessRuleRegressionTests
         Assert.Equal(0, task.ActualCost);
         Assert.Equal(0, task.ActualProgressPct);
         Assert.Equal(cpms_Domain.Models.TaskStatus.PENDING, task.Status);
+
+        var body = Assert.IsType<TaskResponse>(response.Result);
+        Assert.Equal(1, body.PhaseId);
+        Assert.Equal("Foundation", body.PhaseName);
+        Assert.NotNull(body.Phase);
+        Assert.Equal(1, body.Phase!.PhaseId);
+        Assert.Equal("Foundation", body.Phase.Name);
+        Assert.Equal("PLANNED", body.Phase.Status);
     }
 
     [Fact]
@@ -669,6 +831,11 @@ public class BusinessRuleRegressionTests
         Assert.Equal("New task", task.TaskName);
         Assert.Equal("New phase", task.PhaseName);
         Assert.Equal(75, task.PlannedBudget);
+
+        var body = Assert.IsType<TaskResponse>(response.Result);
+        Assert.NotNull(body.Phase);
+        Assert.Equal(1, body.Phase!.PhaseId);
+        Assert.Equal("New phase", body.Phase.Name);
     }
 
     [Fact]
@@ -867,60 +1034,7 @@ public class BusinessRuleRegressionTests
         Assert.Contains("POST /api/Phases/{phaseId}/tasks", apiResponse.ErrorMessage);
     }
     [Fact]
-    public async Task PurchaseOrderRejectsDuplicateResolvedVariants()
-    {
-        var uow = new TestUnitOfWork();
-        uow.ProjectRecords.Add(new Project { ProjectId = 1, ProjectName = "P", PMUserID = 5, TotalProjectBudget = 1000 });
-        uow.WarehouseRecords.Add(new Warehouse { WarehouseId = 1, WarehouseName = "W", ManagerId = 10 });
-        uow.SupplierRecords.Add(new Supplier { SupplierId = 1, CompanyName = "S" });
-        uow.VariantRecords.Add(new MaterialVariant { VariantId = 1, MaterialId = 1, VariantName = "Steel", Unit = "kg", IsActive = true });
-        uow.SupplierCatalogRecords.Add(new SupplierCatalog { CatalogId = 1, SupplierId = 1, VariantId = 1, UnitPrice = 5, IsAvailable = true });
-
-        var response = await new PurchaseOrderService(uow, null!, new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
-            .CreatePurchaseOrderAsync(new CreatePurchaseOrderRequest
-            {
-                ProjectId = 1,
-                WarehouseId = 1,
-                SupplierId = 1,
-                Items =
-                {
-                    new() { VariantId = 1, Quantity = 2 },
-                    new() { VariantId = 1, Quantity = 3 }
-                }
-            });
-
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("only appear once", response.ErrorMessage);
-    }
-
-    [Fact]
-    public async Task PurchaseOrderRequiresVariantIdWhenMaterialHasMultipleVariants()
-    {
-        var uow = new TestUnitOfWork();
-        uow.ProjectRecords.Add(new Project { ProjectId = 1, ProjectName = "P", PMUserID = 5, TotalProjectBudget = 1000 });
-        uow.WarehouseRecords.Add(new Warehouse { WarehouseId = 1, WarehouseName = "W", ManagerId = 10 });
-        uow.SupplierRecords.Add(new Supplier { SupplierId = 1, CompanyName = "S" });
-        uow.VariantRecords.AddRange(new[]
-        {
-            new MaterialVariant { VariantId = 1, MaterialId = 1, VariantName = "Steel 10 mm", Unit = "m", IsActive = true },
-            new MaterialVariant { VariantId = 2, MaterialId = 1, VariantName = "Steel 12 mm", Unit = "m", IsActive = true }
-        });
-
-        var response = await new PurchaseOrderService(uow, null!, new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
-            .CreatePurchaseOrderAsync(new CreatePurchaseOrderRequest
-            {
-                ProjectId = 1,
-                WarehouseId = 1,
-                SupplierId = 1,
-                Items = { new() { MaterialId = 1, Quantity = 2 } }
-            });
-
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Contains("exactly one active variant", response.ErrorMessage);
-    }
-
-    [Fact]
-    public async Task CatalogOffersExposeTheRulesNeededToCreatePurchaseOrders()
+    public async Task CatalogOffersExposeSupplierTerms()
     {
         var uow = new TestUnitOfWork();
         var material = new Material { MaterialId = 1, MaterialName = "Portland cement", DefaultUnit = "bag" };
@@ -958,216 +1072,6 @@ public class BusinessRuleRegressionTests
         Assert.Equal("CEM-T1-50", offer.Sku);
         Assert.Equal(20, offer.MinimumOrderQuantity);
         Assert.Equal(3, offer.LeadTimeDays);
-    }
-
-    [Fact]
-    public async Task ShortagePurchaseOrderAllowsOnlySupplierMinimumExcessAndDefaultsDeliveryDate()
-    {
-        var uow = new TestUnitOfWork();
-        var material = new Material { MaterialId = 1, MaterialName = "Steel", DefaultUnit = "kg" };
-        var variant = new MaterialVariant
-        {
-            VariantId = 1,
-            MaterialId = 1,
-            Material = material,
-            VariantName = "Grade 60",
-            Unit = "kg",
-            IsActive = true
-        };
-        var project = new Project { ProjectId = 1, ProjectName = "P", PMUserID = 5, TotalProjectBudget = 1000 };
-        var warehouse = new Warehouse { WarehouseId = 1, WarehouseName = "W", ManagerId = 10 };
-        var supplier = new Supplier { SupplierId = 1, CompanyName = "S" };
-        var materialRequest = new MaterialRequest
-        {
-            RequestId = 1,
-            ProjectId = 1,
-            TaskId = 7,
-            WarehouseId = 1,
-            Status = MaterialRequestStatuses.PartiallyApproved
-        };
-        var requestItem = new MaterialRequisition
-        {
-            ItemId = 1,
-            RequestId = 1,
-            VariantId = 1,
-            Variant = variant,
-            MaterialRequest = materialRequest,
-            Quantity = 9,
-            ApprovedQuantity = 5
-        };
-        uow.ProjectRecords.Add(project);
-        uow.WarehouseRecords.Add(warehouse);
-        uow.SupplierRecords.Add(supplier);
-        uow.VariantRecords.Add(variant);
-        uow.RequestRecords.Add(materialRequest);
-        uow.RequisitionRecords.Add(requestItem);
-        uow.SupplierCatalogRecords.Add(new SupplierCatalog
-        {
-            CatalogId = 1,
-            SupplierId = 1,
-            Supplier = supplier,
-            VariantId = 1,
-            Variant = variant,
-            UnitPrice = 5,
-            MinimumOrderQuantity = 10,
-            LeadTimeDays = 4,
-            IsAvailable = true
-        });
-
-        var response = await new PurchaseOrderService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
-            .CreatePurchaseOrderAsync(new CreatePurchaseOrderRequest
-            {
-                ProjectId = 1,
-                WarehouseId = 1,
-                SupplierId = 1,
-                Items = { new() { VariantId = 1, RequestItemId = 1, Quantity = 10 } }
-            });
-
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        var order = Assert.Single(uow.PurchaseOrderRecords);
-        Assert.Equal(10, Assert.Single(order.OrderLineItems).Quantity);
-        Assert.Equal(DateTime.UtcNow.Date.AddDays(4), order.ExpectedDeliveryDate);
-    }
-
-    [Fact]
-    public async Task ShortagePurchaseOrderRejectsADifferentDestinationWarehouse()
-    {
-        var uow = new TestUnitOfWork();
-        var variant = new MaterialVariant { VariantId = 1, MaterialId = 1, VariantName = "Steel", Unit = "kg", IsActive = true };
-        var materialRequest = new MaterialRequest
-        {
-            RequestId = 1,
-            ProjectId = 1,
-            TaskId = 7,
-            WarehouseId = 1,
-            Status = MaterialRequestStatuses.PartiallyApproved
-        };
-        var requestItem = new MaterialRequisition
-        {
-            ItemId = 1,
-            RequestId = 1,
-            VariantId = 1,
-            MaterialRequest = materialRequest,
-            Quantity = 5
-        };
-        uow.ProjectRecords.Add(new Project { ProjectId = 1, ProjectName = "P", TotalProjectBudget = 1000 });
-        uow.WarehouseRecords.Add(new Warehouse { WarehouseId = 2, WarehouseName = "Wrong", ManagerId = 10 });
-        uow.SupplierRecords.Add(new Supplier { SupplierId = 1, CompanyName = "S" });
-        uow.VariantRecords.Add(variant);
-        uow.RequestRecords.Add(materialRequest);
-        uow.RequisitionRecords.Add(requestItem);
-        uow.SupplierCatalogRecords.Add(new SupplierCatalog
-        {
-            CatalogId = 1,
-            SupplierId = 1,
-            VariantId = 1,
-            UnitPrice = 5,
-            MinimumOrderQuantity = 1,
-            IsAvailable = true
-        });
-
-        var response = await new PurchaseOrderService(uow, null!, new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
-            .CreatePurchaseOrderAsync(new CreatePurchaseOrderRequest
-            {
-                ProjectId = 1,
-                WarehouseId = 2,
-                SupplierId = 1,
-                Items = { new() { VariantId = 1, RequestItemId = 1, Quantity = 5 } }
-            });
-
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Contains("warehouse assigned", response.ErrorMessage);
-    }
-
-    [Fact]
-    public async Task DamagedPriorDeliveryReopensOnlyTheUncoveredShortage()
-    {
-        var uow = new TestUnitOfWork();
-        var material = new Material { MaterialId = 1, MaterialName = "Steel", DefaultUnit = "kg" };
-        var variant = new MaterialVariant
-        {
-            VariantId = 1,
-            MaterialId = 1,
-            Material = material,
-            VariantName = "Grade 60",
-            Unit = "kg",
-            IsActive = true
-        };
-        var project = new Project { ProjectId = 1, ProjectName = "P", TotalProjectBudget = 1000 };
-        var warehouse = new Warehouse { WarehouseId = 1, WarehouseName = "W", ManagerId = 10 };
-        var supplier = new Supplier { SupplierId = 1, CompanyName = "S" };
-        var materialRequest = new MaterialRequest
-        {
-            RequestId = 1,
-            ProjectId = 1,
-            TaskId = 7,
-            WarehouseId = 1,
-            Status = MaterialRequestStatuses.PartiallyApproved
-        };
-        var requestItem = new MaterialRequisition
-        {
-            ItemId = 1,
-            RequestId = 1,
-            VariantId = 1,
-            Variant = variant,
-            MaterialRequest = materialRequest,
-            Quantity = 10,
-            ApprovedQuantity = 7
-        };
-        var priorOrder = new PurchaseOrder
-        {
-            PoId = 1,
-            ProjectId = 1,
-            WarehouseId = 1,
-            SupplierId = 1,
-            Status = PurchaseOrderStatus.CLOSED_WITH_VARIANCE
-        };
-        var priorLine = new OrderLineItem
-        {
-            LineItemId = 1,
-            PoId = 1,
-            PurchaseOrder = priorOrder,
-            VariantId = 1,
-            RequestItemId = 1,
-            RequestItem = requestItem,
-            Quantity = 10,
-            ReceivedQuantity = 7,
-            DamagedQuantity = 3
-        };
-        priorOrder.OrderLineItems.Add(priorLine);
-        uow.ProjectRecords.Add(project);
-        uow.WarehouseRecords.Add(warehouse);
-        uow.SupplierRecords.Add(supplier);
-        uow.VariantRecords.Add(variant);
-        uow.RequestRecords.Add(materialRequest);
-        uow.RequisitionRecords.Add(requestItem);
-        uow.PurchaseOrderRecords.Add(priorOrder);
-        uow.OrderLineRecords.Add(priorLine);
-        uow.SupplierCatalogRecords.Add(new SupplierCatalog
-        {
-            CatalogId = 1,
-            SupplierId = 1,
-            Supplier = supplier,
-            VariantId = 1,
-            Variant = variant,
-            UnitPrice = 5,
-            MinimumOrderQuantity = 1,
-            LeadTimeDays = 2,
-            IsAvailable = true
-        });
-
-        var response = await new PurchaseOrderService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
-            .CreatePurchaseOrderAsync(new CreatePurchaseOrderRequest
-            {
-                ProjectId = 1,
-                WarehouseId = 1,
-                SupplierId = 1,
-                Items = { new() { VariantId = 1, RequestItemId = 1, Quantity = 3 } }
-            });
-
-        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
-        var replacement = Assert.Single(uow.PurchaseOrderRecords, order => order.PoId != priorOrder.PoId);
-        Assert.Equal(3, Assert.Single(replacement.OrderLineItems).Quantity);
     }
 
     [Fact]
@@ -1254,328 +1158,6 @@ public class BusinessRuleRegressionTests
         Assert.Equal(10, offer.SuggestedOrderQuantity);
         Assert.Equal(6, offer.ExpectedExcessStockQuantity);
         Assert.Equal(50, offer.SuggestedOrderTotal);
-    }
-
-    [Fact]
-    public async Task PurchaseOrderLifecycleReachesEveryOperationalStatusAndClosesFinalReceipt()
-    {
-        var uow = new TestUnitOfWork();
-        var mapper = CreateMapper();
-        var project = new Project { ProjectId = 1, ProjectName = "Tower A", PMUserID = 5 };
-        var warehouse = new Warehouse { WarehouseId = 1, WarehouseName = "Main site store", ManagerId = 10 };
-        var supplier = new Supplier { SupplierId = 1, CompanyName = "Steel Supply Co." };
-        var material = new Material { MaterialId = 1, MaterialName = "Rebar", DefaultUnit = "kg" };
-        var variant = new MaterialVariant
-        {
-            VariantId = 1,
-            MaterialId = 1,
-            Material = material,
-            VariantName = "Grade 60 - 16 mm",
-            SKU = "REB-G60-16",
-            Grade = "60",
-            Size = "16 mm",
-            Specification = "Deformed reinforcing bar",
-            Unit = "kg",
-            IsActive = true
-        };
-        var line = new OrderLineItem
-        {
-            LineItemId = 1,
-            VariantId = 1,
-            Variant = variant,
-            Quantity = 10,
-            UnitPrice = 5
-        };
-        var order = new PurchaseOrder
-        {
-            PoId = 1,
-            ProjectId = 1,
-            Project = project,
-            SupplierId = 1,
-            Supplier = supplier,
-            WarehouseId = 1,
-            Warehouse = warehouse,
-            UserAccountId = 10,
-            Status = PurchaseOrderStatus.PENDING,
-            TotalAmount = 50,
-            ExpectedDeliveryDate = DateTime.UtcNow.Date.AddDays(2),
-            OrderLineItems = new List<OrderLineItem> { line }
-        };
-        line.PoId = order.PoId;
-        line.PurchaseOrder = order;
-        uow.ProjectRecords.Add(project);
-        uow.WarehouseRecords.Add(warehouse);
-        uow.SupplierRecords.Add(supplier);
-        uow.VariantRecords.Add(variant);
-        uow.PurchaseOrderRecords.Add(order);
-        uow.OrderLineRecords.Add(line);
-
-        var approval = await new PurchaseOrderService(uow, mapper, new FakeClaimService(5, Role.PM))
-            .ApprovePurchaseOrderAsync(order.PoId);
-        Assert.True(approval.IsSuccess, approval.ErrorMessage);
-        Assert.Equal(PurchaseOrderStatus.APPROVED, order.Status);
-        var inventory = Assert.Single(uow.InventoryRecords);
-        inventory.Warehouse = warehouse;
-        inventory.Variant = variant;
-        Assert.Equal(10, inventory.OnOrderQuantity);
-
-        var processing = await new PurchaseOrderService(uow, mapper, new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
-            .MarkProcessingAsync(order.PoId);
-        Assert.True(processing.IsSuccess, processing.ErrorMessage);
-        Assert.Equal(PurchaseOrderStatus.PROCESSING, order.Status);
-
-        var shipped = await new PurchaseOrderService(uow, mapper, new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
-            .MarkShippedAsync(order.PoId);
-        Assert.True(shipped.IsSuccess, shipped.ErrorMessage);
-        Assert.Equal(PurchaseOrderStatus.SHIPPED, order.Status);
-
-        var invalidCancellation = await new PurchaseOrderService(uow, mapper, new FakeClaimService(5, Role.PM))
-            .CancelPurchaseOrderAsync(order.PoId);
-        Assert.Equal(HttpStatusCode.Conflict, invalidCancellation.StatusCode);
-        Assert.Equal(PurchaseOrderStatus.SHIPPED, order.Status);
-
-        var partialReceipt = await new PurchaseOrderService(uow, mapper, new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
-            .ReceivePurchaseOrderAsync(order.PoId, new ReceivePurchaseOrderRequest
-            {
-                Items = { new() { LineItemId = line.LineItemId, Quantity = 4 } }
-            });
-        Assert.True(partialReceipt.IsSuccess, partialReceipt.ErrorMessage);
-        Assert.Equal(PurchaseOrderStatus.PARTIALLY_RECEIVED, order.Status);
-        Assert.Equal(4, inventory.QuantityOnHand);
-        Assert.Equal(6, inventory.OnOrderQuantity);
-
-        var incompleteFinal = await new PurchaseOrderService(uow, mapper, new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
-            .ReceivePurchaseOrderAsync(order.PoId, new ReceivePurchaseOrderRequest
-            {
-                IsFinalDelivery = true,
-                Items = { new() { LineItemId = line.LineItemId, Quantity = 5 } }
-            });
-        Assert.Equal(HttpStatusCode.BadRequest, incompleteFinal.StatusCode);
-        Assert.Equal(PurchaseOrderStatus.PARTIALLY_RECEIVED, order.Status);
-        Assert.Equal(4, inventory.QuantityOnHand);
-
-        var finalReceipt = await new PurchaseOrderService(uow, mapper, new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
-            .ReceivePurchaseOrderAsync(order.PoId, new ReceivePurchaseOrderRequest
-            {
-                IsFinalDelivery = true,
-                Items = { new() { LineItemId = line.LineItemId, Quantity = 5, MissingQuantity = 1 } }
-            });
-        Assert.True(finalReceipt.IsSuccess, finalReceipt.ErrorMessage);
-        Assert.Equal(PurchaseOrderStatus.CLOSED_WITH_VARIANCE, order.Status);
-        Assert.Equal(9, inventory.QuantityOnHand);
-        Assert.Equal(0, inventory.OnOrderQuantity);
-        Assert.Equal(2, uow.TransactionRecords.Count);
-        Assert.Single(uow.SupplierMetricRecords);
-
-        var response = Assert.IsType<PurchaseOrderResponse>(finalReceipt.Result);
-        var responseLine = Assert.Single(response.Items);
-        Assert.Equal("REB-G60-16", responseLine.SKU);
-        Assert.Equal("Deformed reinforcing bar", responseLine.Specification);
-        var inventoryResponse = mapper.Map<cpms_Application.Response.Inventory.InventoryReportResponse>(inventory);
-        Assert.Equal("REB-G60-16", inventoryResponse.SKU);
-    }
-
-    [Fact]
-    public async Task ShortageLinkedReceiptReservesAgainstOriginalRequestAndLeavesMissingQuantityOpen()
-    {
-        var uow = new TestUnitOfWork();
-        var mapper = CreateMapper();
-        var project = new Project { ProjectId = 1, ProjectName = "Tower A", PMUserID = 5 };
-        var warehouse = new Warehouse { WarehouseId = 1, WarehouseName = "Main site store", ManagerId = 10 };
-        var supplier = new Supplier { SupplierId = 1, CompanyName = "Cement Supply Co." };
-        var material = new Material { MaterialId = 1, MaterialName = "Portland cement", DefaultUnit = "bag" };
-        var variant = new MaterialVariant
-        {
-            VariantId = 1,
-            MaterialId = 1,
-            Material = material,
-            VariantName = "Type I - 50 kg",
-            SKU = "CEM-T1-50",
-            Unit = "bag",
-            IsActive = true
-        };
-        var materialRequest = new MaterialRequest
-        {
-            RequestId = 1,
-            ProjectId = 1,
-            Project = project,
-            TaskId = 7,
-            WarehouseId = 1,
-            Warehouse = warehouse,
-            Status = MaterialRequestStatuses.PartiallyApproved
-        };
-        var requestItem = new MaterialRequisition
-        {
-            ItemId = 1,
-            RequestId = 1,
-            MaterialRequest = materialRequest,
-            VariantId = 1,
-            Variant = variant,
-            Quantity = 10,
-            ApprovedQuantity = 4,
-            NeededByDate = DateTime.UtcNow.Date.AddDays(7)
-        };
-        materialRequest.Requisitions.Add(requestItem);
-        var inventory = new InventoryRecord
-        {
-            InventoryId = 1,
-            WarehouseId = 1,
-            Warehouse = warehouse,
-            VariantId = 1,
-            Variant = variant,
-            QuantityOnHand = 4,
-            ReservedQuantity = 4,
-            OnOrderQuantity = 10,
-            AverageUnitCost = 2
-        };
-        var existingReservation = new InventoryReservation
-        {
-            ReservationId = 1,
-            InventoryId = 1,
-            InventoryRecord = inventory,
-            RequestId = 1,
-            MaterialRequest = materialRequest,
-            RequestItemId = 1,
-            RequestItem = requestItem,
-            Quantity = 4,
-            Status = InventoryReservationStatuses.Active,
-            ReservedAt = DateTime.UtcNow
-        };
-        inventory.Reservations.Add(existingReservation);
-        materialRequest.Reservations.Add(existingReservation);
-        requestItem.Reservations.Add(existingReservation);
-        var line = new OrderLineItem
-        {
-            LineItemId = 1,
-            VariantId = 1,
-            Variant = variant,
-            RequestItemId = 1,
-            RequestItem = requestItem,
-            Quantity = 10,
-            UnitPrice = 5
-        };
-        var order = new PurchaseOrder
-        {
-            PoId = 1,
-            ProjectId = 1,
-            Project = project,
-            SupplierId = 1,
-            Supplier = supplier,
-            WarehouseId = 1,
-            Warehouse = warehouse,
-            UserAccountId = 10,
-            Status = PurchaseOrderStatus.SHIPPED,
-            TotalAmount = 50,
-            OrderLineItems = new List<OrderLineItem> { line }
-        };
-        line.PoId = order.PoId;
-        line.PurchaseOrder = order;
-        uow.ProjectRecords.Add(project);
-        uow.WarehouseRecords.Add(warehouse);
-        uow.SupplierRecords.Add(supplier);
-        uow.VariantRecords.Add(variant);
-        uow.RequestRecords.Add(materialRequest);
-        uow.RequisitionRecords.Add(requestItem);
-        uow.InventoryRecords.Add(inventory);
-        uow.ReservationRecords.Add(existingReservation);
-        uow.PurchaseOrderRecords.Add(order);
-        uow.OrderLineRecords.Add(line);
-        uow.SupplierCatalogRecords.Add(new SupplierCatalog
-        {
-            CatalogId = 1,
-            SupplierId = 1,
-            Supplier = supplier,
-            VariantId = 1,
-            Variant = variant,
-            UnitPrice = 5,
-            MinimumOrderQuantity = 10,
-            LeadTimeDays = 2,
-            IsAvailable = true
-        });
-
-        var receipt = await new PurchaseOrderService(uow, mapper, new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
-            .ReceivePurchaseOrderAsync(order.PoId, new ReceivePurchaseOrderRequest
-            {
-                IsFinalDelivery = true,
-                Items = { new() { LineItemId = line.LineItemId, Quantity = 5, MissingQuantity = 5 } }
-            });
-
-        Assert.True(receipt.IsSuccess, receipt.ErrorMessage);
-        Assert.Equal(PurchaseOrderStatus.CLOSED_WITH_VARIANCE, order.Status);
-        Assert.Equal(9, requestItem.ApprovedQuantity);
-        Assert.Equal(MaterialRequestStatuses.PartiallyApproved, materialRequest.Status);
-        Assert.Equal(9, inventory.QuantityOnHand);
-        Assert.Equal(9, inventory.ReservedQuantity);
-        Assert.Equal(0, inventory.OnOrderQuantity);
-        Assert.Equal(9, existingReservation.Quantity);
-        Assert.Single(uow.ReservationRecords);
-
-        var shortages = await new PurchaseOrderService(uow, mapper, new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
-            .GetProcurementShortagesAsync();
-        var remaining = Assert.Single(Assert.IsType<List<ProcurementShortageResponse>>(shortages.Result));
-        Assert.Equal(1, remaining.RemainingShortageQuantity);
-        Assert.Equal(10, Assert.Single(remaining.SupplierOffers).SuggestedOrderQuantity);
-
-        var issue = await new MaterialRequestService(uow, mapper, new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
-            .IssueRequestAsync(materialRequest.RequestId);
-        Assert.True(issue.IsSuccess, issue.ErrorMessage);
-        Assert.Equal(9, requestItem.IssuedQuantity);
-        Assert.Equal(MaterialRequestStatuses.PartiallyIssued, materialRequest.Status);
-        Assert.Equal(0, inventory.QuantityOnHand);
-        Assert.Equal(0, inventory.ReservedQuantity);
-        Assert.Equal(InventoryReservationStatuses.Fulfilled, existingReservation.Status);
-
-        var replacementLine = new OrderLineItem
-        {
-            LineItemId = 2,
-            VariantId = 1,
-            Variant = variant,
-            RequestItemId = 1,
-            RequestItem = requestItem,
-            Quantity = 10,
-            UnitPrice = 5
-        };
-        var replacementOrder = new PurchaseOrder
-        {
-            PoId = 2,
-            ProjectId = 1,
-            Project = project,
-            SupplierId = 1,
-            Supplier = supplier,
-            WarehouseId = 1,
-            Warehouse = warehouse,
-            UserAccountId = 10,
-            Status = PurchaseOrderStatus.SHIPPED,
-            TotalAmount = 50,
-            OrderLineItems = new List<OrderLineItem> { replacementLine }
-        };
-        replacementLine.PoId = replacementOrder.PoId;
-        replacementLine.PurchaseOrder = replacementOrder;
-        uow.PurchaseOrderRecords.Add(replacementOrder);
-        uow.OrderLineRecords.Add(replacementLine);
-        inventory.OnOrderQuantity = 10;
-
-        var replacementReceipt = await new PurchaseOrderService(uow, mapper, new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
-            .ReceivePurchaseOrderAsync(replacementOrder.PoId, new ReceivePurchaseOrderRequest
-            {
-                IsFinalDelivery = true,
-                Items = { new() { LineItemId = replacementLine.LineItemId, Quantity = 10 } }
-            });
-        Assert.True(replacementReceipt.IsSuccess, replacementReceipt.ErrorMessage);
-        Assert.Equal(10, requestItem.ApprovedQuantity);
-        Assert.Equal(MaterialRequestStatuses.Approved, materialRequest.Status);
-        Assert.Equal(10, inventory.QuantityOnHand);
-        Assert.Equal(1, inventory.ReservedQuantity);
-        Assert.Equal(9, inventory.QuantityOnHand - inventory.ReservedQuantity - inventory.QuarantineQuantity);
-        Assert.Equal(2, uow.ReservationRecords.Count);
-
-        var finalIssue = await new MaterialRequestService(uow, mapper, new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
-            .IssueRequestAsync(materialRequest.RequestId);
-        Assert.True(finalIssue.IsSuccess, finalIssue.ErrorMessage);
-        Assert.Equal(10, requestItem.IssuedQuantity);
-        Assert.Equal(MaterialRequestStatuses.Issued, materialRequest.Status);
-        Assert.Equal(9, inventory.QuantityOnHand);
-        Assert.Equal(0, inventory.ReservedQuantity);
     }
 
     [Fact]
@@ -1749,7 +1331,7 @@ public class BusinessRuleRegressionTests
             Status = cpms_Domain.Models.TaskStatus.PENDING
         });
 
-        var response = await new ProjectService(uow, CreateMapper(), new FakeClaimService(1, Role.ADMIN))
+        var response = await new ProjectService(uow, CreateMapper(), new FakeClaimService(5, Role.PM))
             .AdjustProjectBudgetAsync(new AdjustBudgetRequest { ProjectId = 1, Amount = -30, Reason = "Reduce" });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
@@ -1862,19 +1444,12 @@ public class BusinessRuleRegressionTests
     }
 
     [Fact]
-    public async Task WarehouseManagerCanBeReassignedByAdministrator()
+    public async Task UpdatingAWarehouseIsRetired()
     {
         var uow = new TestUnitOfWork();
         uow.WarehouseRecords.Add(new Warehouse { WarehouseId = 1, WarehouseName = "Old", Location = "A", ManagerId = 10 });
-        uow.UserAccountRecords.Add(new UserAccount
-        {
-            Id = 20,
-            Email = "manager@example.com",
-            Role = Role.WAREHOUSE_MANAGER,
-            IsEmailVerified = true
-        });
 
-        var response = await new WarehouseService(uow, CreateMapper(), new FakeClaimService(1, Role.ADMIN))
+        var response = await new WarehouseService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
             .UpdateWarehouseAsync(1, new UpdateWarehouseRequest
             {
                 ManagerId = 20,
@@ -1882,13 +1457,30 @@ public class BusinessRuleRegressionTests
                 Location = "Site B"
             });
 
-        Assert.True(response.IsSuccess, response.ErrorMessage);
-        Assert.Equal(20, uow.WarehouseRecords[0].ManagerId);
-        Assert.Equal("Main Warehouse", uow.WarehouseRecords[0].WarehouseName);
+        Assert.Equal(HttpStatusCode.Gone, response.StatusCode);
+        Assert.Equal(10, uow.WarehouseRecords[0].ManagerId);
+        Assert.Equal("Old", uow.WarehouseRecords[0].WarehouseName);
     }
 
     [Fact]
-    public async Task ClosedProjectCannotApproveMaterialRequestOrPurchaseOrder()
+    public async Task CreatingAdditionalWarehousesIsRetired()
+    {
+        var uow = new TestUnitOfWork();
+
+        var response = await new WarehouseService(uow, CreateMapper(), new FakeClaimService(1, Role.ADMIN))
+            .CreateWarehouseAsync(new CreateWarehouseRequest
+            {
+                ManagerId = 10,
+                WarehouseName = "Another",
+                Location = "Site C"
+            });
+
+        Assert.Equal(HttpStatusCode.Gone, response.StatusCode);
+        Assert.Empty(uow.WarehouseRecords);
+    }
+
+    [Fact]
+    public async Task ClosedProjectCannotApproveMaterialRequest()
     {
         var uow = new TestUnitOfWork();
         var project = new Project { ProjectId = 1, ProjectName = "P", PMUserID = 5, Status = ProjectStatus.CANCELLED };
@@ -1904,33 +1496,18 @@ public class BusinessRuleRegressionTests
                 new() { ItemId = 1, RequestId = 1, VariantId = 1, Quantity = 5 }
             }
         };
-        var order = new PurchaseOrder
-        {
-            PoId = 1,
-            ProjectId = 1,
-            Project = project,
-            WarehouseId = 1,
-            Warehouse = warehouse,
-            UserAccountId = 10,
-            Status = PurchaseOrderStatus.PENDING
-        };
         uow.ProjectRecords.Add(project);
         uow.WarehouseRecords.Add(warehouse);
         uow.RequestRecords.Add(request);
         uow.RequisitionRecords.Add(request.Requisitions.Single());
-        uow.PurchaseOrderRecords.Add(order);
 
         var requestApproval = await new MaterialRequestService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
             .ApproveRequestAsync(1, new ApproveMaterialRequest
             {
-                WarehouseId = 1,
                 Items = { new() { ItemId = 1, ApprovedQuantity = 5 } }
             });
-        var orderApproval = await new PurchaseOrderService(uow, CreateMapper(), new FakeClaimService(5, Role.PM))
-            .ApprovePurchaseOrderAsync(1);
 
         Assert.Equal(HttpStatusCode.Conflict, requestApproval.StatusCode);
-        Assert.Equal(HttpStatusCode.Conflict, orderApproval.StatusCode);
         Assert.Empty(uow.ReservationRecords);
     }
 
@@ -2035,43 +1612,11 @@ public class BusinessRuleRegressionTests
             TotalProjectBudget = 100
         });
 
-        var response = await new ProjectService(uow, CreateMapper(), new FakeClaimService(1, Role.ADMIN))
+        var response = await new ProjectService(uow, CreateMapper(), new FakeClaimService(5, Role.PM))
             .AdjustProjectBudgetAsync(new AdjustBudgetRequest { ProjectId = 1, Amount = 10, Reason = "Late change" });
 
         Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
         Assert.Equal(100, uow.ProjectRecords[0].TotalProjectBudget);
-    }
-
-    [Fact]
-    public async Task PurchaseOrderCancellationKeepsAnAuditNoteAndChecksSuppliedVersion()
-    {
-        var uow = new TestUnitOfWork();
-        var project = new Project { ProjectId = 1, ProjectName = "P", PMUserID = 5, Status = ProjectStatus.IN_PROGRESS };
-        var warehouse = new Warehouse { WarehouseId = 1, WarehouseName = "W", Location = "L", ManagerId = 10 };
-        var order = new PurchaseOrder
-        {
-            PoId = 1,
-            ProjectId = 1,
-            Project = project,
-            WarehouseId = 1,
-            Warehouse = warehouse,
-            UserAccountId = 10,
-            Status = PurchaseOrderStatus.PENDING,
-            RowVersion = [1]
-        };
-        uow.ProjectRecords.Add(project);
-        uow.WarehouseRecords.Add(warehouse);
-        uow.PurchaseOrderRecords.Add(order);
-
-        var stale = await new PurchaseOrderService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
-            .CancelPurchaseOrderAsync(1, new PurchaseOrderActionRequest { Note = "Supplier unavailable", RowVersion = "Ag==" });
-        var cancelled = await new PurchaseOrderService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
-            .CancelPurchaseOrderAsync(1, new PurchaseOrderActionRequest { Note = "Supplier unavailable", RowVersion = "AQ==" });
-
-        Assert.Equal(HttpStatusCode.Conflict, stale.StatusCode);
-        Assert.True(cancelled.IsSuccess, cancelled.ErrorMessage);
-        Assert.Equal(PurchaseOrderStatus.CANCELLED, order.Status);
-        Assert.Contains("Supplier unavailable", order.Note);
     }
 
     [Fact]
@@ -2185,30 +1730,19 @@ public class BusinessRuleRegressionTests
     }
 
     [Fact]
-    public async Task PausedProjectRejectsNewMaterialAndPurchaseCommitments()
+    public async Task PausedProjectRejectsNewMaterialRequests()
     {
         var uow = new TestUnitOfWork();
         var project = new Project { ProjectId = 1, ProjectName = "P", PMUserID = 5, Status = ProjectStatus.PAUSED };
         var warehouse = new Warehouse { WarehouseId = 1, WarehouseName = "W", ManagerId = 10 };
         uow.ProjectRecords.Add(project);
         uow.WarehouseRecords.Add(warehouse);
-        uow.SupplierRecords.Add(new Supplier { SupplierId = 1, CompanyName = "Supplier" });
 
         var materialResponse = await new MaterialRequestService(uow, CreateMapper(), new FakeClaimService(5, Role.PM))
             .CreateRequestAsync(new CreateMaterialRequest { ProjectId = 1, TaskId = 1, Items = { new() { VariantId = 1, Quantity = 1 } } });
-        var purchaseResponse = await new PurchaseOrderService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
-            .CreatePurchaseOrderAsync(new CreatePurchaseOrderRequest
-            {
-                ProjectId = 1,
-                WarehouseId = 1,
-                SupplierId = 1,
-                Items = { new() { VariantId = 1, Quantity = 1 } }
-            });
 
         Assert.Equal(HttpStatusCode.Conflict, materialResponse.StatusCode);
-        Assert.Equal(HttpStatusCode.Conflict, purchaseResponse.StatusCode);
         Assert.Empty(uow.RequestRecords);
-        Assert.Empty(uow.PurchaseOrderRecords);
     }
 
     [Fact]
@@ -2320,31 +1854,6 @@ public class BusinessRuleRegressionTests
     }
 
     [Fact]
-    public async Task ProcessingPurchaseOrderRejectsSuppliedStaleVersion()
-    {
-        var uow = new TestUnitOfWork();
-        var project = new Project { ProjectId = 1, ProjectName = "P", Status = ProjectStatus.IN_PROGRESS };
-        var warehouse = new Warehouse { WarehouseId = 1, WarehouseName = "W", ManagerId = 10 };
-        var order = new PurchaseOrder
-        {
-            PoId = 1,
-            ProjectId = 1,
-            Project = project,
-            WarehouseId = 1,
-            Warehouse = warehouse,
-            Status = PurchaseOrderStatus.APPROVED,
-            RowVersion = [1]
-        };
-        uow.PurchaseOrderRecords.Add(order);
-
-        var response = await new PurchaseOrderService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
-            .MarkProcessingAsync(1, new PurchaseOrderActionRequest { RowVersion = "Ag==" });
-
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Equal(PurchaseOrderStatus.APPROVED, order.Status);
-    }
-
-    [Fact]
     public async Task OwningPmAssignsVerifiedCustomerToProject()
     {
         var uow = new TestUnitOfWork();
@@ -2423,6 +1932,98 @@ public class BusinessRuleRegressionTests
     }
 
     [Fact]
+    public async Task AssignedCustomerCanListPhasesAndTasks()
+    {
+        var uow = new TestUnitOfWork();
+        uow.ProjectRecords.Add(new Project { ProjectId = 1, ProjectName = "P", PMUserID = 5, Status = ProjectStatus.IN_PROGRESS, CustomerUserId = 20 });
+        uow.PhaseRecords.Add(new Phase
+        {
+            PhaseId = 1,
+            ProjectId = 1,
+            Name = "Foundation",
+            SequenceOrder = 0,
+            BaselineStart = DateTime.UtcNow.Date,
+            BaselineEnd = DateTime.UtcNow.Date.AddDays(10)
+        });
+        uow.TaskRecords.Add(new TaskItem
+        {
+            TaskId = 1,
+            ProjectId = 1,
+            PhaseId = 1,
+            PhaseName = "Foundation",
+            TaskName = "Excavate",
+            BaselineStart = DateTime.UtcNow.Date,
+            BaselineEnd = DateTime.UtcNow.Date.AddDays(5)
+        });
+
+        var phases = await new PhaseService(uow, CreateMapper(), new FakeClaimService(20, Role.CUSTOMER))
+            .GetPhasesByProjectAsync(1);
+        var tasks = await new TaskService(uow, CreateMapper(), new FakeClaimService(20, Role.CUSTOMER))
+            .GetTasksByProjectAsync(1);
+        var strangerPhases = await new PhaseService(uow, CreateMapper(), new FakeClaimService(21, Role.CUSTOMER))
+            .GetPhasesByProjectAsync(1);
+        var strangerTasks = await new TaskService(uow, CreateMapper(), new FakeClaimService(21, Role.CUSTOMER))
+            .GetTasksByProjectAsync(1);
+
+        Assert.True(phases.IsSuccess, phases.ErrorMessage);
+        Assert.True(tasks.IsSuccess, tasks.ErrorMessage);
+        Assert.Equal(HttpStatusCode.Forbidden, strangerPhases.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, strangerTasks.StatusCode);
+    }
+
+    [Fact]
+    public async Task LinkedWarehouseManagerCanReadTaskProgressReports()
+    {
+        var uow = new TestUnitOfWork();
+        var project = new Project { ProjectId = 1, ProjectName = "P", PMUserID = 5, Status = ProjectStatus.IN_PROGRESS };
+        var warehouse = new Warehouse { WarehouseId = 1, WarehouseName = "W", ManagerId = 10 };
+        var task = new TaskItem
+        {
+            TaskId = 1,
+            ProjectId = 1,
+            Project = project,
+            TaskName = "T",
+            PhaseName = "P",
+            AssignedToUserID = 5,
+            BaselineStart = DateTime.UtcNow.Date,
+            BaselineEnd = DateTime.UtcNow.Date.AddDays(5)
+        };
+        var reporter = new UserAccount { Id = 5, Role = Role.PM, IsEmailVerified = true, FirstName = "Pat", LastName = "Manager" };
+        var report = new ProgressReport
+        {
+            ReportId = 1,
+            TaskId = 1,
+            Task = task,
+            ReportedByUserId = 5,
+            Reporter = reporter,
+            ReportDate = DateTime.UtcNow,
+            ProgressIncrement = 25,
+            Status = ProgressReportStatus.APPROVED
+        };
+        uow.ProjectRecords.Add(project);
+        uow.TaskRecords.Add(task);
+        uow.UserAccountRecords.Add(reporter);
+        uow.WarehouseRecords.Add(warehouse);
+        uow.ProgressReportRecords.Add(report);
+        uow.RequestRecords.Add(new MaterialRequest
+        {
+            RequestId = 1,
+            ProjectId = 1,
+            WarehouseId = 1,
+            Warehouse = warehouse,
+            Status = MaterialRequestStatuses.Approved
+        });
+
+        var linked = await new ProgressReportService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
+            .GetReportsByTaskIdAsync(1);
+        var unlinked = await new ProgressReportService(uow, CreateMapper(), new FakeClaimService(99, Role.WAREHOUSE_MANAGER))
+            .GetReportsByTaskIdAsync(1);
+
+        Assert.True(linked.IsSuccess, linked.ErrorMessage);
+        Assert.Equal(HttpStatusCode.Forbidden, unlinked.StatusCode);
+    }
+
+    [Fact]
     public async Task GetAllProjectsReturnsOnlyAssignedProjectsForCustomer()
     {
         var uow = new TestUnitOfWork();
@@ -2457,6 +2058,533 @@ public class BusinessRuleRegressionTests
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Empty(uow.ProjectRecords);
+    }
+
+    [Fact]
+    public async Task AdministratorCannotChangeProjectStatus()
+    {
+        var uow = new TestUnitOfWork();
+        var project = new Project
+        {
+            ProjectId = 1,
+            ProjectName = "P",
+            PMUserID = 5,
+            Status = ProjectStatus.PLANNING,
+            RowVersion = [1]
+        };
+        uow.ProjectRecords.Add(project);
+
+        var response = await new ProjectService(uow, CreateMapper(), new FakeClaimService(1, Role.ADMIN))
+            .ChangeProjectStatusAsync(1, "start", new ProjectLifecycleRequest { RowVersion = "AQ==" });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(ProjectStatus.PLANNING, project.Status);
+    }
+
+    [Fact]
+    public async Task NonOwningPmCannotAdjustProjectBudget()
+    {
+        var uow = new TestUnitOfWork();
+        var project = new Project
+        {
+            ProjectId = 1,
+            ProjectName = "P",
+            PMUserID = 5,
+            Status = ProjectStatus.IN_PROGRESS,
+            TotalProjectBudget = 100,
+            RowVersion = [1]
+        };
+        uow.ProjectRecords.Add(project);
+
+        var response = await new ProjectService(uow, CreateMapper(), new FakeClaimService(6, Role.PM))
+            .AdjustProjectBudgetAsync(new AdjustBudgetRequest { ProjectId = 1, Amount = 10, Reason = "Extra" });
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(100, project.TotalProjectBudget);
+    }
+
+    [Fact]
+    public async Task WarehouseManagerCanApproveOwnInventoryAdjustment()
+    {
+        var uow = new TestUnitOfWork();
+        uow.WarehouseRecords.Add(new Warehouse { WarehouseId = 1, WarehouseName = "W", ManagerId = 10 });
+        var material = new Material { MaterialId = 1, MaterialName = "Steel", DefaultUnit = "kg" };
+        var variant = new MaterialVariant { VariantId = 1, MaterialId = 1, Material = material, VariantName = "Standard", Unit = "kg", IsActive = true };
+        uow.VariantRecords.Add(variant);
+        var inventory = new InventoryRecord { InventoryId = 1, WarehouseId = 1, VariantId = 1, QuantityOnHand = 10, Variant = variant };
+        uow.InventoryRecords.Add(inventory);
+        var adjustment = new InventoryAdjustment
+        {
+            AdjustmentId = 1,
+            WarehouseId = 1,
+            VariantId = 1,
+            QuantityDelta = 5,
+            Status = InventoryAdjustmentStatuses.Pending,
+            RequestedByUserId = 10,
+            RowVersion = [1]
+        };
+        uow.AdjustmentRecords.Add(adjustment);
+
+        var response = await new WarehouseService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
+            .ReviewInventoryAdjustmentAsync(1, true, new ReviewInventoryAdjustmentRequest { RowVersion = "AQ==" });
+
+        Assert.True(response.IsSuccess, response.ErrorMessage);
+        Assert.Equal(15, inventory.QuantityOnHand);
+        Assert.Equal(InventoryAdjustmentStatuses.Approved, adjustment.Status);
+        Assert.Equal(10, adjustment.ReviewedByUserId);
+    }
+
+    [Fact]
+    public async Task InventoryAdjustmentReviewForbiddenForNonManagingManagerAndAdministrator()
+    {
+        var uow = new TestUnitOfWork();
+        uow.WarehouseRecords.Add(new Warehouse { WarehouseId = 1, WarehouseName = "W", ManagerId = 10 });
+        var adjustment = new InventoryAdjustment
+        {
+            AdjustmentId = 1,
+            WarehouseId = 1,
+            VariantId = 1,
+            QuantityDelta = 5,
+            Status = InventoryAdjustmentStatuses.Pending,
+            RequestedByUserId = 10,
+            RowVersion = [1]
+        };
+        uow.AdjustmentRecords.Add(adjustment);
+        var review = new ReviewInventoryAdjustmentRequest { RowVersion = "AQ==" };
+
+        var otherManager = await new WarehouseService(uow, CreateMapper(), new FakeClaimService(11, Role.WAREHOUSE_MANAGER))
+            .ReviewInventoryAdjustmentAsync(1, true, review);
+        var admin = await new WarehouseService(uow, CreateMapper(), new FakeClaimService(1, Role.ADMIN))
+            .ReviewInventoryAdjustmentAsync(1, true, review);
+
+        Assert.Equal(HttpStatusCode.Forbidden, otherManager.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, admin.StatusCode);
+        Assert.Equal(InventoryAdjustmentStatuses.Pending, adjustment.Status);
+    }
+
+    [Fact]
+    public async Task WarehouseManagerCanApproveOwnPhysicalCount()
+    {
+        var uow = new TestUnitOfWork();
+        var warehouse = new Warehouse { WarehouseId = 1, WarehouseName = "W", ManagerId = 10 };
+        uow.WarehouseRecords.Add(warehouse);
+        var material = new Material { MaterialId = 1, MaterialName = "Steel", DefaultUnit = "kg" };
+        var variant = new MaterialVariant { VariantId = 1, MaterialId = 1, Material = material, VariantName = "Standard", Unit = "kg", IsActive = true };
+        uow.VariantRecords.Add(variant);
+        var inventory = new InventoryRecord { InventoryId = 1, WarehouseId = 1, VariantId = 1, QuantityOnHand = 8, Variant = variant, RowVersion = [7] };
+        uow.InventoryRecords.Add(inventory);
+        var line = new PhysicalCountLine
+        {
+            LineId = 1,
+            SessionId = 1,
+            InventoryId = 1,
+            VariantId = 1,
+            ExpectedQuantity = 8,
+            ActualQuantity = 12,
+            ExpectedInventoryRowVersion = [7],
+            InventoryRecord = inventory
+        };
+        var session = new PhysicalCountSession
+        {
+            SessionId = 1,
+            WarehouseId = 1,
+            Warehouse = warehouse,
+            CreatedByUserId = 10,
+            Status = PhysicalCountStatuses.PendingApproval,
+            RowVersion = [2],
+            Lines = new List<PhysicalCountLine> { line }
+        };
+        uow.PhysicalCountSessionRecords.Add(session);
+
+        var response = await new WarehouseService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
+            .ReviewPhysicalCountAsync(1, true, new ReviewPhysicalCountRequest { RowVersion = "Ag==" });
+
+        Assert.True(response.IsSuccess, response.ErrorMessage);
+        Assert.Equal(12, inventory.QuantityOnHand);
+        Assert.Equal(PhysicalCountStatuses.Approved, session.Status);
+        Assert.Equal(10, session.ReviewedByUserId);
+    }
+
+    [Fact]
+    public async Task CreateRequestStoresEstimateWithoutDebiting()
+    {
+        var uow = CreateLedgerFixture(out _, out _, out _);
+        uow.RequestRecords.Clear();
+        uow.RequisitionRecords.Clear();
+
+        var response = await new MaterialRequestService(uow, CreateMapper(), new FakeClaimService(5, Role.PM))
+            .CreateRequestAsync(new CreateMaterialRequest
+            {
+                ProjectId = 1,
+                TaskId = 1,
+                EstimatedCost = 500,
+                Items = { new() { VariantId = 1, Quantity = 5, NeededByDate = DateTime.UtcNow.Date } }
+            });
+
+        Assert.True(response.IsSuccess, response.ErrorMessage);
+        var created = Assert.Single(uow.RequestRecords);
+        Assert.Equal(500, created.EstimatedCost);
+        Assert.Equal(0, created.ActualCost);
+        Assert.Equal(0, created.BudgetDebitedAmount);
+        Assert.Empty(uow.MaterialBudgetTransactionRecords);
+    }
+
+    [Fact]
+    public async Task CreateRequestRejectsNegativeEstimate()
+    {
+        var uow = CreateLedgerFixture(out _, out _, out _);
+        uow.RequestRecords.Clear();
+        uow.RequisitionRecords.Clear();
+
+        var response = await new MaterialRequestService(uow, CreateMapper(), new FakeClaimService(5, Role.PM))
+            .CreateRequestAsync(new CreateMaterialRequest
+            {
+                ProjectId = 1,
+                TaskId = 1,
+                EstimatedCost = -1,
+                Items = { new() { VariantId = 1, Quantity = 5, NeededByDate = DateTime.UtcNow.Date } }
+            });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty(uow.RequestRecords);
+    }
+
+    [Fact]
+    public async Task PendingEstimateCanBeUpdatedButNeverDebits()
+    {
+        var uow = CreateLedgerFixture(out var request, out _, out _);
+
+        var response = await new MaterialRequestService(uow, CreateMapper(), new FakeClaimService(5, Role.PM))
+            .UpdatePendingRequestAsync(1, new UpdatePendingMaterialRequest
+            {
+                RowVersion = string.Empty,
+                EstimatedCost = 700,
+                Items = { new() { ItemId = 1, Quantity = 5, NeededByDate = DateTime.UtcNow.Date } }
+            });
+
+        Assert.True(response.IsSuccess, response.ErrorMessage);
+        Assert.Equal(700, request.EstimatedCost);
+        Assert.Equal(0, request.BudgetDebitedAmount);
+        Assert.Empty(uow.MaterialBudgetTransactionRecords);
+
+        var negative = await new MaterialRequestService(uow, CreateMapper(), new FakeClaimService(5, Role.PM))
+            .UpdatePendingRequestAsync(1, new UpdatePendingMaterialRequest
+            {
+                RowVersion = string.Empty,
+                EstimatedCost = -5,
+                Items = { new() { ItemId = 1, Quantity = 5, NeededByDate = DateTime.UtcNow.Date } }
+            });
+
+        Assert.Equal(HttpStatusCode.BadRequest, negative.StatusCode);
+        Assert.Equal(700, request.EstimatedCost);
+    }
+
+    [Fact]
+    public async Task ApproveRecordsPerLineUnitCostAndRollupWithoutDebiting()
+    {
+        var uow = CreateLedgerFixture(out var request, out var item, out _);
+
+        var response = await new MaterialRequestService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
+            .ApproveRequestAsync(1, new ApproveMaterialRequest
+            {
+                Items = { new() { ItemId = 1, ApprovedQuantity = 5, UnitActualCost = 12 } }
+            });
+
+        Assert.True(response.IsSuccess, response.ErrorMessage);
+        Assert.Equal(12, item.UnitActualCost);
+        Assert.Equal(60, request.ActualCost);
+        Assert.Equal(10, request.ActualCostUpdatedByUserId);
+        Assert.NotNull(request.ActualCostUpdatedAt);
+        Assert.Equal(0, request.BudgetDebitedAmount);
+        Assert.Empty(uow.MaterialBudgetTransactionRecords);
+    }
+
+    [Fact]
+    public async Task IssuePostsExactlyOnceDebit()
+    {
+        var uow = CreateLedgerFixture(out var request, out _, out var task);
+        await ApproveLedgerRequestAsync(uow, unitCost: 10);
+
+        var first = await new MaterialRequestService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
+            .IssueRequestAsync(1);
+
+        Assert.True(first.IsSuccess, first.ErrorMessage);
+        Assert.Equal(50, request.BudgetDebitedAmount);
+        Assert.Equal(50, task.ActualCost);
+        var entry = Assert.Single(uow.MaterialBudgetTransactionRecords);
+        Assert.Equal(MaterialBudgetTransactionTypes.IssueDebit, entry.TransactionType);
+        Assert.Equal(50, entry.Amount);
+        Assert.Equal(0, entry.DebitedBefore);
+        Assert.Equal(50, entry.DebitedAfter);
+        Assert.Equal(10, entry.PerformedByUserId);
+        Assert.Equal(MaterialRequestStatuses.Issued, request.Status);
+
+        var second = await new MaterialRequestService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
+            .IssueRequestAsync(1);
+
+        Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
+        Assert.Single(uow.MaterialBudgetTransactionRecords);
+        Assert.Equal(50, request.BudgetDebitedAmount);
+    }
+
+    [Fact]
+    public async Task PartialIssuePostsPartialDebitsAndReissuesRemainder()
+    {
+        var uow = CreateLedgerFixture(out var request, out _, out var task, requestQty: 10);
+        await ApproveLedgerRequestAsync(uow, unitCost: 10, approvedQty: 10);
+
+        var partial = await new MaterialRequestService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
+            .IssueRequestAsync(1, new IssueMaterialRequest
+            {
+                Items = { new() { ItemId = 1, Quantity = 4 } }
+            });
+
+        Assert.True(partial.IsSuccess, partial.ErrorMessage);
+        Assert.Equal(40, request.BudgetDebitedAmount);
+        Assert.Equal(40, task.ActualCost);
+        Assert.Equal(MaterialRequestStatuses.PartiallyIssued, request.Status);
+        Assert.Single(uow.MaterialBudgetTransactionRecords);
+
+        var remainder = await new MaterialRequestService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
+            .IssueRequestAsync(1);
+
+        Assert.True(remainder.IsSuccess, remainder.ErrorMessage);
+        Assert.Equal(100, request.BudgetDebitedAmount);
+        Assert.Equal(100, task.ActualCost);
+        Assert.Equal(MaterialRequestStatuses.Issued, request.Status);
+        Assert.Equal(2, uow.MaterialBudgetTransactionRecords.Count);
+        Assert.Equal(100, uow.MaterialBudgetTransactionRecords.Sum(t => t.Amount));
+    }
+
+    [Fact]
+    public async Task IssueBlockedWhenExceedingApprovedBudget()
+    {
+        var uow = CreateLedgerFixture(out var request, out _, out _, projectBudget: 100, requestQty: 10);
+        var inventory = uow.InventoryRecords.Single();
+        await ApproveLedgerRequestAsync(uow, unitCost: 20, approvedQty: 10);
+
+        var response = await new MaterialRequestService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
+            .IssueRequestAsync(1);
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.Equal(0, request.BudgetDebitedAmount);
+        Assert.Empty(uow.MaterialBudgetTransactionRecords);
+        Assert.Equal(20, inventory.QuantityOnHand);
+        Assert.Equal(MaterialRequestStatuses.Approved, request.Status);
+    }
+
+    [Fact]
+    public async Task CorrectionPostsDeltaOnly()
+    {
+        var uow = CreateLedgerFixture(out var request, out _, out var task);
+        await ApproveLedgerRequestAsync(uow, unitCost: 10);
+        var issuer = new MaterialRequestService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER));
+        Assert.True((await issuer.IssueRequestAsync(1)).IsSuccess);
+
+        var corrected = await new MaterialRequestService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
+            .AdjustActualCostAsync(1, new AdjustActualCostRequest
+            {
+                RowVersion = string.Empty,
+                Items = { new() { ItemId = 1, UnitActualCost = 14 } }
+            });
+
+        Assert.True(corrected.IsSuccess, corrected.ErrorMessage);
+        Assert.Equal(70, request.BudgetDebitedAmount);
+        Assert.Equal(70, task.ActualCost);
+        Assert.Equal(70, request.ActualCost);
+        Assert.Equal(2, uow.MaterialBudgetTransactionRecords.Count);
+        var delta = uow.MaterialBudgetTransactionRecords.Single(t => t.TransactionType == MaterialBudgetTransactionTypes.CorrectionDelta);
+        Assert.Equal(20, delta.Amount);
+        Assert.Equal(50, delta.DebitedBefore);
+        Assert.Equal(70, delta.DebitedAfter);
+
+        var noop = await new MaterialRequestService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
+            .AdjustActualCostAsync(1, new AdjustActualCostRequest
+            {
+                RowVersion = string.Empty,
+                Items = { new() { ItemId = 1, UnitActualCost = 14 } }
+            });
+
+        Assert.True(noop.IsSuccess, noop.ErrorMessage);
+        Assert.Equal(2, uow.MaterialBudgetTransactionRecords.Count);
+    }
+
+    [Fact]
+    public async Task CorrectionAppliesToOutstandingOnlyAndFullReturnZeroesLedger()
+    {
+        var uow = CreateLedgerFixture(out var request, out _, out var task);
+        await ApproveLedgerRequestAsync(uow, unitCost: 10);
+        var warehouseService = new WarehouseService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER));
+        var materialService = new MaterialRequestService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER));
+        Assert.True((await materialService.IssueRequestAsync(1)).IsSuccess);
+        Assert.True((await warehouseService.ReturnInventoryAsync(new InventoryReturnRequest
+        {
+            VariantId = 1,
+            MaterialRequestId = 1,
+            Quantity = 2
+        })).IsSuccess);
+        foreach (var materialReturn in uow.MaterialReturnRecords)
+            materialReturn.MaterialRequest ??= request;
+        Assert.Equal(30, request.BudgetDebitedAmount);
+
+        var corrected = await materialService.AdjustActualCostAsync(1, new AdjustActualCostRequest
+        {
+            RowVersion = string.Empty,
+            Items = { new() { ItemId = 1, UnitActualCost = 14 } }
+        });
+
+        Assert.True(corrected.IsSuccess, corrected.ErrorMessage);
+        Assert.Equal(42, request.BudgetDebitedAmount);
+
+        var finalReturn = await warehouseService.ReturnInventoryAsync(new InventoryReturnRequest
+        {
+            VariantId = 1,
+            MaterialRequestId = 1,
+            Quantity = 3
+        });
+
+        Assert.True(finalReturn.IsSuccess, finalReturn.ErrorMessage);
+        Assert.Equal(0, request.BudgetDebitedAmount);
+        Assert.Equal(0, task.ActualCost);
+        Assert.Equal(0, uow.MaterialBudgetTransactionRecords.Sum(t => t.Amount));
+    }
+
+    [Fact]
+    public async Task ReturnPostsExplicitReversal()
+    {
+        var uow = CreateLedgerFixture(out var request, out _, out var task);
+        await ApproveLedgerRequestAsync(uow, unitCost: 10);
+        Assert.True((await new MaterialRequestService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
+            .IssueRequestAsync(1)).IsSuccess);
+
+        var response = await new WarehouseService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
+            .ReturnInventoryAsync(new InventoryReturnRequest
+            {
+                VariantId = 1,
+                MaterialRequestId = 1,
+                Quantity = 2
+            });
+
+        Assert.True(response.IsSuccess, response.ErrorMessage);
+        Assert.Equal(30, request.BudgetDebitedAmount);
+        Assert.Equal(30, task.ActualCost);
+        var reversal = Assert.Single(uow.MaterialBudgetTransactionRecords, t => t.TransactionType == MaterialBudgetTransactionTypes.ReturnReversal);
+        Assert.Equal(-20, reversal.Amount);
+        Assert.Equal(50, reversal.DebitedBefore);
+        Assert.Equal(30, reversal.DebitedAfter);
+        Assert.Equal(2, reversal.Quantity);
+    }
+
+    [Fact]
+    public async Task StaleRowVersionConflictsOnIssueAndAdjust()
+    {
+        var uow = CreateLedgerFixture(out var request, out _, out _);
+        request.RowVersion = new byte[] { 9 };
+        await ApproveLedgerRequestAsync(uow, unitCost: 10);
+
+        var issue = await new MaterialRequestService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
+            .IssueRequestAsync(1, new IssueMaterialRequest { RowVersion = "AQ==" });
+
+        Assert.Equal(HttpStatusCode.Conflict, issue.StatusCode);
+        Assert.Empty(uow.MaterialBudgetTransactionRecords);
+
+        var adjust = await new MaterialRequestService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
+            .AdjustActualCostAsync(1, new AdjustActualCostRequest
+            {
+                RowVersion = "AQ==",
+                Items = { new() { ItemId = 1, UnitActualCost = 11 } }
+            });
+
+        Assert.Equal(HttpStatusCode.Conflict, adjust.StatusCode);
+        Assert.Empty(uow.MaterialBudgetTransactionRecords);
+    }
+
+    [Fact]
+    public async Task ReleaseCreatesNoBudgetEntry()
+    {
+        var uow = CreateLedgerFixture(out var request, out _, out _);
+        await ApproveLedgerRequestAsync(uow, unitCost: 10);
+
+        var response = await new MaterialRequestService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
+            .ReleaseRequestAsync(1);
+
+        Assert.True(response.IsSuccess, response.ErrorMessage);
+        Assert.Equal(MaterialRequestStatuses.Released, request.Status);
+        Assert.Equal(0, request.BudgetDebitedAmount);
+        Assert.Empty(uow.MaterialBudgetTransactionRecords);
+    }
+
+    private static TestUnitOfWork CreateLedgerFixture(
+        out MaterialRequest request,
+        out MaterialRequisition item,
+        out TaskItem task,
+        decimal projectBudget = 100000,
+        decimal requestQty = 5)
+    {
+        var uow = new TestUnitOfWork();
+        var project = new Project { ProjectId = 1, ProjectName = "P", PMUserID = 5, Status = ProjectStatus.IN_PROGRESS, TotalProjectBudget = projectBudget };
+        task = new TaskItem { TaskId = 1, ProjectId = 1, Project = project, TaskName = "T", PhaseName = "P" };
+        var warehouse = new Warehouse { WarehouseId = 1, WarehouseName = "Main", ManagerId = 10 };
+        var material = new Material { MaterialId = 1, MaterialName = "Steel", DefaultUnit = "kg" };
+        var variant = new MaterialVariant { VariantId = 1, MaterialId = 1, Material = material, VariantName = "Grade 60", Unit = "kg", IsActive = true };
+        item = new MaterialRequisition
+        {
+            ItemId = 1,
+            RequestId = 1,
+            VariantId = 1,
+            Variant = variant,
+            Quantity = requestQty,
+            NeededByDate = DateTime.UtcNow.Date
+        };
+        request = new MaterialRequest
+        {
+            RequestId = 1,
+            ProjectId = 1,
+            Project = project,
+            TaskId = 1,
+            Warehouse = warehouse,
+            Status = MaterialRequestStatuses.Pending,
+            Requisitions = new List<MaterialRequisition> { item }
+        };
+        item.MaterialRequest = request;
+        uow.ProjectRecords.Add(project);
+        uow.TaskRecords.Add(task);
+        uow.WarehouseRecords.Add(warehouse);
+        uow.VariantRecords.Add(variant);
+        uow.RequirementRecords.Add(new TaskMaterialRequirement { Id = 1, TaskId = 1, VariantId = 1, GrossQuantityRequired = 100 });
+        uow.InventoryRecords.Add(new InventoryRecord
+        {
+            InventoryId = 1,
+            WarehouseId = 1,
+            Warehouse = warehouse,
+            VariantId = 1,
+            Variant = variant,
+            QuantityOnHand = 20,
+            AverageUnitCost = 10
+        });
+        uow.RequestRecords.Add(request);
+        uow.RequisitionRecords.Add(item);
+        return uow;
+    }
+
+    private static async Task ApproveLedgerRequestAsync(TestUnitOfWork uow, decimal unitCost, decimal? approvedQty = null)
+    {
+        var item = uow.RequisitionRecords.Single();
+        var response = await new MaterialRequestService(uow, CreateMapper(), new FakeClaimService(10, Role.WAREHOUSE_MANAGER))
+            .ApproveRequestAsync(1, new ApproveMaterialRequest
+            {
+                Items = { new() { ItemId = 1, ApprovedQuantity = approvedQty ?? item.Quantity, UnitActualCost = unitCost } }
+            });
+        Assert.True(response.IsSuccess, response.ErrorMessage);
+        var request = uow.RequestRecords.Single();
+        foreach (var reservation in uow.ReservationRecords.Where(r => r.RequestId == 1))
+        {
+            reservation.InventoryRecord ??= uow.InventoryRecords.Single(i => i.InventoryId == reservation.InventoryId);
+            reservation.RequestItem ??= uow.RequisitionRecords.Single(i => i.ItemId == reservation.RequestItemId);
+            reservation.MaterialRequest ??= request;
+            if (request.Reservations.All(r => r.ReservationId != reservation.ReservationId))
+                request.Reservations.Add(reservation);
+        }
     }
 
     private static IMapper CreateMapper() => new MapperConfiguration(configuration =>

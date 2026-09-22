@@ -201,6 +201,8 @@ builder.Services.AddScoped<ICatalogService, CatalogService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<IMaterialService, MaterialService>();
 builder.Services.AddScoped<IWarehouseService, WarehouseService>();
+builder.Services.AddScoped<IWarehouseContext, WarehouseContext>();
+builder.Services.AddScoped<IProjectAccessService, ProjectAccessService>();
 builder.Services.AddScoped<IWarehouseTransferService, WarehouseTransferService>();
 builder.Services.AddScoped<ITaskService, TaskService>();
 builder.Services.AddScoped<IProgressReportService, ProgressReportService>();
@@ -208,6 +210,7 @@ builder.Services.AddScoped<IMaterialRequestService, MaterialRequestService>();
 builder.Services.AddScoped<IChatService, ChatService>();
 builder.Services.AddScoped<IAiChatService, AiChatService>();
 builder.Services.AddScoped<IAiConstructionPlannerService, AiConstructionPlannerService>();
+builder.Services.AddScoped<IProjectExportService, ProjectExportService>();
 builder.Services.AddScoped<IMeetingService, MeetingService>();
 
 // ======================================================

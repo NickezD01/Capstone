@@ -17,6 +17,15 @@ namespace cpms_Infrastructure.Configuration
             builder.HasKey(mr => mr.RequestId);
 
             builder.Property(mr => mr.Status).HasMaxLength(50).HasDefaultValue("PENDING");
+            builder.Property(mr => mr.EstimatedCost).HasColumnType("decimal(18,2)").HasDefaultValue(0);
+            builder.Property(mr => mr.ActualCost).HasColumnType("decimal(18,2)").HasDefaultValue(0);
+            builder.Property(mr => mr.BudgetDebitedAmount).HasColumnType("decimal(18,2)").HasDefaultValue(0);
+            builder.ToTable(t =>
+            {
+                t.HasCheckConstraint("CK_MaterialsRequests_EstimatedCost", "[EstimatedCost] >= 0");
+                t.HasCheckConstraint("CK_MaterialsRequests_ActualCost", "[ActualCost] >= 0");
+                t.HasCheckConstraint("CK_MaterialsRequests_BudgetDebited", "[BudgetDebitedAmount] >= 0");
+            });
             builder.Property(mr => mr.RequestDate).HasDefaultValueSql("GETUTCDATE()");
             builder.Property(mr => mr.RequestNote).HasMaxLength(1000);
             builder.Property(mr => mr.DecisionNote).HasMaxLength(1000);

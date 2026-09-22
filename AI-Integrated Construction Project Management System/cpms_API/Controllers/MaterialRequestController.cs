@@ -73,9 +73,17 @@ namespace cpms_API.Controllers
 
         [HttpPut("{requestId}/issue")]
         [Authorize(Roles = "WAREHOUSE_MANAGER")]
-        public async Task<IActionResult> IssueRequest(int requestId)
+        public async Task<IActionResult> IssueRequest(int requestId, [FromBody] IssueMaterialRequest? request = null)
         {
-            var response = await _materialRequestService.IssueRequestAsync(requestId);
+            var response = await _materialRequestService.IssueRequestAsync(requestId, request);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpPut("{requestId}/actual-cost")]
+        [Authorize(Roles = "WAREHOUSE_MANAGER")]
+        public async Task<IActionResult> AdjustActualCost(int requestId, [FromBody] AdjustActualCostRequest request)
+        {
+            var response = await _materialRequestService.AdjustActualCostAsync(requestId, request);
             return StatusCode((int)response.StatusCode, response);
         }
 

@@ -21,6 +21,11 @@ namespace cpms_Application.Response.MaterialRequest
         public int? ApprovedByUserId { get; set; }
         public DateTime? ApprovedAt { get; set; }
         public string? DecisionNote { get; set; }
+        public decimal EstimatedCost { get; set; }
+        public decimal ActualCost { get; set; }
+        public decimal BudgetDebitedAmount { get; set; }
+        public DateTime? ActualCostUpdatedAt { get; set; }
+        public int? ActualCostUpdatedByUserId { get; set; }
         public string RowVersion { get; set; } = string.Empty;
         public List<MaterialRequisitionDetailResponse> Items { get; set; } = new List<MaterialRequisitionDetailResponse>();
     }
@@ -37,6 +42,7 @@ namespace cpms_Application.Response.MaterialRequest
         public decimal Quantity { get; set; }
         public decimal ApprovedQuantity { get; set; }
         public decimal IssuedQuantity { get; set; }
+        public decimal UnitActualCost { get; set; }
         public decimal ReturnedQuantity { get; set; }
         public decimal NetIssuedQuantity { get; set; }
         public decimal RemainingRequestQuantity { get; set; }

@@ -12,6 +12,7 @@ namespace cpms_Application.Response.Warehouse
         public string WarehouseName { get; set; } = null!;
         public string Location { get; set; } = null!;
         public int ManagerId { get; set; }
+        public bool IsActive { get; set; }
         public string? ManagerName { get; set; } // Lấy tên thay vì cả object UserAccount
 
         // Chỉ lấy các trường thuần túy của Inventory, không kéo ngược Warehouse về lại

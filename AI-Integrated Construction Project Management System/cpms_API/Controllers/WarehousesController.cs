@@ -58,7 +58,7 @@ namespace cpms_API.Controllers
         }
 
         [HttpPost("inventory/adjustments/{adjustmentId:int}/approve")]
-        [Authorize(Roles = "ADMIN")]
+        [Authorize(Roles = "WAREHOUSE_MANAGER")]
         public async Task<IActionResult> ApproveInventoryAdjustment(int adjustmentId, ReviewInventoryAdjustmentRequest request)
         {
             var response = await _warehouseService.ReviewInventoryAdjustmentAsync(adjustmentId, true, request);
@@ -66,7 +66,7 @@ namespace cpms_API.Controllers
         }
 
         [HttpPost("inventory/adjustments/{adjustmentId:int}/reject")]
-        [Authorize(Roles = "ADMIN")]
+        [Authorize(Roles = "WAREHOUSE_MANAGER")]
         public async Task<IActionResult> RejectInventoryAdjustment(int adjustmentId, ReviewInventoryAdjustmentRequest request)
         {
             var response = await _warehouseService.ReviewInventoryAdjustmentAsync(adjustmentId, false, request);
@@ -106,7 +106,7 @@ namespace cpms_API.Controllers
         }
 
         [HttpPost("physical-counts/{sessionId:int}/approve")]
-        [Authorize(Roles = "ADMIN")]
+        [Authorize(Roles = "WAREHOUSE_MANAGER")]
         public async Task<IActionResult> ApprovePhysicalCount(int sessionId, ReviewPhysicalCountRequest request)
         {
             var response = await _warehouseService.ReviewPhysicalCountAsync(sessionId, true, request);
@@ -114,7 +114,7 @@ namespace cpms_API.Controllers
         }
 
         [HttpPost("physical-counts/{sessionId:int}/reject")]
-        [Authorize(Roles = "ADMIN")]
+        [Authorize(Roles = "WAREHOUSE_MANAGER")]
         public async Task<IActionResult> RejectPhysicalCount(int sessionId, ReviewPhysicalCountRequest request)
         {
             var response = await _warehouseService.ReviewPhysicalCountAsync(sessionId, false, request);

@@ -26,6 +26,7 @@ namespace cpms_API.Controllers
         }
 
         [HttpPost("generate-json")]
+        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
         public async Task<IActionResult> GenerateJson([FromBody] GenerateConstructionPlanRequest request)
         {
             var response = await _plannerService.GeneratePlanJsonAsync(request);
@@ -33,6 +34,7 @@ namespace cpms_API.Controllers
         }
 
         [HttpPost("generate-excel")]
+        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
         public async Task<IActionResult> GenerateExcel([FromBody] GenerateConstructionPlanExcelRequest request)
         {
             var response = await _plannerService.GenerateExcelAsync(request);

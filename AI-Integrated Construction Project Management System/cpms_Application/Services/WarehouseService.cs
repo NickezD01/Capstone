@@ -16,54 +16,28 @@ namespace cpms_Application.Services
         private readonly IUnitOfWork _uow;
         private readonly IMapper _mapper;
         private readonly IClaimService _claimService;
+        private readonly IWarehouseContext _warehouseContext;
 
-        public WarehouseService(IUnitOfWork uow, IMapper mapper, IClaimService claimService)
+        public WarehouseService(IUnitOfWork uow, IMapper mapper, IClaimService claimService, IWarehouseContext? warehouseContext = null)
         {
             _uow = uow;
             _mapper = mapper;
             _claimService = claimService;
+            _warehouseContext = warehouseContext ?? new WarehouseContext(uow);
         }
 
-        public async Task<ApiResponse> CreateWarehouseAsync(CreateWarehouseRequest request)
+        public Task<ApiResponse> CreateWarehouseAsync(CreateWarehouseRequest request)
         {
-            var user = _claimService.GetUserClaim();
-            if (!string.Equals(user.Role, Role.ADMIN.ToString(), StringComparison.OrdinalIgnoreCase)) return Forbidden("Only administrators may create warehouses.");
-            var warehouse = _mapper.Map<Warehouse>(request);
-            warehouse.ManagerId = request.ManagerId > 0 ? request.ManagerId : user.Id;
-            var manager = await _uow.UserAccounts.GetByIdAsync(warehouse.ManagerId);
-            if (manager == null || manager.Role != Role.WAREHOUSE_MANAGER || manager.IsEmailVerified != true)
-                return new ApiResponse().SetBadRequest(message: "Warehouse manager must be a verified WAREHOUSE_MANAGER account.");
-            var duplicate = await _uow.Warehouses.GetAsync(w => w.WarehouseName == request.WarehouseName.Trim());
-            if (duplicate != null) return new ApiResponse().SetConflict("An active warehouse already uses this name.");
-            warehouse.WarehouseName = request.WarehouseName.Trim();
-            warehouse.Location = request.Location.Trim();
-            warehouse.Manager = manager;
-            await _uow.Warehouses.AddAsync(warehouse);
-            await _uow.SaveChangeAsync();
-            return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Created, true,
-                result: _mapper.Map<WarehouseResponse>(warehouse));
+            // The target model uses a single active operational warehouse; creation is retired.
+            return Task.FromResult(new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Gone, false,
+                "Creating additional warehouses is no longer supported. The application uses a single active warehouse."));
         }
 
-        public async Task<ApiResponse> UpdateWarehouseAsync(int warehouseId, UpdateWarehouseRequest request)
+        public Task<ApiResponse> UpdateWarehouseAsync(int warehouseId, UpdateWarehouseRequest request)
         {
-            var user = _claimService.GetUserClaim();
-            if (!IsAdmin(user)) return Forbidden("Only administrators may update warehouses.");
-            var warehouse = await _uow.Warehouses.GetByIdAsync(warehouseId);
-            if (warehouse == null) return new ApiResponse().SetNotFound("Warehouse not found.");
-            var manager = await _uow.UserAccounts.GetByIdAsync(request.ManagerId);
-            if (manager == null || manager.Role != Role.WAREHOUSE_MANAGER || manager.IsEmailVerified != true)
-                return new ApiResponse().SetBadRequest("Warehouse manager must be a verified WAREHOUSE_MANAGER account.");
-            var normalizedName = request.WarehouseName.Trim();
-            var duplicate = await _uow.Warehouses.GetAsync(w => w.WarehouseId != warehouseId && w.WarehouseName == normalizedName);
-            if (duplicate != null) return new ApiResponse().SetConflict("Another active warehouse already uses this name.");
-            warehouse.WarehouseName = normalizedName;
-            warehouse.Location = request.Location.Trim();
-            warehouse.ManagerId = request.ManagerId;
-            warehouse.Manager = manager;
-            warehouse.ModifiedBy = user.Id;
-            warehouse.ModifiedDate = DateTime.UtcNow;
-            await _uow.SaveChangeAsync();
-            return new ApiResponse().SetOk(_mapper.Map<WarehouseResponse>(warehouse));
+            // The target model uses a single active operational warehouse; profile updates are retired.
+            return Task.FromResult(new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Gone, false,
+                "Updating warehouses is no longer supported. The application uses a single active warehouse."));
         }
 
         public async Task<ApiResponse> GetAllWarehousesAsync()
@@ -109,19 +83,20 @@ namespace cpms_Application.Services
         {
             var user = _claimService.GetUserClaim();
             if (!IsWarehouseManager(user)) return Forbidden("Only warehouse managers may request inventory adjustments.");
-            var warehouse = await _uow.Warehouses.GetByIdAsync(request.WarehouseId);
-            if (warehouse == null) return new ApiResponse().SetNotFound("Warehouse not found.");
-            if (warehouse.ManagerId != user.Id) return Forbidden("You may only request adjustments for a warehouse you manage.");
+            var warehouse = await _warehouseContext.GetActiveWarehouseAsync();
+            if (warehouse == null) return new ApiResponse().SetConflict("No active warehouse is configured.");
+            if (warehouse.ManagerId != user.Id) return Forbidden("You may only request adjustments for the active warehouse you manage.");
+            var warehouseId = warehouse.WarehouseId;
             var variant = await _uow.MaterialVariants.GetByIdAsync(request.VariantId);
             if (variant == null || !variant.IsActive) return new ApiResponse().SetBadRequest("Material variant not found or inactive.");
             if (request.QuantityDelta == 0 || !InventoryAdjustmentReasons.All.Contains(request.ReasonCode))
                 return new ApiResponse().SetBadRequest("A non-zero quantity and standardized reason code are required.");
-            var pending = await _uow.InventoryAdjustments.GetAsync(x => x.WarehouseId == request.WarehouseId &&
+            var pending = await _uow.InventoryAdjustments.GetAsync(x => x.WarehouseId == warehouseId &&
                 x.VariantId == request.VariantId && x.Status == InventoryAdjustmentStatuses.Pending);
             if (pending != null) return new ApiResponse().SetConflict("A pending adjustment already exists for this warehouse and variant.");
             var adjustment = new InventoryAdjustment
             {
-                WarehouseId = request.WarehouseId,
+                WarehouseId = warehouseId,
                 VariantId = request.VariantId,
                 QuantityDelta = request.QuantityDelta,
                 ReasonCode = request.ReasonCode,
@@ -160,10 +135,12 @@ namespace cpms_Application.Services
         public async Task<ApiResponse> ReviewInventoryAdjustmentAsync(int adjustmentId, bool approve, ReviewInventoryAdjustmentRequest review)
         {
             var user = _claimService.GetUserClaim();
-            if (!IsAdmin(user)) return Forbidden("Only administrators may review inventory adjustments.");
+            if (!IsWarehouseManager(user)) return Forbidden("Only warehouse managers may review inventory adjustments.");
             var adjustment = await _uow.InventoryAdjustments.GetByIdAsync(adjustmentId);
             if (adjustment == null) return new ApiResponse().SetNotFound("Inventory adjustment not found.");
-            if (adjustment.RequestedByUserId == user.Id) return new ApiResponse().SetConflict("The requester cannot approve their own adjustment.");
+            var adjustmentWarehouse = await _uow.Warehouses.GetByIdAsync(adjustment.WarehouseId);
+            if (adjustmentWarehouse == null || adjustmentWarehouse.ManagerId != user.Id)
+                return Forbidden("You may only review adjustments for the warehouse you manage.");
             if (adjustment.Status != InventoryAdjustmentStatuses.Pending) return new ApiResponse().SetConflict("Only pending adjustments can be reviewed.");
             if (string.IsNullOrWhiteSpace(review.RowVersion) || !Convert.ToBase64String(adjustment.RowVersion).Equals(review.RowVersion, StringComparison.Ordinal))
                 return new ApiResponse().SetConflict("Inventory adjustment changed. Reload and retry.");
@@ -268,20 +245,21 @@ namespace cpms_Application.Services
         {
             var user = _claimService.GetUserClaim();
             if (!IsWarehouseManager(user)) return Forbidden("Only warehouse managers may start physical counts.");
-            var warehouse = await _uow.Warehouses.GetByIdAsync(request.WarehouseId);
-            if (warehouse == null) return new ApiResponse().SetNotFound("Warehouse not found.");
-            if (warehouse.ManagerId != user.Id) return Forbidden("You may only count a warehouse you manage.");
+            var warehouse = await _warehouseContext.GetActiveWarehouseAsync();
+            if (warehouse == null) return new ApiResponse().SetConflict("No active warehouse is configured.");
+            if (warehouse.ManagerId != user.Id) return Forbidden("You may only count the active warehouse you manage.");
+            var warehouseId = warehouse.WarehouseId;
             await _uow.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             try
             {
-                var open = await _uow.PhysicalCountSessions.GetAsync(x => x.WarehouseId == request.WarehouseId &&
+                var open = await _uow.PhysicalCountSessions.GetAsync(x => x.WarehouseId == warehouseId &&
                     (x.Status == PhysicalCountStatuses.Draft || x.Status == PhysicalCountStatuses.PendingApproval));
                 if (open != null)
                 {
                     await _uow.RollbackTransactionAsync();
                     return new ApiResponse().SetConflict("This warehouse already has an open physical count.");
                 }
-                var inventories = await _uow.Inventories.GetAllAsync(i => i.WarehouseId == request.WarehouseId &&
+                var inventories = await _uow.Inventories.GetAllAsync(i => i.WarehouseId == warehouseId &&
                     (request.VariantIds.Count == 0 || request.VariantIds.Contains(i.VariantId)));
                 if (inventories.Count == 0)
                 {
@@ -290,7 +268,7 @@ namespace cpms_Application.Services
                 }
                 var session = new PhysicalCountSession
                 {
-                    WarehouseId = request.WarehouseId,
+                    WarehouseId = warehouseId,
                     CreatedByUserId = user.Id,
                     StartedAt = DateTime.UtcNow,
                     Note = request.Note
@@ -342,14 +320,15 @@ namespace cpms_Application.Services
         public async Task<ApiResponse> ReviewPhysicalCountAsync(int sessionId, bool approve, ReviewPhysicalCountRequest request)
         {
             var user = _claimService.GetUserClaim();
-            if (!IsAdmin(user)) return Forbidden("Only administrators may review physical counts.");
+            if (!IsWarehouseManager(user)) return Forbidden("Only warehouse managers may review physical counts.");
             await _uow.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             try
             {
                 var session = await _uow.PhysicalCountSessions.GetAsync(x => x.SessionId == sessionId,
-                    q => q.Include(x => x.Lines).ThenInclude(l => l.InventoryRecord));
+                    q => q.Include(x => x.Warehouse).Include(x => x.Lines).ThenInclude(l => l.InventoryRecord));
                 if (session == null) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetNotFound("Physical count session not found."); }
-                if (session.CreatedByUserId == user.Id) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict("The count creator cannot approve their own count."); }
+                if (session.Warehouse == null || session.Warehouse.ManagerId != user.Id)
+                { await _uow.RollbackTransactionAsync(); return Forbidden("You may only review counts for the warehouse you manage."); }
                 if (session.Status != PhysicalCountStatuses.PendingApproval) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict("Only submitted counts can be reviewed."); }
                 if (!RowVersionMatches(session.RowVersion, request.RowVersion)) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict("Physical count changed. Reload and retry."); }
                 session.ReviewedByUserId = user.Id;
@@ -422,9 +401,10 @@ namespace cpms_Application.Services
             if (!IsWarehouseManager(user)) return Forbidden("Only warehouse managers may record inventory returns.");
             if (request.MaterialRequestId <= 0)
                 return new ApiResponse().SetBadRequest(message: "MaterialRequestId is required. Use inventory adjustment for unlinked stock corrections.");
-            var warehouse = await _uow.Warehouses.GetByIdAsync(request.WarehouseId);
-            if (warehouse == null) return new ApiResponse().SetNotFound(message: "Warehouse not found.");
-            if (warehouse.ManagerId != user.Id) return Forbidden("You may only return inventory to a warehouse you manage.");
+            var warehouse = await _warehouseContext.GetActiveWarehouseAsync();
+            if (warehouse == null) return new ApiResponse().SetConflict(message: "No active warehouse is configured.");
+            if (warehouse.ManagerId != user.Id) return Forbidden("You may only return inventory to the active warehouse you manage.");
+            var warehouseId = warehouse.WarehouseId;
             var variant = await _uow.MaterialVariants.GetByIdAsync(request.VariantId);
             if (variant == null || !variant.IsActive)
                 return new ApiResponse().SetBadRequest(message: "Material variant not found or inactive.");
@@ -439,7 +419,7 @@ namespace cpms_Application.Services
                     return await Rollback(new ApiResponse().SetBadRequest(message: "Referenced material request was not found."));
                 if (materialRequest.Status is not (MaterialRequestStatuses.Issued or MaterialRequestStatuses.PartiallyIssued))
                     return await Rollback(new ApiResponse().SetConflict(message: "Only issued or partially issued material requests can be returned."));
-                if (materialRequest.WarehouseId != request.WarehouseId)
+                if (materialRequest.WarehouseId != warehouseId)
                     return await Rollback(new ApiResponse().SetBadRequest(message: "The material request was issued from a different warehouse."));
 
                 var requestItem = materialRequest.Requisitions.SingleOrDefault(x => x.VariantId == request.VariantId);
@@ -448,23 +428,23 @@ namespace cpms_Application.Services
 
                 var previousReturns = await _uow.MaterialReturns.GetAllAsync(x =>
                     x.MaterialRequestId == materialRequest.RequestId &&
-                    x.WarehouseId == request.WarehouseId &&
+                    x.WarehouseId == warehouseId &&
                     x.VariantId == request.VariantId);
                 var legacyReturns = await _uow.InventoryTransactions.GetAllIgnoringQueryFiltersAsync(x =>
                     x.TransactionType == InventoryTransactionTypes.Return &&
                     x.ReferenceType == "MATERIAL_REQUEST" && x.ReferenceId == materialRequest.RequestId &&
-                    x.WarehouseId == request.WarehouseId && x.VariantId == request.VariantId);
+                    x.WarehouseId == warehouseId && x.VariantId == request.VariantId);
                 var remainingReturnable = requestItem.IssuedQuantity - previousReturns.Sum(x => x.Quantity) - legacyReturns.Sum(x => x.Quantity);
                 if (request.Quantity > remainingReturnable)
                     return await Rollback(new ApiResponse().SetConflict(
                         message: $"Return quantity exceeds the remaining returnable quantity of {Math.Max(0, remainingReturnable)}."));
 
-                var inventory = await _uow.Inventories.GetAsync(x => x.WarehouseId == request.WarehouseId && x.VariantId == request.VariantId);
+                var inventory = await _uow.Inventories.GetAsync(x => x.WarehouseId == warehouseId && x.VariantId == request.VariantId);
                 if (inventory == null)
                 {
                     inventory = new InventoryRecord
                     {
-                        WarehouseId = request.WarehouseId,
+                        WarehouseId = warehouseId,
                         VariantId = request.VariantId,
                         UpdatedAt = DateTime.UtcNow,
                         CreatedBy = user.Id
@@ -484,7 +464,7 @@ namespace cpms_Application.Services
                 var materialReturn = new MaterialReturn
                 {
                     MaterialRequestId = materialRequest.RequestId,
-                    WarehouseId = request.WarehouseId,
+                    WarehouseId = warehouseId,
                     VariantId = request.VariantId,
                     Quantity = request.Quantity,
                     ReasonCode = request.ReasonCode,
@@ -495,6 +475,19 @@ namespace cpms_Application.Services
                 };
                 await _uow.MaterialReturns.AddAsync(materialReturn);
                 await _uow.SaveChangeAsync();
+                var reversal = request.Quantity * requestItem.UnitActualCost;
+                if (materialRequest.BudgetDebitedAmount - reversal < 0)
+                    return await Rollback(new ApiResponse().SetConflict(message: "The return would drive the posted budget amount below zero."));
+                var taskActualError = await MaterialBudgetLedger.ApplyTaskActualAsync(_uow, materialRequest.TaskId, -reversal);
+                if (taskActualError != null)
+                    return await Rollback(new ApiResponse().SetConflict(message: taskActualError));
+                var reversalDebitedBefore = materialRequest.BudgetDebitedAmount;
+                materialRequest.BudgetDebitedAmount = reversalDebitedBefore - reversal;
+                await MaterialBudgetLedger.PostAsync(_uow, materialRequest.ProjectId, materialRequest.RequestId,
+                    requestItem.ItemId, request.VariantId, request.Quantity,
+                    MaterialBudgetTransactionTypes.ReturnReversal, -reversal,
+                    materialRequest.ActualCost, materialRequest.ActualCost,
+                    reversalDebitedBefore, user.Id, request.Note);
                 await _uow.InventoryTransactions.AddAsync(new InventoryTransaction
                 {
                     InventoryId = inventory.InventoryId,
@@ -514,7 +507,7 @@ namespace cpms_Application.Services
                 });
                 await _uow.SaveChangeAsync();
                 await _uow.CommitTransactionAsync();
-                return await GetInventoryAsync(request.WarehouseId, request.VariantId);
+                return await GetInventoryAsync(warehouseId, request.VariantId);
             }
             catch (DbUpdateConcurrencyException)
             {

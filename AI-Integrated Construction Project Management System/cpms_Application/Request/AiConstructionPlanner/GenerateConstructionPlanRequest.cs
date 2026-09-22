@@ -10,6 +10,7 @@ namespace cpms_Application.Request.AiConstructionPlanner
 
     public class GenerateConstructionPlanExcelRequest
     {
+        public int? ProjectId { get; set; }
         public ConstructionPlanJsonResponse? Plan { get; set; }
         public string? FileName { get; set; }
     }

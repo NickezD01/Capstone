@@ -2,14 +2,12 @@ using AutoMapper;
 using cpms_Application;
 using cpms_Application.Interfaces;
 using cpms_Application.Repository;
-using cpms_Application.Request.WarehouseTransfer;
 using cpms_Application.Response.MaterialRequest;
 using cpms_Application.Services;
 using cpms_Domain.Models;
 using Microsoft.EntityFrameworkCore.Query;
 using System.Data;
 using System.Linq.Expressions;
-using System.Net;
 using System.Reflection;
 
 namespace cpms_Tests;
@@ -17,140 +15,14 @@ namespace cpms_Tests;
 public class WarehouseTransferWorkflowTests
 {
     [Fact]
-    public async Task CannotTransferToSameWarehouse()
-    {
-        var (service, _) = CreateTransferService(managerId: 10);
-        var response = await service.CreateAsync(new CreateWarehouseTransferRequest
-        {
-            SourceWarehouseId = 1,
-            DestinationWarehouseId = 1,
-            Items = { new() { VariantId = 1, Quantity = 1 } }
-        });
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-    }
-
-    [Theory]
-    [InlineData(10, 0, 11)]
-    [InlineData(10, 6, 5)]
-    public async Task ApprovalRejectsMoreThanAvailableOrReservedStock(decimal onHand, decimal reserved, decimal requested)
-    {
-        var (service, uow) = CreateTransferService(managerId: 20, status: WarehouseTransferStatuses.Requested, requested: requested);
-        uow.InventoryRecords.Add(new InventoryRecord { InventoryId = 1, WarehouseId = 1, VariantId = 1, QuantityOnHand = onHand, ReservedQuantity = reserved });
-
-        var response = await service.ApproveAsync(1);
-
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Equal(WarehouseTransferStatuses.Requested, uow.TransferRecords.Single().Status);
-    }
-
-    [Fact]
-    public async Task ApprovalReservesStockAndCancellationReleasesIt()
-    {
-        var (service, uow) = CreateTransferService(managerId: 20, requested: 4);
-        var source = new InventoryRecord { InventoryId = 1, WarehouseId = 1, VariantId = 1, QuantityOnHand = 10, ReservedQuantity = 2 };
-        uow.InventoryRecords.Add(source);
-
-        var approved = await service.ApproveAsync(1);
-        Assert.True(approved.IsSuccess);
-        Assert.Equal(6, source.ReservedQuantity);
-
-        var sourceService = new WarehouseTransferService(uow, new FakeClaimService(10, Role.WAREHOUSE_MANAGER));
-        var cancelled = await sourceService.CancelAsync(1);
-        Assert.True(cancelled.IsSuccess);
-        Assert.Equal(2, source.ReservedQuantity);
-        Assert.Equal(WarehouseTransferStatuses.Cancelled, uow.TransferRecords.Single().Status);
-    }
-
-    [Fact]
-    public async Task ShippingDecreasesOnlySourceAndCreatesTransferOut()
-    {
-        var (service, uow) = CreateTransferService(managerId: 10, status: WarehouseTransferStatuses.Approved, requested: 4);
-        var source = new InventoryRecord { InventoryId = 1, WarehouseId = 1, VariantId = 1, QuantityOnHand = 10, ReservedQuantity = 7 };
-        var destination = new InventoryRecord { InventoryId = 2, WarehouseId = 2, VariantId = 1, QuantityOnHand = 8 };
-        uow.InventoryRecords.AddRange(new[] { source, destination });
-        uow.TransferReservationRecords.Add(new TransferInventoryReservation
-        {
-            TransferReservationId = 1,
-            TransferId = 1,
-            TransferItemId = 1,
-            InventoryId = 1,
-            Quantity = 4,
-            Status = TransferReservationStatuses.Active
-        });
-
-        var response = await service.ShipAsync(1);
-
-        Assert.True(response.IsSuccess);
-        Assert.Equal(6, source.QuantityOnHand);
-        Assert.Equal(3, source.ReservedQuantity);
-        Assert.Equal(8, destination.QuantityOnHand);
-        var transaction = Assert.Single(uow.TransactionRecords);
-        Assert.Equal(InventoryTransactionTypes.TransferOut, transaction.TransactionType);
-        Assert.Equal(-4, transaction.Quantity);
-        Assert.Equal(1, transaction.ReferenceId);
-        Assert.Equal("WAREHOUSE_TRANSFER", transaction.ReferenceType);
-    }
-
-    [Fact]
-    public async Task ShippingCannotConsumeAnotherWorkflowReservationWhenTransferLedgerIsMissing()
-    {
-        var (service, uow) = CreateTransferService(managerId: 10, status: WarehouseTransferStatuses.Approved, requested: 4);
-        var source = new InventoryRecord
-        {
-            InventoryId = 1,
-            WarehouseId = 1,
-            VariantId = 1,
-            QuantityOnHand = 10,
-            ReservedQuantity = 4
-        };
-        uow.InventoryRecords.Add(source);
-
-        var response = await service.ShipAsync(1);
-
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-        Assert.Equal(10, source.QuantityOnHand);
-        Assert.Equal(4, source.ReservedQuantity);
-        Assert.Empty(uow.TransactionRecords);
-    }
-
-    [Fact]
-    public async Task ReceivingCreatesDestinationInventoryAndMatchingTransferIn()
-    {
-        var (service, uow) = CreateTransferService(managerId: 20, status: WarehouseTransferStatuses.InTransit, requested: 4, shipped: 4);
-        uow.InventoryRecords.Add(new InventoryRecord { InventoryId = 1, WarehouseId = 1, VariantId = 1, QuantityOnHand = 6 });
-
-        var response = await service.ReceiveAsync(1, null);
-
-        Assert.True(response.IsSuccess);
-        Assert.Equal(6, uow.InventoryRecords.Single(x => x.WarehouseId == 1).QuantityOnHand);
-        var destination = Assert.Single(uow.InventoryRecords, x => x.WarehouseId == 2);
-        Assert.Equal(4, destination.QuantityOnHand);
-        var transaction = Assert.Single(uow.TransactionRecords);
-        Assert.Equal(InventoryTransactionTypes.TransferIn, transaction.TransactionType);
-        Assert.Equal(1, transaction.ReferenceId);
-        Assert.Equal("WAREHOUSE_TRANSFER", transaction.ReferenceType);
-        Assert.Equal(WarehouseTransferStatuses.Received, uow.TransferRecords.Single().Status);
-    }
-
-    [Fact]
-    public async Task UnrelatedManagerCannotApproveAndInvalidTransitionConflicts()
-    {
-        var (unauthorized, _) = CreateTransferService(managerId: 99, status: WarehouseTransferStatuses.Requested);
-        Assert.Equal(HttpStatusCode.Forbidden, (await unauthorized.ApproveAsync(1)).StatusCode);
-
-        var (invalidState, _) = CreateTransferService(managerId: 20, status: WarehouseTransferStatuses.InTransit);
-        Assert.Equal(HttpStatusCode.Conflict, (await invalidState.ApproveAsync(1)).StatusCode);
-    }
-
-    [Fact]
-    public async Task WarehouseScopedMrpExcludesOtherWarehouseInventory()
+    public async Task MrpIgnoresSuppliedWarehouseAndUsesTheActiveWarehouse()
     {
         var uow = new TestUnitOfWork();
         uow.ProjectRecords.Add(new Project { ProjectId = 1, ProjectName = "P", PMUserID = 1 });
         uow.WarehouseRecords.AddRange(new[]
         {
             new Warehouse { WarehouseId = 1, WarehouseName = "W1", ManagerId = 10 },
-            new Warehouse { WarehouseId = 2, WarehouseName = "W2", ManagerId = 20 }
+            new Warehouse { WarehouseId = 2, WarehouseName = "W2", ManagerId = 20, IsActive = false }
         });
         var material = new Material { MaterialId = 1, MaterialName = "Steel", DefaultUnit = "kg" };
         var variant = new MaterialVariant { VariantId = 1, MaterialId = 1, Material = material, VariantName = "Standard", Unit = "kg", IsActive = true };
@@ -163,7 +35,7 @@ public class WarehouseTransferWorkflowTests
         });
         var service = new ProjectService(uow, null!, new FakeClaimService(1, Role.PM));
 
-        var response = await service.CalculateMRPForProjectAsync(1, 1);
+        var response = await service.CalculateMRPForProjectAsync(1, 2);
 
         Assert.True(response.IsSuccess);
         var item = Assert.Single(Assert.IsType<List<MRPCalculationResponse>>(response.Result));
@@ -289,43 +161,6 @@ public class WarehouseTransferWorkflowTests
         uow.InventoryRecords.Add(new InventoryRecord { InventoryId = 1, WarehouseId = 1, VariantId = 1, QuantityOnHand = onHand, ReservedQuantity = reserved });
         return uow;
     }
-
-    private static (WarehouseTransferService Service, TestUnitOfWork Uow) CreateTransferService(
-        int managerId, string status = WarehouseTransferStatuses.Requested, decimal requested = 5, decimal shipped = 0)
-    {
-        var uow = new TestUnitOfWork();
-        var source = new Warehouse { WarehouseId = 1, WarehouseName = "Source", ManagerId = 10 };
-        var destination = new Warehouse { WarehouseId = 2, WarehouseName = "Destination", ManagerId = 20 };
-        var material = new Material { MaterialId = 1, MaterialName = "Steel", DefaultUnit = "kg" };
-        var variant = new MaterialVariant { VariantId = 1, MaterialId = 1, Material = material, VariantName = "Standard", Unit = "kg", IsActive = true };
-        var item = new WarehouseTransferItem
-        {
-            TransferItemId = 1,
-            TransferId = 1,
-            VariantId = 1,
-            Variant = variant,
-            RequestedQuantity = requested,
-            ShippedQuantity = shipped
-        };
-        var transfer = new WarehouseTransfer
-        {
-            TransferId = 1,
-            SourceWarehouseId = 1,
-            SourceWarehouse = source,
-            DestinationWarehouseId = 2,
-            DestinationWarehouse = destination,
-            RequestedByUserId = 10,
-            RequestedAt = DateTime.UtcNow,
-            Status = status,
-            Items = new List<WarehouseTransferItem> { item }
-        };
-        item.Transfer = transfer;
-        uow.WarehouseRecords.AddRange(new[] { source, destination });
-        uow.VariantRecords.Add(variant);
-        uow.TransferRecords.Add(transfer);
-        uow.TransferItemRecords.Add(item);
-        return (new WarehouseTransferService(uow, new FakeClaimService(managerId, Role.WAREHOUSE_MANAGER)), uow);
-    }
 }
 
 internal sealed class FakeClaimService : IClaimService
@@ -419,6 +254,7 @@ internal sealed class TestUnitOfWork : IUnitOfWork
     public List<TaskMaterialRequirement> RequirementRecords { get; } = new();
     public List<MaterialRequisition> RequisitionRecords { get; } = new();
     public List<MaterialReturn> MaterialReturnRecords { get; } = new();
+    public List<MaterialBudgetTransaction> MaterialBudgetTransactionRecords { get; } = new();
     public List<MaterialRequest> RequestRecords { get; } = new();
     public List<InventoryReservation> ReservationRecords { get; } = new();
     public List<PurchaseOrder> PurchaseOrderRecords { get; } = new();
@@ -450,6 +286,7 @@ internal sealed class TestUnitOfWork : IUnitOfWork
     public ITaskMaterialRequirementRepository TaskMaterialRequirements { get; }
     public IMaterialRequisitionRepository MaterialRequisitions { get; }
     public IGenericRepository<MaterialReturn> MaterialReturns { get; }
+    public IGenericRepository<MaterialBudgetTransaction> MaterialBudgetTransactions { get; }
 
     public TestUnitOfWork()
     {
@@ -467,6 +304,7 @@ internal sealed class TestUnitOfWork : IUnitOfWork
         TaskMaterialRequirements = new FakeRequirementRepository(RequirementRecords);
         MaterialRequisitions = new FakeRequisitionRepository(RequisitionRecords);
         MaterialReturns = new FakeRepository<MaterialReturn>(MaterialReturnRecords);
+        MaterialBudgetTransactions = new FakeRepository<MaterialBudgetTransaction>(MaterialBudgetTransactionRecords);
         MaterialRequests = new FakeMaterialRequestRepository(RequestRecords);
         InventoryReservations = new FakeRepository<InventoryReservation>(ReservationRecords);
         PurchaseOrders = new FakePurchaseOrderRepository(PurchaseOrderRecords);

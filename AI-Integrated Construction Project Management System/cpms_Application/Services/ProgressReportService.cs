@@ -16,12 +16,14 @@ public sealed class ProgressReportService : IProgressReportService
     private readonly IUnitOfWork _uow;
     private readonly IMapper _mapper;
     private readonly IClaimService _claimService;
+    private readonly IProjectAccessService _projectAccess;
 
-    public ProgressReportService(IUnitOfWork uow, IMapper mapper, IClaimService claimService)
+    public ProgressReportService(IUnitOfWork uow, IMapper mapper, IClaimService claimService, IProjectAccessService? projectAccess = null)
     {
         _uow = uow;
         _mapper = mapper;
         _claimService = claimService;
+        _projectAccess = projectAccess ?? new ProjectAccessService(uow, claimService);
     }
 
     public async Task<ApiResponse> SubmitReportAsync(SubmitProgressReportRequest request)
@@ -227,7 +229,8 @@ public sealed class ProgressReportService : IProgressReportService
         var project = await _uow.Projects.GetByIdAsync(task.ProjectId);
         if (project == null) return new ApiResponse().SetNotFound("Project not found.");
         var user = _claimService.GetUserClaim();
-        if (!IsRole(user, Role.ADMIN) && !(IsRole(user, Role.PM) && project.PMUserID == user.Id))
+        if (!IsRole(user, Role.ADMIN) && !(IsRole(user, Role.PM) && project.PMUserID == user.Id) &&
+            !(IsRole(user, Role.WAREHOUSE_MANAGER) && await _projectAccess.CanViewProjectAsStaffAsync(project)))
             return Forbidden("You do not have access to this task's progress reports.");
         var reports = await _uow.ProgressReports.GetAllAsync(r => r.TaskId == taskId,
             query => query.Include(r => r.Reporter).Include(r => r.Task));

@@ -12,10 +12,17 @@ namespace cpms_API.Controllers
     public class ProjectsController : ControllerBase
     {
         private readonly IProjectService _projectService;
+        private readonly IProjectExportService _projectExportService;
+        private readonly IAiConstructionPlannerService _plannerService;
 
-        public ProjectsController(IProjectService projectService)
+        public ProjectsController(
+            IProjectService projectService,
+            IProjectExportService projectExportService,
+            IAiConstructionPlannerService plannerService)
         {
             _projectService = projectService;
+            _projectExportService = projectExportService;
+            _plannerService = plannerService;
         }
 
         // POST: api/projects
@@ -54,6 +61,15 @@ namespace cpms_API.Controllers
             return StatusCode((int)response.StatusCode, response);
         }
 
+        [HttpPost("import-word-ai")]
+        [Authorize(Roles = "PM")]
+        [Consumes("multipart/form-data")]
+        public async Task<IActionResult> ImportProjectFromWordAi(IFormFile file)
+        {
+            var response = await _plannerService.ImportProjectFromWordAiAsync(file);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
         // POST: api/projects/tasks/{taskId}/materials
         [HttpPost("tasks/{taskId}/materials")]
         [Authorize(Roles = "PM")]
@@ -74,7 +90,7 @@ namespace cpms_API.Controllers
 
         // Creates and stores a versioned MRP planning snapshot.
         [HttpPost("{projectId}/mrp-runs")]
-        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
+        [Authorize(Roles = "PM,WAREHOUSE_MANAGER")]
         public async Task<IActionResult> CalculateMRPForProject(int projectId, [FromQuery] int? warehouseId)
         {
             var response = await _projectService.CalculateMRPForProjectAsync(projectId, warehouseId);
@@ -89,7 +105,7 @@ namespace cpms_API.Controllers
             return StatusCode((int)response.StatusCode, response);
         }
         [HttpPost("adjust-budget")]
-        [Authorize(Roles = "ADMIN")]
+        [Authorize(Roles = "PM")]
         public async Task<IActionResult> AdjustProjectBudget([FromBody] AdjustBudgetRequest request)
         {
             var response = await _projectService.AdjustProjectBudgetAsync(request);
@@ -114,23 +130,23 @@ namespace cpms_API.Controllers
         }
 
         [HttpPost("{projectId:int}/start")]
-        [Authorize(Roles = "PM,ADMIN")]
+        [Authorize(Roles = "PM")]
         public Task<IActionResult> Start(int projectId, ProjectLifecycleRequest request) => ChangeStatus(projectId, "start", request);
 
         [HttpPost("{projectId:int}/pause")]
-        [Authorize(Roles = "PM,ADMIN")]
+        [Authorize(Roles = "PM")]
         public Task<IActionResult> Pause(int projectId, ProjectLifecycleRequest request) => ChangeStatus(projectId, "pause", request);
 
         [HttpPost("{projectId:int}/cancel")]
-        [Authorize(Roles = "PM,ADMIN")]
+        [Authorize(Roles = "PM")]
         public Task<IActionResult> Cancel(int projectId, ProjectLifecycleRequest request) => ChangeStatus(projectId, "cancel", request);
 
         [HttpPost("{projectId:int}/reopen")]
-        [Authorize(Roles = "PM,ADMIN")]
+        [Authorize(Roles = "PM")]
         public Task<IActionResult> Reopen(int projectId, ProjectLifecycleRequest request) => ChangeStatus(projectId, "reopen", request);
 
         [HttpPost("{projectId:int}/complete")]
-        [Authorize(Roles = "PM,ADMIN")]
+        [Authorize(Roles = "PM")]
         public Task<IActionResult> Complete(int projectId, ProjectLifecycleRequest request) => ChangeStatus(projectId, "complete", request);
 
         private async Task<IActionResult> ChangeStatus(int projectId, string action, ProjectLifecycleRequest request)
@@ -153,6 +169,18 @@ namespace cpms_API.Controllers
         {
             var response = await _projectService.AssignCustomerAsync(projectId, request);
             return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpGet("{projectId:int}/export")]
+        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER,CUSTOMER")]
+        public async Task<IActionResult> ExportProject(int projectId)
+        {
+            var response = await _projectExportService.ExportProjectAsync(projectId);
+            if (!response.IsSuccess)
+                return StatusCode((int)response.StatusCode, response);
+
+            var file = (cpms_Application.Response.AiConstructionPlanner.ConstructionPlanExcelFileResponse)response.Result!;
+            return File(file.Content, file.ContentType, file.FileName);
         }
     }
 }

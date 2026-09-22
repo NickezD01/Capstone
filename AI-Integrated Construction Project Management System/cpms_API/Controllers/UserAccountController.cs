@@ -29,11 +29,25 @@ namespace cpms_API.Controllers
             return StatusCode((int)result.StatusCode, result);
         }
         [Authorize(Roles = "ADMIN")]
+        [HttpPost]
+        public async Task<IActionResult> CreateAccount([FromBody] CreateUserAccountRequest request)
+        {
+            var response = await _service.CreateAccountAsync(request);
+            return StatusCode((int)response.StatusCode, response);
+        }
+        [Authorize(Roles = "ADMIN")]
         [HttpGet("GetAllAccountAsync")]
         public async Task<IActionResult> GetAllAccountAsync()
         {
             var resposne = await _service.GetAllAccountAsync();
             return StatusCode((int)resposne.StatusCode, resposne);
+        }
+        [Authorize(Roles = "ADMIN,PM")]
+        [HttpGet("Customers")]
+        public async Task<IActionResult> GetCustomers([FromQuery] string? search)
+        {
+            var response = await _service.GetCustomersAsync(search);
+            return StatusCode((int)response.StatusCode, response);
         }
         [Authorize]
         [HttpGet("GetUserId")]

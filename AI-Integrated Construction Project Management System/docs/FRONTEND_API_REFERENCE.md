@@ -62,6 +62,10 @@ Backend roles:
 
 Frontend-relevant roles in route authorization are mostly `ADMIN`, `PM`, and `WAREHOUSE_MANAGER`.
 
+`SUPPLIER` is a retired role: existing supplier accounts are locked out, and `ADMIN` can no longer assign it. Supplier and catalog records remain as admin-managed reference data only.
+
+`ADMIN` is read-only for project/phase/task/inventory business actions in the target model: it can view data and manage accounts, users, categories, materials, suppliers, catalogs, and project-manager reassignment, but project lifecycle, budget adjustment, and inventory reviews belong to the owning `PM` or the `WAREHOUSE_MANAGER`.
+
 ## Endpoint Index
 
 ### Auth
@@ -70,10 +74,10 @@ Base path: `/api/Auth`
 
 | Method | Path | Auth | Body | Result |
 | --- | --- | --- | --- | --- |
-| POST | `/register` | Public | `UserRegisterRequest` | Message; account verification email queued |
+| POST | `/register` | none (retired) | `UserRegisterRequest` | **HTTP 410 Gone** — accounts are created by an administrator |
 | POST | `/login` | Public | `LoginRequest` | `AuthTokenResponse` |
-| POST | `/Verification` | Public | `VerificationEmailRequest` | Message |
-| POST | `/resend-verification` | Public | `ResendVerificationRequest` | Message |
+| POST | `/Verification` | none (retired) | `VerificationEmailRequest` | **HTTP 410 Gone** |
+| POST | `/resend-verification` | none (retired) | `ResendVerificationRequest` | **HTTP 410 Gone** |
 | POST | `/refresh` | Public | `RefreshSessionRequest` | `AuthTokenResponse` |
 | POST | `/logout` | Public | `LogoutRequest` | Message/null |
 | POST | `/forgot-password` | Public | `ForgotPasswordRequest` | Message |
@@ -90,6 +94,8 @@ Base path: `/api/UserAccount`
 | GET | `/GetUserProfile` | Authenticated | none | `UserProfileResponse` |
 | PUT | `/UpdateUserProfile` | Authenticated | `UpdateUserRequest` | Message |
 | GET | `/GetAllAccountAsync` | `ADMIN` | none | `AccountResponse[]` |
+| POST | `/` | `ADMIN` | `CreateUserAccountRequest` (`firstName`, `lastName`, `email`, `phoneNumber?`, `role` except `SUPPLIER`, `password` + `confirmPassword` meeting policy) | HTTP 201, created user id; account is verified immediately |
+| GET | `/Customers` | `ADMIN,PM` | query `search?` | `CustomerListResponse[]` (`id`, `firstName`, `lastName`, `email` — verified customers only) |
 | GET | `/GetUserId` | Authenticated | none | `{ userId }` |
 | PUT | `/UpdateUserRoleProfile/{customerId}` | `ADMIN` | `UpdateUserRoleRequest` | Message |
 | GET | `/CountUser` | `ADMIN` | none | number |
@@ -104,38 +110,41 @@ Base path: `/api/Projects`
 | GET | `/` | `ADMIN,PM,WAREHOUSE_MANAGER,CUSTOMER` | none | `ProjectResponse[]` |
 | GET | `/{id}` | `ADMIN,PM,WAREHOUSE_MANAGER,CUSTOMER` | none | `ProjectResponse` |
 | POST | `/import-word` | `PM` | multipart form-data field `file`, `.docx`, max 10 MB | imported `ProjectResponse` |
+| POST | `/import-word-ai` | `PM` | multipart form-data field `file`, `.docx`, max 10 MB | `AiImportPreviewResponse` (`project` draft + `plan` preview; persists nothing) |
 | POST | `/tasks/{taskId}/materials` | `PM` | `CreateTaskMaterialRequirementRequest` | task material requirement response/object |
 | GET | `/{projectId}/material-requirements` | `ADMIN,PM,WAREHOUSE_MANAGER` | none | `TaskMaterialResponse[]` |
-| POST | `/{projectId}/mrp-runs` | `ADMIN,PM,WAREHOUSE_MANAGER` | query `warehouseId` required by service | `MRPCalculationResponse[]` |
-| GET | `/{projectId}/mrp-runs/latest` | `ADMIN,PM,WAREHOUSE_MANAGER` | query `warehouseId` required | `{ planningRunId, planningVersion, projectId, warehouseId, items }` |
-| POST | `/adjust-budget` | `ADMIN` | `AdjustBudgetRequest` | `ProjectResponse` or budget history object |
+| POST | `/{projectId}/mrp-runs` | `PM,WAREHOUSE_MANAGER` | none (`warehouseId` query is accepted but ignored) | `MRPCalculationResponse[]` |
+| GET | `/{projectId}/mrp-runs/latest` | `PM,WAREHOUSE_MANAGER` | none (`warehouseId` query is accepted but ignored) | `{ planningRunId, planningVersion, projectId, warehouseId, items }` |
+| POST | `/adjust-budget` | `PM` (owning PM only) | `AdjustBudgetRequest` | `ProjectResponse` or budget history object |
 | GET | `/{projectId}/budget-histories` | `ADMIN,PM` | none | `ProjectBudgetHistoryResponse[]` |
+| GET | `/{projectId}/export` | `ADMIN,PM,WAREHOUSE_MANAGER,CUSTOMER` | none | Excel file download (role-specific sheets, see Project Export) |
 | PUT | `/{projectId}` | `PM` | `UpdateProjectRequest` | updated project/status object |
-| POST | `/{projectId}/start` | `PM,ADMIN` | `ProjectLifecycleRequest` | `{ projectId, status, rowVersion }` |
-| POST | `/{projectId}/pause` | `PM,ADMIN` | `ProjectLifecycleRequest` | `{ projectId, status, rowVersion }` |
-| POST | `/{projectId}/cancel` | `PM,ADMIN` | `ProjectLifecycleRequest` | `{ projectId, status, rowVersion }` |
-| POST | `/{projectId}/reopen` | `PM,ADMIN` | `ProjectLifecycleRequest` | `{ projectId, status, rowVersion }` |
-| POST | `/{projectId}/complete` | `PM,ADMIN` | `ProjectLifecycleRequest` | `{ projectId, status, rowVersion }` |
+| POST | `/{projectId}/start` | `PM` (owning PM only) | `ProjectLifecycleRequest` | `{ projectId, status, rowVersion }` |
+| POST | `/{projectId}/pause` | `PM` (owning PM only) | `ProjectLifecycleRequest` | `{ projectId, status, rowVersion }` |
+| POST | `/{projectId}/cancel` | `PM` (owning PM only) | `ProjectLifecycleRequest` | `{ projectId, status, rowVersion }` |
+| POST | `/{projectId}/reopen` | `PM` (owning PM only) | `ProjectLifecycleRequest` | `{ projectId, status, rowVersion }` |
+| POST | `/{projectId}/complete` | `PM` (owning PM only) | `ProjectLifecycleRequest` | `{ projectId, status, rowVersion }` |
 | PUT | `/{projectId}/project-manager` | `ADMIN` | `ReassignProjectManagerRequest` | updated project/status object |
 | PUT | `/{projectId}/customer` | `PM` | `AssignCustomerRequest` (`customerUserId?`, `rowVersion`) | updated `ProjectResponse` |
 
 Project access rules:
 
 - PMs can create only projects assigned to themselves.
-- PMs can read/update/change projects they own.
-- Warehouse managers can read project/MRP data only in allowed contexts; MRP requires a warehouse they manage.
+- PMs can read/update/change projects they own. Project lifecycle (`start`/`pause`/`cancel`/`reopen`/`complete`) and budget adjustment are owning-PM-only; `ADMIN` can no longer perform them.
+- `ADMIN` is read-only for project/phase/task/inventory business actions. Project manager reassignment (`PUT /{projectId}/project-manager`) remains `ADMIN`-only.
+- Warehouse managers can read project/MRP data only in allowed contexts; MRP always runs against the single active warehouse, which they must manage.
 - CUSTOMER accounts can read only projects explicitly assigned to them (`customerUserId`). Assigning or clearing the customer is done by the owning PM via `PUT /{projectId}/customer`; the target account must be a verified `CUSTOMER`. Reassignment revokes the former customer's access immediately. A closed (`COMPLETED`/`CANCELLED`) project cannot change its customer.
 - Closed projects cannot accept many downstream changes.
 
 ### Tasks
 
-Canonical base path: `/api/Tasks` (controller also exposes the case-insensitive legacy alias `/api/task`).
+Canonical base path: `/api/Tasks`. The legacy `/api/task` aliases were removed; `POST /api/task` still returns `410 Gone` pointing to `POST /api/Phases/{phaseId}/tasks`.
 
 | Method | Path | Auth | Body | Result |
 | --- | --- | --- | --- | --- |
 | POST | `/api/Phases/{phaseId}/tasks` | `PM` | `CreateTaskRequest` (no `ProjectId`/`PhaseName`; project is derived from the phase) | `TaskResponse` |
 | POST | `/api/task` | `PM` | none | `410 Gone` - deprecated. Use `POST /api/Phases/{phaseId}/tasks`. |
-| GET | `/api/Projects/{projectId}/tasks` | `ADMIN,PM,WAREHOUSE_MANAGER` | none | `TaskResponse[]` |
+| GET | `/api/Projects/{projectId}/tasks` | `ADMIN,PM,WAREHOUSE_MANAGER,CUSTOMER` | none | `TaskResponse[]` (assigned customers see their projects) |
 | GET | `/api/Tasks/{taskId}` | `ADMIN,PM,WAREHOUSE_MANAGER` | none | `TaskResponse` |
 | GET | `/api/Projects/{projectId}/material-requirements` | `ADMIN,PM,WAREHOUSE_MANAGER` | none | `TaskMaterialResponse[]` |
 | GET | `/api/Tasks/assigned` | `PM` | none | `TaskResponse[]` |
@@ -143,8 +152,6 @@ Canonical base path: `/api/Tasks` (controller also exposes the case-insensitive 
 | POST | `/api/Tasks/{taskId}/cancel` | `PM` | `TaskLifecycleRequest` | `{ taskId, status, rowVersion }` |
 | POST | `/api/Tasks/{taskId}/reject` | `PM` | `TaskLifecycleRequest` | `{ taskId, status, rowVersion }` |
 | POST | `/api/Tasks/{taskId}/reopen` | `PM` | `TaskLifecycleRequest` | `{ taskId, status, rowVersion }` |
-
-Legacy read aliases remain available (`GET /api/task/project/{projectId}`, `GET /api/task/{taskId}`, `GET /api/task/project/{projectId}/material-requirements`, `GET /api/task/assigned`, `PUT /api/task/{taskId}`, lifecycle under `/api/task/...`).
 
 `CreateTaskRequest` body: `taskName`, `assignedToUserID`, `plannedBudget`, `baselineStart`, `baselineEnd`, `materials[]. Task dates must stay inside both the project and the phase baseline. Creating or updating a task under a `COMPLETED`/`CANCELLED` phase returns 409.
 
@@ -155,7 +162,7 @@ Base path: `/api/ProgressReport`
 | Method | Path | Auth | Body | Result |
 | --- | --- | --- | --- | --- |
 | POST | `/` | `PM` | `SubmitProgressReportRequest` | `ProgressReportResponse` |
-| GET | `/task/{taskId}` | `ADMIN,PM` | none | `ProgressReportResponse[]` |
+| GET | `/task/{taskId}` | `ADMIN,PM,WAREHOUSE_MANAGER` | none | `ProgressReportResponse[]` (warehouse manager requires operational project access) |
 | POST | `/{reportId}/approve` | `PM` | `ReviewProgressReportRequest` | `ProgressReportResponse` or status object |
 | POST | `/{reportId}/reject` | `PM` | `ReviewProgressReportRequest` | `ProgressReportResponse` or status object |
 | POST | `/{reportId}/correct` | `PM` | `CorrectProgressReportRequest` | `ProgressReportResponse` |
@@ -198,13 +205,14 @@ Base path: `/api/MaterialRequest`
 
 | Method | Path | Auth | Body | Result |
 | --- | --- | --- | --- | --- |
-| POST | `/` | `PM` | `CreateMaterialRequest` | `MaterialRequestResponse` |
+| POST | `/` | `PM` | `CreateMaterialRequest` (`estimatedCost`) | `MaterialRequestResponse` |
 | POST | `/task/{taskId}` | `PM` | none | `MaterialRequestResponse` generated from task planned materials |
-| PUT | `/{requestId}/approve` | `WAREHOUSE_MANAGER` | `ApproveMaterialRequest` | `MaterialRequestResponse` |
+| PUT | `/{requestId}/approve` | `WAREHOUSE_MANAGER` | `ApproveMaterialRequest` (optional per-item `unitActualCost`) | `MaterialRequestResponse` |
 | PUT | `/{requestId}/reject` | `WAREHOUSE_MANAGER` | `RejectMaterialRequest` optional | `MaterialRequestResponse` or message |
-| PUT | `/{requestId}` | `PM` | `UpdatePendingMaterialRequest` | `MaterialRequestResponse` |
+| PUT | `/{requestId}` | `PM` | `UpdatePendingMaterialRequest` (optional `estimatedCost`) | `MaterialRequestResponse` |
 | PUT | `/{requestId}/cancel` | `PM` | `CancelMaterialRequest` | `MaterialRequestResponse` or message |
-| PUT | `/{requestId}/issue` | `WAREHOUSE_MANAGER` | none | `MaterialRequestResponse` |
+| PUT | `/{requestId}/issue` | `WAREHOUSE_MANAGER` | `IssueMaterialRequest` optional (`rowVersion?`, per-item `quantity?` for partial issue) | `MaterialRequestResponse` |
+| PUT | `/{requestId}/actual-cost` | `WAREHOUSE_MANAGER` | `AdjustActualCostRequest` (`rowVersion`, per-item `unitActualCost`) | `MaterialRequestResponse` |
 | PUT | `/{requestId}/release` | `WAREHOUSE_MANAGER` | none | `MaterialRequestResponse` |
 | GET | `/` | `ADMIN,PM,WAREHOUSE_MANAGER` | none | `MaterialRequestResponse[]` |
 | GET | `/{requestId}` | `ADMIN,PM,WAREHOUSE_MANAGER` | none | `MaterialRequestResponse` |
@@ -218,32 +226,36 @@ Workflow:
 - PM can update/cancel only pending requests and must send `rowVersion`.
 - Requests are capped by task material plans.
 
+Issue-time budget ledger:
+
+- `estimatedCost` (PM, planning only) never debits the budget. `actualCost` (warehouse manager) is the cost basis; `budgetDebitedAmount` tracks what was posted. The client must never set `budgetDebitedAmount`.
+- Approving may set per-line `unitActualCost`. At issue, unset lines fall back to the inventory average unit cost and record it on the line.
+- Each issue posts an immutable `ISSUE_DEBIT` per line (issued quantity x unit cost), adds to the linked task's `ActualCost`, and accumulates `budgetDebitedAmount`. Re-issuing an already-issued request returns HTTP 409, so debits post exactly once.
+- `issue` accepts optional per-line quantities for genuine partial issues; `PartiallyIssued` requests can be re-issued for the remainder, each partial posting its own debit.
+- `actual-cost` adjusts per-line unit costs after approval. Only the delta on outstanding (issued but not returned) quantity is posted as `CORRECTION_DELTA`.
+- Inventory returns post an explicit `RETURN_REVERSAL` and reduce both `budgetDebitedAmount` and the task actual cost. Releasing a reservation never touches the budget.
+- Issuing is rejected with HTTP 409 when ledger spend plus the new debit would exceed `totalProjectBudget` (when set), when the actual cost is negative, or on a stale `rowVersion`.
+- Response exposes `estimatedCost`, `actualCost`, `budgetDebitedAmount`, `actualCostUpdatedAt/By`, and per-line `unitActualCost`.
+
 ### Purchase Orders
 
 Base path: `/api/PurchaseOrders`
 
 | Method | Path | Auth | Body | Result |
 | --- | --- | --- | --- | --- |
-| POST | `/` | `WAREHOUSE_MANAGER` | `CreatePurchaseOrderRequest` | `PurchaseOrderResponse` |
-| GET | `/` | `ADMIN,PM,WAREHOUSE_MANAGER` | none | `PurchaseOrderResponse[]` |
-| GET | `/{id}` | `ADMIN,PM,WAREHOUSE_MANAGER` | none | `PurchaseOrderResponse` |
+| POST | `/` | `WAREHOUSE_MANAGER` | `CreatePurchaseOrderRequest` | **HTTP 410 Gone** — procurement writes are retired |
+| GET | `/` | `ADMIN,PM,WAREHOUSE_MANAGER` | none | `PurchaseOrderResponse[]` (historical reads) |
+| GET | `/{id}` | `ADMIN,PM,WAREHOUSE_MANAGER` | none | `PurchaseOrderResponse` (historical reads) |
 | GET | `/shortages` | `WAREHOUSE_MANAGER` | none | `ProcurementShortageResponse[]` |
-| PUT | `/{id}/approve` | `ADMIN,PM` | `PurchaseOrderActionRequest` optional | `PurchaseOrderResponse` |
-| PUT | `/{id}/reject` | `ADMIN,PM` | `PurchaseOrderActionRequest` optional | `PurchaseOrderResponse` |
-| POST | `/from-shortages` | `WAREHOUSE_MANAGER` | `CreatePurchaseOrderRequest`; every item must include `requestItemId` | `PurchaseOrderResponse` |
-| POST | `/{poId}/receive` | `WAREHOUSE_MANAGER` | `ReceivePurchaseOrderRequest` | `PurchaseOrderResponse` |
-| POST | `/{poId}/ship` | `WAREHOUSE_MANAGER` | `PurchaseOrderActionRequest` optional | `PurchaseOrderResponse` |
-| POST | `/{poId}/processing` | `WAREHOUSE_MANAGER` | `PurchaseOrderActionRequest` optional | `PurchaseOrderResponse` |
-| POST | `/{poId}/cancel` | `ADMIN,PM,WAREHOUSE_MANAGER` | `PurchaseOrderActionRequest` optional | `PurchaseOrderResponse` |
+| PUT | `/{id}/approve` | `ADMIN,PM` | `PurchaseOrderActionRequest` optional | **HTTP 410 Gone** |
+| PUT | `/{id}/reject` | `ADMIN,PM` | `PurchaseOrderActionRequest` optional | **HTTP 410 Gone** |
+| POST | `/from-shortages` | `WAREHOUSE_MANAGER` | `CreatePurchaseOrderRequest` | **HTTP 410 Gone** |
+| POST | `/{poId}/receive` | `WAREHOUSE_MANAGER` | `ReceivePurchaseOrderRequest` | **HTTP 410 Gone** |
+| POST | `/{poId}/ship` | `WAREHOUSE_MANAGER` | `PurchaseOrderActionRequest` optional | **HTTP 410 Gone** |
+| POST | `/{poId}/processing` | `WAREHOUSE_MANAGER` | `PurchaseOrderActionRequest` optional | **HTTP 410 Gone** |
+| POST | `/{poId}/cancel` | `ADMIN,PM,WAREHOUSE_MANAGER` | `PurchaseOrderActionRequest` optional | **HTTP 410 Gone** |
 
-Workflow:
-
-- Warehouse manager creates POs for a warehouse they manage.
-- PM/ADMIN approve/reject. PM can approve for projects they manage.
-- Approval increases `onOrderQuantity`.
-- Processing and shipped are warehouse-manager transitions after approval.
-- Receive accepts partial receipts. Final delivery must account for every remaining unit as received, damaged, or missing.
-- Delivered with variance uses `CLOSED_WITH_VARIANCE`; clean final delivery uses `DELIVERED`.
+Procurement writes are retired: material costs are managed through material requests and warehouse actual-cost accounting. The list/detail/shortage reads remain for historical reporting.
 
 ### Suppliers
 
@@ -256,76 +268,9 @@ Base path: `/api/Suppliers`
 | GET | `/{supplierId}` | `ADMIN,PM,WAREHOUSE_MANAGER` | none | `SupplierResponse` |
 | PUT | `/{supplierId}` | `ADMIN` | `UpdateSupplierRequest` | `SupplierResponse` or message |
 | DELETE | `/{supplierId}` | `ADMIN` | none | Message |
-| POST | `/recommendations/balanced` | Public by controller attribute | `BalancedSupplierRecommendationRequest` | `BalancedSupplierRecommendationResponse` |
+| POST | `/recommendations/balanced` | none (retired) | `BalancedSupplierRecommendationRequest` | **HTTP 410 Gone** — supplier recommendations are retired |
 
-Supplier recommendation notes:
-
-- Internal catalog candidates are scored first using weighted cost, reliability, lead time, and material coverage.
-- When `searchWebForNearbySuppliers` is `true` and `warehouseLocation` is provided, the backend uses **Tavily** to search the web, then **Gemini** to extract and score external suppliers from those search results.
-- After web results are merged, **Gemini** may rerank the combined internal + external list and populate `aiSummary`.
-- Response flags:
-  - `usedWebSearch`: Tavily web search ran successfully and contributed external suppliers.
-  - `usedGoogleAI`: Gemini reranking/summary ran successfully.
-  - `webSearchSummary`: short summary of external supplier search.
-  - `aiSummary`: short summary from Gemini reranking.
-- External suppliers use `source: "WebSearch"` and `supplierId: 0`.
-- External suppliers may include `sourceUrls[]`, `websiteUrl`, `googleMapsUrl`, `rating`, `reviewCount`, and `distanceEstimate`.
-
-Example: balanced recommendation with web search
-
-Request:
-
-```json
-POST /api/Suppliers/recommendations/balanced
-{
-  "projectId": 1,
-  "items": [
-    { "materialId": 10, "quantity": 50 },
-    { "materialId": 12, "quantity": 20 }
-  ],
-  "costWeight": 40,
-  "reliabilityWeight": 40,
-  "leadTimeWeight": 20,
-  "maxRecommendations": 5,
-  "searchWebForNearbySuppliers": true,
-  "warehouseLocation": "District 7, Ho Chi Minh City",
-  "searchRadiusKm": 30,
-  "regionCode": "VN"
-}
-```
-
-Success `result` (trimmed):
-
-```json
-{
-  "usedGoogleAI": true,
-  "usedWebSearch": true,
-  "strategy": "Balance cost, reliability, and lead time.",
-  "aiSummary": "Supplier A offers the best balance...",
-  "webSearchSummary": "Found 3 nearby external suppliers for cement and steel.",
-  "recommendations": [
-    {
-      "supplierId": 4,
-      "source": "InternalCatalog",
-      "companyName": "BuildMart Supply",
-      "balancedScore": 86.5,
-      "reason": "Covers all requested materials...",
-      "lines": []
-    },
-    {
-      "supplierId": 0,
-      "source": "WebSearch",
-      "companyName": "Saigon Materials Co.",
-      "websiteUrl": "https://example.com",
-      "sourceUrls": ["https://example.com"],
-      "balancedScore": 78.2,
-      "reason": "External supplier found through Tavily web search."
-    }
-  ]
-}
-```
-
-Note: the recommendation endpoint has no `[Authorize]` attribute on the controller or method in source.
+Supplier recommendations are retired; do not build UI for them.
 
 ### Supplier Catalogs
 
@@ -343,30 +288,32 @@ Base path: `/api/Catalogs`
 
 Base path: `/api/Warehouses`
 
+The application has exactly one active operational warehouse (`isActive: true`). The schema and historical `warehouseId` values are retained for reporting, but clients must not offer warehouse creation, selection, or transfers, and must not send `warehouseId` in request bodies — the `warehouseId` fields were removed from `InventoryAdjustmentRequest`, `InventoryReturnRequest`, `StartPhysicalCountRequest`, `CreateMaterialRequest`, and `ApproveMaterialRequest`. Inventory writes and material-request approval always resolve the active warehouse server-side.
+
 | Method | Path | Auth | Body / Query | Result |
 | --- | --- | --- | --- | --- |
-| POST | `/` | `ADMIN` | `CreateWarehouseRequest` | `WarehouseResponse` |
-| PUT | `/{warehouseId}` | `ADMIN` | `UpdateWarehouseRequest` | `WarehouseResponse` |
+| POST | `/` | `ADMIN` | `CreateWarehouseRequest` | **HTTP 410 Gone** — warehouse creation is retired |
+| PUT | `/{warehouseId}` | `ADMIN` | `UpdateWarehouseRequest` | **HTTP 410 Gone** — warehouse profile updates are retired |
 | GET | `/` | `ADMIN,WAREHOUSE_MANAGER` | none | `WarehouseResponse[]` |
 | GET | `/{id}` | `ADMIN,WAREHOUSE_MANAGER` | none | `WarehouseResponse` |
 | GET | `/{id}/inventory` | `ADMIN,WAREHOUSE_MANAGER` | none | `InventoryReportResponse[]` |
 | GET | `/{warehouseId}/inventory/{variantId}` | `ADMIN,WAREHOUSE_MANAGER` | none | `InventoryReportResponse` |
 | POST | `/inventory/adjust` | `WAREHOUSE_MANAGER` | `InventoryAdjustmentRequest` | adjustment summary object |
 | GET | `/inventory/adjustments` | `ADMIN,WAREHOUSE_MANAGER` | query `status?` | adjustment summary objects |
-| POST | `/inventory/adjustments/{adjustmentId}/approve` | `ADMIN` | `ReviewInventoryAdjustmentRequest` | Message |
-| POST | `/inventory/adjustments/{adjustmentId}/reject` | `ADMIN` | `ReviewInventoryAdjustmentRequest` | Message |
+| POST | `/inventory/adjustments/{adjustmentId}/approve` | `WAREHOUSE_MANAGER` | `ReviewInventoryAdjustmentRequest` | Message |
+| POST | `/inventory/adjustments/{adjustmentId}/reject` | `WAREHOUSE_MANAGER` | `ReviewInventoryAdjustmentRequest` | Message |
 | POST | `/inventory/return` | `WAREHOUSE_MANAGER` | `InventoryReturnRequest` | inventory return summary object |
 | GET | `/inventory/transactions` | `ADMIN,WAREHOUSE_MANAGER` | query `warehouseId?`, `variantId?` | `InventoryTransactionResponse[]` |
 | POST | `/physical-counts` | `WAREHOUSE_MANAGER` | `StartPhysicalCountRequest` | physical count summary object |
 | POST | `/physical-counts/{sessionId}/submit` | `WAREHOUSE_MANAGER` | `SubmitPhysicalCountRequest` | `{ sessionId, status, rowVersion }` |
-| POST | `/physical-counts/{sessionId}/approve` | `ADMIN` | `ReviewPhysicalCountRequest` | Message |
-| POST | `/physical-counts/{sessionId}/reject` | `ADMIN` | `ReviewPhysicalCountRequest` | Message |
+| POST | `/physical-counts/{sessionId}/approve` | `WAREHOUSE_MANAGER` | `ReviewPhysicalCountRequest` | Message |
+| POST | `/physical-counts/{sessionId}/reject` | `WAREHOUSE_MANAGER` | `ReviewPhysicalCountRequest` | Message |
 | GET | `/physical-counts` | `ADMIN,WAREHOUSE_MANAGER` | query `warehouseId?`, `status?` | physical count summary objects |
 
 Inventory notes:
 
 - Negative inventory adjustments cannot reduce stock below reserved plus quarantined quantities.
-- Admin reviewers cannot approve their own adjustment/count.
+- Inventory adjustments and physical counts are reviewed by the `WAREHOUSE_MANAGER` who manages the warehouse. Self-review is allowed, so a manager may approve the adjustment/count they created. A manager who does not manage the warehouse, or an `ADMIN`, receives HTTP 403.
 - Open physical count is limited to one per warehouse.
 - Returns must link to an issued or partially issued material request.
 
@@ -374,124 +321,104 @@ Inventory notes:
 
 Base path: `/api/WarehouseTransfers`
 
+Warehouse-transfer writes are retired because the application uses a single active warehouse; they return **HTTP 410 Gone**. Only the read endpoints remain for historical records.
+
 | Method | Path | Auth | Body | Result |
 | --- | --- | --- | --- | --- |
-| POST | `/` | `WAREHOUSE_MANAGER` | `CreateWarehouseTransferRequest` | `WarehouseTransferResponse`; returns HTTP 201 with `Location` |
+| POST | `/` | `WAREHOUSE_MANAGER` | `CreateWarehouseTransferRequest` | **HTTP 410 Gone** |
 | GET | `/` | `ADMIN,WAREHOUSE_MANAGER` | none | `WarehouseTransferResponse[]` |
 | GET | `/{id}` | `ADMIN,WAREHOUSE_MANAGER` | none | `WarehouseTransferResponse` |
-| PUT | `/{id}/approve` | `ADMIN,WAREHOUSE_MANAGER` | none | `WarehouseTransferResponse` |
-| PUT | `/{id}/reject` | `ADMIN,WAREHOUSE_MANAGER` | none | `WarehouseTransferResponse` |
-| POST | `/{id}/ship` | `WAREHOUSE_MANAGER` | none | `WarehouseTransferResponse` |
-| POST | `/{id}/receive` | `WAREHOUSE_MANAGER` | `ReceiveWarehouseTransferRequest` optional | `WarehouseTransferResponse` |
-| PUT | `/{id}/cancel` | `WAREHOUSE_MANAGER` | none | `WarehouseTransferResponse` |
+| PUT | `/{id}/approve` | `ADMIN,WAREHOUSE_MANAGER` | none | **HTTP 410 Gone** |
+| PUT | `/{id}/reject` | `ADMIN,WAREHOUSE_MANAGER` | none | **HTTP 410 Gone** |
+| POST | `/{id}/ship` | `WAREHOUSE_MANAGER` | none | **HTTP 410 Gone** |
+| POST | `/{id}/receive` | `WAREHOUSE_MANAGER` | `ReceiveWarehouseTransferRequest` optional | **HTTP 410 Gone** |
+| PUT | `/{id}/cancel` | `WAREHOUSE_MANAGER` | none | **HTTP 410 Gone** |
 
 ### Chat
 
 Base path: `/api/Chat`
 
-All chat endpoints require any authenticated user.
+Chat is retired — every endpoint returns **HTTP 410 Gone**.
 
 | Method | Path | Body | Result |
 | --- | --- | --- | --- |
-| POST | `/conversations` | `CreateConversationRequest` | `ConversationResponse` |
-| GET | `/projects/{projectId}/conversations` | none | `ConversationResponse[]` |
-| GET | `/conversations/{conversationId}/messages` | none | `MessageResponse[]` |
-| POST | `/conversations/{conversationId}/messages` | `SendMessageRequest` | `MessageResponse` |
-| PUT | `/messages/{messageId}` | `UpdateMessageRequest` | `MessageResponse` |
-| DELETE | `/messages/{messageId}` | none | `MessageResponse` for soft-deleted message |
-| PUT | `/conversations/{conversationId}/read` | none | Message |
-
-Chat rules:
-
-- User must be a conversation participant to read/send/read-mark.
-- Only sender can edit/delete a message.
-- Send requires message body or attachment.
-- Delete is soft delete; response includes `deletedAt`.
+| POST | `/conversations` | `CreateConversationRequest` | **HTTP 410 Gone** |
+| GET | `/projects/{projectId}/conversations` | none | **HTTP 410 Gone** |
+| GET | `/conversations/{conversationId}/messages` | none | **HTTP 410 Gone** |
+| POST | `/conversations/{conversationId}/messages` | `SendMessageRequest` | **HTTP 410 Gone** |
+| PUT | `/messages/{messageId}` | `UpdateMessageRequest` | **HTTP 410 Gone** |
+| DELETE | `/messages/{messageId}` | none | **HTTP 410 Gone** |
+| PUT | `/conversations/{conversationId}/read` | none | **HTTP 410 Gone** |
 
 ### AI Chat
 
 Base path: `/api/AiChat`
 
-All AI chat endpoints require any authenticated user.
+AI chat is retired — every endpoint returns **HTTP 410 Gone**.
 
 | Method | Path | Body | Result |
 | --- | --- | --- | --- |
-| POST | `/sessions` | `CreateAiChatSessionRequest` | `AiChatSessionResponse` |
-| GET | `/sessions` | none | `AiChatSessionResponse[]` |
-| GET | `/sessions/{sessionId}/messages` | none | `AiChatMessageResponse[]` |
-| POST | `/sessions/{sessionId}/messages` | `SendAiChatMessageRequest` | `AiChatReplyResponse` |
-| DELETE | `/sessions/{sessionId}` | none | Message |
+| POST | `/sessions` | `CreateAiChatSessionRequest` | **HTTP 410 Gone** |
+| GET | `/sessions` | none | **HTTP 410 Gone** |
+| GET | `/sessions/{sessionId}/messages` | none | **HTTP 410 Gone** |
+| POST | `/sessions/{sessionId}/messages` | `SendAiChatMessageRequest` | **HTTP 410 Gone** |
+| DELETE | `/sessions/{sessionId}` | none | **HTTP 410 Gone** |
 
-AI Chat rules:
+AI chat is retired; do not build UI for it. Gemini remains in use for AI construction plan generation only.
 
-- Each session is scoped to the authenticated user.
-- Sessions can optionally be linked to a project; when `projectId` is set, Gemini receives project context in the system prompt.
-- `POST /sessions/{sessionId}/messages` persists the user message, generates one assistant reply, and returns both in `AiChatReplyResponse`.
-- Web search is optional via `useWebSearch`. When `true`, the backend runs **Tavily** for search, then **Gemini** for reasoning over the returned snippets. Gemini does not search the web directly.
-- Sessions are soft-deleted by the owner via `DELETE /sessions/{sessionId}`.
+### AI Construction Planner
 
-AI integration architecture (backend):
+Base path: `/api/AiConstructionPlanner`
 
-| Step | Provider | Responsibility |
+| Method | Path | Auth | Body | Result |
+| --- | --- | --- | --- | --- |
+| GET | `/questions` | any authenticated user | none | `ConstructionPlannerQuestionsResponse` |
+| POST | `/generate-json` | `ADMIN,PM,WAREHOUSE_MANAGER` | `GenerateConstructionPlanRequest` (`projectId?`, `answers`) | `ConstructionPlanJsonResponse` |
+| POST | `/generate-excel` | `ADMIN,PM,WAREHOUSE_MANAGER` | `GenerateConstructionPlanExcelRequest` (`projectId?`, `plan`, `fileName?`) | Excel file download (`application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`) |
+
+AI Construction Planner rules:
+
+- `generate-json` and `generate-excel` are staff-only; `CUSTOMER`, `SUPPLIER`, and `WORKER` receive HTTP 403.
+- When `projectId` is supplied, the caller must have staff project access: `ADMIN`, the owning PM, or a warehouse manager operationally linked to the project. Otherwise the endpoint returns HTTP 403.
+- `generate-excel` expects the `plan` object returned by `generate-json`; an invalid or missing plan returns HTTP 400.
+
+### AI Project Planning (Preview/Confirm)
+
+Base path: `/api/Projects/{projectId}/ai`
+
+Only the owning PM may call these endpoints. Generation is a stateless preview — nothing is persisted until confirm.
+
+| Method | Path | Auth | Body | Result |
+| --- | --- | --- | --- | --- |
+| POST | `/phases:generate` | `PM` (owning PM only) | `GenerateProjectAiPhasesRequest` (`brief` preferred, or legacy `answers`) | `ProjectAiPlanPreviewResponse` with `phases` (temporary IDs, no `tasks`) |
+| POST | `/tasks:generate` | `PM` (owning PM only) | `GenerateProjectAiTasksRequest` (`brief` preferred, or legacy `answers`; plus `phaseId` for one existing phase, or `phases` echo from `phases:generate`) | `ProjectAiPlanPreviewResponse` with `phases` + `tasks` |
+| POST | `/confirm` | `PM` (owning PM only) | `ConfirmProjectAiPlanRequest` (final `phases` + `tasks`) | HTTP 201 `ConfirmProjectAiPlanResponse` (`tempId` to real `phaseId`/`taskId`) |
+| POST | `/complete` | `PM` (owning PM only) | `CompleteProjectAiPlanRequest` (`brief` preferred, or legacy `answers`; `focusNote?`) | `ProjectAiPlanPreviewResponse` with only new phases/tasks plus `warnings` |
+
+AI project planning rules:
+
+- The frontend owns its question form and sends `AiProjectBriefRequest`: `projectType` (required), `floorAreaM2` (> 0), `numberOfFloors` (≥ 1), `startDate` (required), `endDate` (required, on/after start), `budget?` (≥ 0), `specialRequirements?` (≤ 2000 chars). When both `brief` and legacy `answers` are sent, the brief wins. The legacy five-answer input and `GET /questions` still work.
+- `tasks:generate` requires exactly one phase source: an existing `phaseId` (must belong to the project), or the `phases` preview echo. Tasks are mapped to proposed phases by the stable `aiKey`, so the PM may rename phases without breaking the mapping.
+- `confirm` accepts the PM-edited proposal: rename/re-date/re-budget items freely, drop unwanted items, but keep temporary IDs stable so tasks still resolve to their phases. Every task must reference exactly one of `phaseTempId` (a phase in the same request) or `phaseId` (an existing phase in the project).
+- `confirm` validates phase/task names, dates inside the project and phase baselines, closed phases, duplicate names, and the project budget cap, then creates all phases and tasks in a single transaction. Closed projects return HTTP 409.
+- `complete` ("AI finish the planning for me") reads the current phases/tasks, combines them with the brief and optional `focusNote`, and previews only the remaining work. Existing phases become reference entries (empty `TempId` — strip them before `confirm` and keep `PhaseId` on their tasks); duplicates and unresolvable tasks are dropped with reasons in `warnings`.
+- Only phases and tasks are created. The AI never touches inventory, approvals, customers, or material master data.
+
+### Project Export
+
+`GET /api/Projects/{projectId}/export` (`ADMIN,PM,WAREHOUSE_MANAGER,CUSTOMER`) returns an Excel file built from live project data. The workbook varies by caller; exporting a project the caller cannot access returns HTTP 403.
+
+| View | Caller | Sheets |
 | --- | --- | --- |
-| 1 | **Tavily** | Web search only. Returns titles, URLs, and content snippets. |
-| 2 | **Gemini** | Reasoning only. Reads conversation history plus Tavily snippets and generates the answer. |
+| Full | `ADMIN`, owning `PM`, assigned `CUSTOMER` | Project, Phases, Tasks, Material Requests, Request Lines, Budget Ledger, Budget Summary, Progress |
+| Inventory | operationally linked `WAREHOUSE_MANAGER` | Project, Material Requests, Request Lines, Inventory, Stock Movements |
 
-Frontend implications:
+Project export rules:
 
-- Set `useWebSearch: true` when the user asks for current/external information (market prices, nearby suppliers, regulations, news).
-- Expect slightly higher latency when web search is enabled.
-- If Tavily is not configured on the backend, web-search requests return HTTP 400 with an error like `Tavily:ApiKey is not configured.`
-- If Gemini is not configured, any AI chat message returns HTTP 400 with an error like `GoogleAI:ApiKey is not configured.`
-- The reply includes `usedWebSearch` and `webSearchSources[]` (`title`, `url`) from Tavily. Gemini never searches the web.
-- If Tavily succeeds but Gemini is rate-limited, the API returns HTTP 429 with `errorCode: "GEMINI_RATE_LIMITED"` and the Tavily sources. That is a Gemini quota issue, not a web-search failure.
-
-Example: send AI message with web search
-
-Request:
-
-```json
-POST /api/AiChat/sessions/50/messages
-{
-  "message": "What are current cement price trends in Vietnam?",
-  "useWebSearch": true
-}
-```
-
-Success `result`:
-
-```json
-{
-  "userMessage": {
-    "messageId": 201,
-    "sessionId": 50,
-    "role": 0,
-    "content": "What are current cement price trends in Vietnam?",
-    "createdAt": "2026-08-20T03:21:00Z",
-    "sentAt": "2026-08-20T03:21:00Z"
-  },
-  "assistantMessage": {
-    "messageId": 202,
-    "sessionId": 50,
-    "role": 1,
-    "content": "Based on recent web results...",
-    "createdAt": "2026-08-20T03:21:03Z",
-    "sentAt": "2026-08-20T03:21:03Z"
-  },
-  "usedWebSearch": true,
-  "webSearchSources": [
-    {
-      "title": "Cement market update",
-      "url": "https://example.com/cement"
-    }
-  ]
-}
-```
-
-Notes:
-
-- `role` is enum `AiChatRole`: `0 = User`, `1 = Assistant`. If your client sends JSON enums as strings, confirm Swagger; otherwise send numeric values.
-- Both `createdAt` and `sentAt` are returned for compatibility.
+- The customer workbook is identical to the PM workbook: same request costs, budget impact, and progress details.
+- Request Lines show per-line estimate/actual/debited figures derived from the immutable budget ledger; Budget Summary shows total budget, ledger spend, and remaining.
+- The inventory view covers only variants tied to the project's requests at the active warehouse (latest 500 stock movements).
+- No user/account administration data is included in any view.
 
 ### Meetings
 
@@ -514,15 +441,16 @@ Auth and users:
 
 - `UserRegisterRequest`: `email`, `password`, `confirmPassword`, `firstName`, `lastName`
 - `LoginRequest`: `userEmail`, `password`
-- `VerificationEmailRequest`: `userId`, `verificationCode`
-- `ResendVerificationRequest`: `email`
+- `VerificationEmailRequest`: `userId`, `verificationCode` (retired)
+- `ResendVerificationRequest`: `email` (retired)
+- `CreateUserAccountRequest`: `firstName`, `lastName`, `email`, `phoneNumber?`, `role` (not `SUPPLIER`), `password`, `confirmPassword`
 - `RefreshSessionRequest`: `refreshToken`, `deviceInfo?`
 - `LogoutRequest`: `refreshToken`
 - `ForgotPasswordRequest`: `email`
 - `ResetPasswordRequest`: `userId`, `token`, `newPassword`, `confirmPassword`
 - `ChangePasswordRequest`: `currentPassword`, `newPassword`, `confirmPassword`
 - `UpdateUserRequest`: `firstName?`, `lastName?`, `phoneNumber?`, `imgUrl?`
-- `UpdateUserRoleRequest`: `role`
+- `UpdateUserRoleRequest`: `role` (`SUPPLIER` is rejected; supplier accounts are retired)
 
 Project/task/progress:
 
@@ -532,9 +460,9 @@ Project/task/progress:
 - `ReassignProjectManagerRequest`: `projectManagerUserId`, `rowVersion`
 - `AssignCustomerRequest`: `customerUserId?` (null clears the assignment), `rowVersion`
 - `AdjustBudgetRequest`: `projectId`, `amount`, `reason`
-- `CreateTaskRequest`: `projectId`, `phaseName`, `taskName`, `assignedToUserID`, `plannedBudget`, `baselineStart`, `baselineEnd`, `materials[]`
+- `CreateTaskRequest`: `taskName`, `assignedToUserID`, `plannedBudget`, `baselineStart`, `baselineEnd`, `materials[]` (the phase comes from the route `phaseId`; the project is derived from the phase)
 - `TaskMaterialRequest`: `variantId`, `materialId`, `grossQuantityRequired`
-- `UpdateTaskRequest`: `phaseName`, `taskName`, `assignedToUserID`, `plannedBudget`, `baselineStart`, `baselineEnd`, `rowVersion`
+- `UpdateTaskRequest`: `phaseId`, `taskName`, `assignedToUserID`, `plannedBudget`, `baselineStart`, `baselineEnd`, `rowVersion`
 - `TaskLifecycleRequest`: `rowVersion`
 - `SubmitProgressReportRequest`: `taskId`, `progressIncrement`, `actualCostIncrement`, `notes?`, `sitePhotoUrl?`
 - `ReviewProgressReportRequest`: `reviewNote?`, `allowCostOverrun`, `rowVersion`
@@ -546,15 +474,17 @@ Materials and material requests:
 - `MaterialRequest`: `materialName`, `defaultUnit`, `description?`, `isActive`, `categoryId`
 - `UpdateMaterialRequest`: `materialName`, `defaultUnit`, `description?`, `isActive`
 - `MaterialVariantRequest`: `materialId`, `variantName`, `sku?`, `brand?`, `grade?`, `size?`, `color?`, `specification?`, `packaging?`, `unit`, `isActive`
-- `CreateMaterialRequest`: `projectId`, `taskId?`, `warehouseId?`, `requestNote?`, `items[]`
+- `CreateMaterialRequest`: `projectId`, `taskId?`, `requestNote?`, `estimatedCost` (non-negative, planning only), `items[]`
 - `MaterialItemRequest`: `variantId`, `materialId`, `quantity`, `neededByDate`, `note?`
 - `CreateTaskMaterialRequirementRequest`: `variantId`, `materialId`, `grossQuantityRequired`
-- `ApproveMaterialRequest`: `warehouseId`, `decisionNote?`, `items[]`
-- `ApproveMaterialItemRequest`: `itemId`, `approvedQuantity`
+- `ApproveMaterialRequest`: `decisionNote?`, `items[]` (`itemId`, `approvedQuantity`, `unitActualCost?`)
+- `ApproveMaterialItemRequest`: `itemId`, `approvedQuantity`, `unitActualCost?`
 - `RejectMaterialRequest`: `decisionNote?`
-- `UpdatePendingMaterialRequest`: `rowVersion`, `requestNote?`, `items[]`
+- `UpdatePendingMaterialRequest`: `rowVersion`, `requestNote?`, `estimatedCost?`, `items[]`
 - `UpdateMaterialRequestItem`: `itemId`, `quantity`, `neededByDate`, `note?`
 - `CancelMaterialRequest`: `rowVersion`, `reason?`
+- `IssueMaterialRequest` (optional body): `rowVersion?`, `items[]?` (`itemId`, `quantity`) for partial issue; omit `items` to issue everything reserved
+- `AdjustActualCostRequest`: `rowVersion`, `note?`, `items[]` (`itemId`, `unitActualCost`)
 
 Procurement:
 
@@ -562,8 +492,7 @@ Procurement:
 - `UpdateSupplierRequest`: `companyName`, `contactEmail?`, `contactPhone?`
 - `CreateCatalogRequest`: `supplierId`, `variantId`, `materialId`, `supplierSku?`, `unitPrice`, `minimumOrderQuantity`, `leadTimeDays`, `isAvailable`
 - `UpdateCatalogRequest`: `supplierSku?`, `unitPrice`, `minimumOrderQuantity`, `leadTimeDays`, `isAvailable`
-- `BalancedSupplierRecommendationRequest`: `projectId?`, `items[]`, `costWeight`, `reliabilityWeight`, `leadTimeWeight`, `maxRecommendations`, `searchWebForNearbySuppliers`, `warehouseLocation?`, `searchRadiusKm`, `regionCode?`
-  - `searchWebForNearbySuppliers`: when `true`, backend uses Tavily search + Gemini extraction. Requires non-empty `warehouseLocation`.
+- `BalancedSupplierRecommendationRequest`: `projectId?`, `items[]`, `costWeight`, `reliabilityWeight`, `leadTimeWeight`, `maxRecommendations`, `searchWebForNearbySuppliers`, `warehouseLocation?`, `searchRadiusKm`, `regionCode?` (retired)
   - `warehouseLocation`: free-text location used to build the Tavily query, for example `"District 7, Ho Chi Minh City"`.
   - `searchRadiusKm`: search radius hint included in the Tavily query. Defaults to `30` when omitted or `<= 0`.
   - `regionCode?`: optional region hint appended to the Tavily query, for example `"VN"`.
@@ -576,12 +505,12 @@ Procurement:
 
 Warehouse/inventory:
 
-- `CreateWarehouseRequest`: `managerId`, `warehouseName`, `location`
+- `CreateWarehouseRequest`: `managerId`, `warehouseName`, `location` (endpoint returns HTTP 410)
 - `UpdateWarehouseRequest`: `managerId`, `warehouseName`, `location`
-- `InventoryAdjustmentRequest`: `warehouseId`, `variantId`, `quantityDelta`, `reasonCode`, `note?`, `rowVersion?`
+- `InventoryAdjustmentRequest`: `variantId`, `quantityDelta`, `reasonCode`, `note?`, `rowVersion?`
 - `ReviewInventoryAdjustmentRequest`: `rowVersion`, `reviewNote?`
-- `InventoryReturnRequest`: `warehouseId`, `variantId`, `quantity`, `materialRequestId`, `reasonCode`, `condition`, `note?`, `rowVersion?`
-- `StartPhysicalCountRequest`: `warehouseId`, `variantIds[]`, `note?`
+- `InventoryReturnRequest`: `variantId`, `quantity`, `materialRequestId`, `reasonCode`, `condition`, `note?`, `rowVersion?`
+- `StartPhysicalCountRequest`: `variantIds[]`, `note?`
 - `SubmitPhysicalCountRequest`: `rowVersion`, `lines[]`
 - `PhysicalCountQuantityRequest`: `lineId`, `actualQuantity`
 - `ReviewPhysicalCountRequest`: `rowVersion`, `reviewNote?`
@@ -590,15 +519,13 @@ Warehouse/inventory:
 - `ReceiveWarehouseTransferRequest`: `items[]`
 - `ReceiveWarehouseTransferItemRequest`: `transferItemId`, `quantity`, `damagedQuantity`, `lostQuantity`
 
-Chat and meetings:
+Chat (retired) and meetings:
 
-- `CreateConversationRequest`: `projectId`, `taskId?`, `title`, `type`, `participantUserIds[]`
-- `SendMessageRequest`: `body`, `attachmentUrl?`
-- `UpdateMessageRequest`: `body`
-- `CreateAiChatSessionRequest`: `title?`, `projectId?`
-- `SendAiChatMessageRequest`: `message`, `useWebSearch`
-  - `message`: required user text.
-  - `useWebSearch`: when `true`, backend calls Tavily first, then Gemini. When `false`, Gemini answers from conversation/project context only.
+- `CreateConversationRequest`: `projectId`, `taskId?`, `title`, `type`, `participantUserIds[]` (retired)
+- `SendMessageRequest`: `body`, `attachmentUrl?` (retired)
+- `UpdateMessageRequest`: `body` (retired)
+- `CreateAiChatSessionRequest`: `title?`, `projectId?` (retired)
+- `SendAiChatMessageRequest`: `message`, `useWebSearch` (retired)
 - `CreateMeetingRequest`: `projectId`, `taskId?`, `subject`, `agenda?`, `startDateTime`, `endDateTime`, `timeZone`, `scheduleWithTeams`, `participants[]`
 - `MeetingParticipantRequest`: `userId?`, `email`, `displayName?`, `role`
 - `CancelMeetingRequest`: `reason?`
@@ -610,35 +537,34 @@ Use these as the shape inside `result`.
 - `AuthTokenResponse`: `accessToken`, `refreshToken`, `accessTokenExpiresAt`, `refreshTokenExpiresAt`
 - `UserProfileResponse`: `id`, `firstName`, `lastName`, `email`, `phoneNumber`, `imgUrl?`, `role`
 - `AccountResponse`: `id`, `firstName`, `lastName`, `email`, `phoneNumber`, `role`
+- `CustomerListResponse`: `id`, `firstName`, `lastName`, `email`
 - `ProjectResponse`: `projectId`, `projectName`, `address?`, `status`, `createdDate`, `startDate`, `baselineStart`, `baselineEnd`, `totalProjectBudget`, `budgetConfigured`, `actualCost`, `plannedTaskBudget`, `reportedTaskActualCost`, `purchaseOrderCommittedCost`, `purchaseOrderReceivedCost`, `remainingProcurementBudget`, `currency`, `pmUserID`, `pmName`, `customerUserId?`, `customerName?`, `totalTasks`, `totalAIAlerts`, `rowVersion`
 - `ProjectBudgetHistoryResponse`: `id`, `projectId`, `amountChanged`, `previousBudget`, `newBudget`, `currency`, `reason`, `updatedByUserId`, `createdAt`
-- `TaskResponse`: `taskId`, `projectId`, `phaseName`, `taskName`, `assignedToUserID`, `assignedToUserName`, `plannedBudget`, `actualCost`, `actualProgressPct`, `status`, `baselineStart`, `baselineEnd`, `rowVersion`, `materialRequirements[]`
+- `TaskResponse`: `taskId`, `projectId`, `phaseId`, `phaseName`, `phase` (`phaseId`, `name`, `sequenceOrder`, `status`, `baselineStart`, `baselineEnd`), `taskName`, `assignedToUserID`, `assignedToUserName`, `plannedBudget`, `actualCost`, `actualProgressPct`, `status`, `baselineStart`, `baselineEnd`, `rowVersion`, `materialRequirements[]`
 - `TaskMaterialResponse`: `variantId`, `materialId`, `materialName`, `variantName`, `taskName?`, `grossQuantityRequired`, `unit`
 - `ProgressReportResponse`: `reportId`, `taskId`, `taskName`, `reportedByUserId`, `reportedByName`, `reportDate`, `progressIncrement`, `actualCostIncrement`, `notes?`, `sitePhotoUrl?`, `status`, `reviewedByUserId?`, `reviewedAt?`, `reviewNote?`, `originalReportId?`, `rowVersion`
 - `CategoryResponse`: `id`, `categoryName`, `totalMaterials`
 - `MaterialResponse`: `materialId`, `materialName`, `defaultUnit`, `description?`, `isActive`, `categoryId`, `variants[]`
 - `MaterialVariantResponse`: `variantId`, `materialId`, `materialName`, `variantName`, `sku?`, `brand?`, `grade?`, `size?`, `color?`, `specification?`, `packaging?`, `unit`, `isActive`
-- `MaterialRequestResponse`: `requestId`, `projectId`, `taskId?`, `warehouseId?`, `warehouseName?`, `requestedBy`, `requestedByName`, `requestDate`, `status`, `requestNote?`, `approvedByUserId?`, `approvedAt?`, `decisionNote?`, `rowVersion`, `items[]`
-- `MaterialRequisitionDetailResponse`: `itemId`, `variantId`, `materialId`, `materialName`, `variantName`, `sku?`, `unit?`, `quantity`, `approvedQuantity`, `issuedQuantity`, `returnedQuantity`, `netIssuedQuantity`, `remainingRequestQuantity`, `remainingTaskDemand`, `neededByDate`, `note?`
+- `MaterialRequestResponse`: `requestId`, `projectId`, `taskId?`, `warehouseId?`, `warehouseName?`, `requestedBy`, `requestedByName`, `requestDate`, `status`, `requestNote?`, `approvedByUserId?`, `approvedAt?`, `decisionNote?`, `estimatedCost`, `actualCost`, `budgetDebitedAmount`, `actualCostUpdatedAt?`, `actualCostUpdatedByUserId?`, `rowVersion`, `items[]`
+- `MaterialRequisitionDetailResponse`: `itemId`, `variantId`, `materialId`, `materialName`, `variantName`, `sku?`, `unit?`, `quantity`, `approvedQuantity`, `issuedQuantity`, `unitActualCost`, `returnedQuantity`, `netIssuedQuantity`, `remainingRequestQuantity`, `remainingTaskDemand`, `neededByDate`, `note?`
 - `MRPCalculationResponse`: `variantId`, `warehouseId?`, `inventoryScope`, `materialId`, `materialName`, `variantName`, `unit`, `totalGrossRequired`, `issuedToProjectTasks`, `remainingGrossRequired`, `currentInventory`, `reservedQuantity`, `availableQuantity`, `onOrderQuantity`, `netQuantityRequired`, `earliestStartDate`, `planningRunId`, `planningVersion`, `transferRecommendations[]`
 - `SupplierResponse`: `supplierId`, `companyName`, `contactEmail?`, `contactPhone?`
 - `CatalogOfferResponse`: `catalogId`, `supplierId`, `supplierName`, `variantId`, `materialId`, `materialName`, `variantName`, `sku?`, `supplierSku?`, `unit`, `unitPrice`, `minimumOrderQuantity`, `leadTimeDays`, `isAvailable`
-- `BalancedSupplierRecommendationResponse`: `usedGoogleAI`, `usedWebSearch`, `strategy`, `aiSummary?`, `webSearchSummary?`, `recommendations[]`
-  - `usedGoogleAI`: Gemini was used for reranking/summary.
-  - `usedWebSearch`: Tavily web search contributed external suppliers.
+- `BalancedSupplierRecommendationResponse`: `usedGoogleAI`, `usedWebSearch`, `strategy`, `aiSummary?`, `webSearchSummary?`, `recommendations[]` (retired)
   - `recommendations[].source`: `InternalCatalog` or `WebSearch`.
 - `PurchaseOrderResponse`: `poId`, `project`, `supplier`, `status`, `currency`, `totalAmount`, `warehouseId`, `warehouseName`, `orderDate`, `expectedDeliveryDate?`, `approvedByUserId?`, `approvedAt?`, `note?`, `rowVersion`, `items[]`
 - `OrderLineItemResponse`: `orderLineItemId`, `variantId`, `materialId`, `requestItemId?`, `materialName`, `variantName`, `sku?`, `brand?`, `grade?`, `size?`, `specification?`, `packaging?`, `unit`, `quantity`, `receivedQuantity`, `damagedQuantity`, `missingQuantity`, `accountedQuantity`, `remainingQuantity`, `unitPrice`, `subTotal`
 - `ProcurementShortageResponse`: `projectId`, `projectName`, `taskId?`, `warehouseId`, `warehouseName`, `requestItemId`, `requestIds[]`, `variantId`, `materialId`, `materialName`, `variantName`, `sku?`, `unit`, `neededByDate`, `grossShortageQuantity`, `procurementCoverageQuantity`, `remainingShortageQuantity`, `supplierOffers[]`
-- `WarehouseResponse`: `warehouseId`, `warehouseName`, `location`, `managerId`, `managerName?`, `inventoryRecords[]`, `createdDate`, `modifiedDate?`, `createdBy?`, `modifiedBy?`, `isDeleted`
+- `WarehouseResponse`: `warehouseId`, `warehouseName`, `location`, `managerId`, `managerName?`, `isActive`, `inventoryRecords[]`, `createdDate`, `modifiedDate?`, `createdBy?`, `modifiedBy?`, `isDeleted`
 - `InventoryReportResponse`: `inventoryId`, `warehouseId`, `variantId`, `materialId`, `materialName`, `variantName`, `sku?`, `brand?`, `grade?`, `size?`, `specification?`, `packaging?`, `warehouseName`, `unit`, `quantityOnHand`, `reservedQuantity`, `onOrderQuantity`, `availableQuantity`, `reorderLevel`, `quarantineQuantity`, `averageUnitCost`, `inventoryValue`, `isLowStock`, `updatedAt`, `rowVersion`
 - `InventoryTransactionResponse`: `transactionId`, `warehouseId`, `variantId`, `transactionType`, `quantity`, `quantityBefore`, `quantityAfter`, `referenceId?`, `referenceType?`, `note?`, `performedByUserId`, `transactionDate`, `unitCost?`, `totalValue?`, `lotNumber?`, `batchNumber?`, `serialNumber?`, `expiryDate?`
 - `WarehouseTransferResponse`: `transferId`, `sourceWarehouseId`, `sourceWarehouseName`, `destinationWarehouseId`, `destinationWarehouseName`, `status`, `requestedByUserId`, `approvedByUserId?`, `shippedByUserId?`, `receivedByUserId?`, `requestedAt`, `approvedAt?`, `shippedAt?`, `receivedAt?`, `note?`, `rowVersion`, `items[]`
-- `ConversationResponse`: `conversationId`, `projectId`, `taskId?`, `title`, `type`, `lastMessageAt`, `participants[]`
-- `MessageResponse`: `messageId`, `conversationId`, `senderId`, `senderName?`, `body`, `attachmentUrl?`, `sentAt`, `editedAt?`, `deletedAt?`
-- `AiChatSessionResponse`: `sessionId`, `userId`, `projectId?`, `title`, `createdAt?`, `lastMessageAt?`, `messageCount`
-- `AiChatMessageResponse`: `messageId`, `sessionId`, `role`, `content`, `createdAt`, `sentAt`
-- `AiChatReplyResponse`: `userMessage` (`AiChatMessageResponse`), `assistantMessage` (`AiChatMessageResponse`), `usedWebSearch`, `webSearchSources[]` (`title`, `url`)
+- `ConversationResponse`: `conversationId`, `projectId`, `taskId?`, `title`, `type`, `lastMessageAt`, `participants[]` (retired)
+- `MessageResponse`: `messageId`, `conversationId`, `senderId`, `senderName?`, `body`, `attachmentUrl?`, `sentAt`, `editedAt?`, `deletedAt?` (retired)
+- `AiChatSessionResponse`: `sessionId`, `userId`, `projectId?`, `title`, `createdAt?`, `lastMessageAt?`, `messageCount` (retired)
+- `AiChatMessageResponse`: `messageId`, `sessionId`, `role`, `content`, `createdAt`, `sentAt` (retired)
+- `AiChatReplyResponse`: `userMessage` (`AiChatMessageResponse`), `assistantMessage` (`AiChatMessageResponse`), `usedWebSearch`, `webSearchSources[]` (`title`, `url`) (retired)
 - `MeetingResponse`: `meetingId`, `projectId`, `taskId?`, `organizerId`, `organizerName?`, `subject`, `agenda?`, `startDateTime`, `endDateTime`, `timeZone`, `status`, `joinUrl?`, `externalEventId?`, `externalOnlineMeetingId?`, `failureReason?`, `participants[]`
 
 ## Status and Code Values
@@ -692,7 +618,7 @@ Purchase order status:
 - `CLOSED_WITH_VARIANCE`
 - `CANCELLED`
 
-Warehouse transfer status:
+Warehouse transfer status (legacy read-only; transfer writes return HTTP 410):
 
 - `REQUESTED`
 - `APPROVED`
@@ -715,8 +641,8 @@ Inventory/warehouse constants:
 
 Chat/meeting enum meanings:
 
-- Chat conversation type: `PROJECT`, `TASK`, `MATERIAL_REQUEST`, `PURCHASE_ORDER`
-- AI chat role: `User` / `Assistant` (enum values `0` / `1` if sent as numbers)
+- Chat conversation type: `PROJECT`, `TASK`, `MATERIAL_REQUEST`, `PURCHASE_ORDER` (retired)
+- AI chat role: `User` / `Assistant` (enum values `0` / `1` if sent as numbers) (retired)
 - Meeting provider: `MICROSOFT_TEAMS`
 - Meeting status: `DRAFT`, `SCHEDULED`, `FAILED`, `CANCELLED`
 - Meeting participant role: `REQUIRED`, `OPTIONAL`
@@ -727,16 +653,13 @@ The backend uses two providers with separate responsibilities:
 
 | Provider | Used for | Frontend trigger |
 | --- | --- | --- |
-| **Tavily** | Web search only | AI chat `useWebSearch: true`; supplier recommendation `searchWebForNearbySuppliers: true` + `warehouseLocation` |
-| **Gemini** | Reasoning, summarization, ranking, chat replies | Always used for AI chat replies; also used after Tavily search and for supplier reranking |
+| **Tavily** | No live endpoint (web search belonged to retired AI chat and recommendations) | none |
+| **Gemini** | AI construction plan generation | AI project planning answers (`phases:generate`, `tasks:generate`, `generate-json`) |
 
 Frontend UX suggestions:
 
-- Show a "Search the web" toggle on AI chat compose UI mapped to `useWebSearch`.
-- Show a loading state with two phases when web search is enabled: "Searching the web..." then "Generating answer...".
-- For supplier recommendation screens, expose `searchWebForNearbySuppliers`, `warehouseLocation`, and optional `searchRadiusKm` / `regionCode`.
-- Display `usedWebSearch` / `usedGoogleAI` badges on recommendation results so users know which capabilities contributed.
 - Surface backend `errorMessage` directly for missing-provider configuration (`Tavily:ApiKey...`, `GoogleAI:ApiKey...`).
+- Do not build UI for chat, AI chat, or supplier recommendations; those endpoints return HTTP 410.
 
 Backend configuration keys (for DevOps, not sent by frontend):
 
@@ -761,7 +684,7 @@ The first restructuring slice adds phase APIs while keeping existing task endpoi
 | Method | Path | Auth | Body / Query | Result |
 | --- | --- | --- | --- | --- |
 | POST | `/api/Projects/{projectId}/phases` | `PM` | `CreatePhaseRequest` | `PhaseResponse` (HTTP 201) |
-| GET | `/api/Projects/{projectId}/phases` | `ADMIN,PM,WAREHOUSE_MANAGER` | none | `PhaseResponse[]` ordered by `sequenceOrder`, then `name` |
+| GET | `/api/Projects/{projectId}/phases` | `ADMIN,PM,WAREHOUSE_MANAGER,CUSTOMER` | none | `PhaseResponse[]` ordered by `sequenceOrder`, then `name` (assigned customers see their projects) |
 | GET | `/api/Phases/{phaseId}` | `ADMIN,PM,WAREHOUSE_MANAGER` | none | `PhaseResponse` |
 | PUT | `/api/Phases/{phaseId}` | `PM` | `UpdatePhaseRequest` | updated `PhaseResponse` |
 | POST | `/api/Phases/{phaseId}/cancel` | `PM` | `PhaseLifecycleRequest` | `{ phaseId, status, rowVersion }` |
@@ -779,17 +702,17 @@ Project customer assignment is now implemented (see Projects), so an assigned cu
 ## Validation Highlights
 
 - Passwords: 10-128 chars, at least one uppercase, lowercase, and number.
-- Verification/reset token: 6 digits.
+- Reset token: 6 digits. (Email verification is retired; only password reset uses emailed codes.)
 - Project: `totalProjectBudget >= 0`, baseline end must be on/after baseline start, start date must be on/before baseline end and service also requires it inside baseline period.
 - Task: planned budget cannot be negative; baseline end must be on/after baseline start.
 - Progress increments: greater than 0 and at most 100, 2 decimal precision; actual cost increments cannot be negative.
 - Catalog available offers must have positive unit price; lead time and minimum order quantity cannot be negative.
 - Create material request: `projectId > 0`, at least one item, quantities greater than 0, no duplicate variant per request.
-- Approve material request: `warehouseId > 0`, at least one item, approved quantities are nonnegative and at least one should be positive.
-- Create purchase order: at least one item; delivery date cannot be in the past; duplicate variants/request items are rejected; prices cannot be negative.
-- Receive purchase order: each line must account for a positive amount; final delivery must account for all remaining units.
+- Approve material request: at least one item, approved quantities are nonnegative and at least one should be positive; approval targets the active warehouse.
+- Create purchase order: retired (HTTP 410).
+- Receive purchase order: retired (HTTP 410).
 - Inventory adjustment: `quantityDelta` cannot be zero; reason must be one of inventory adjustment reasons.
-- Warehouse transfer: source and destination warehouses must differ; variants cannot repeat; quantities must be positive.
+- Warehouse transfer: writes are retired (HTTP 410); the legacy rules (distinct source/destination, no duplicate variants, positive quantities) only apply to historical records.
 
 ## Frontend Workflow Cheat Sheet
 
@@ -798,10 +721,13 @@ Project customer assignment is now implemented (see Projects), so an assigned cu
 3. Add `Authorization: Bearer <accessToken>` to protected calls.
 4. On any edit screen, keep `rowVersion` from the latest read.
 5. On HTTP 409, refetch the entity and let the user retry with the latest `rowVersion`.
-6. For project planning: create project, create tasks, assign task material requirements, run MRP for a specific warehouse.
-7. For material fulfillment: PM creates material request, warehouse manager approves/reserves, then issues or releases.
-8. For procurement: warehouse manager checks shortages, creates PO, PM/ADMIN approves, warehouse manager marks processing/shipped/receives.
-9. For inventory corrections: warehouse manager submits adjustment/count, ADMIN reviews.
-10. For chat: create conversations per project/task and send messages as participants.
-11. For AI chat: create a session, send messages with optional `useWebSearch`, render both `userMessage` and `assistantMessage` from the reply payload.
-12. For AI supplier recommendations: call `/api/Suppliers/recommendations/balanced`; enable web search only when the UI collects a warehouse location.
+6. For project planning: create project, create tasks, assign task material requirements, run MRP (always against the single active warehouse).
+7. For material fulfillment: PM creates material request with an estimate, warehouse manager approves/reserves (optionally setting unit costs), then issues (posting budget debits) or releases. Returns post reversals; cost corrections post deltas.
+8. For procurement: retired. Purchase-order writes return HTTP 410; only list/detail/shortage reads remain for history.
+9. For inventory corrections: warehouse manager submits adjustment/count and reviews them (self-review allowed); the reviewer must manage the warehouse.
+10. For chat: retired. All chat endpoints return HTTP 410.
+11. For AI chat: retired. All AI chat endpoints return HTTP 410.
+12. For AI construction planning: fetch questions, call `generate-json` (staff only), then `generate-excel` with the returned plan; include `projectId` for project-scoped access checks.
+13. For AI project plan persistence (owning PM only): call `phases:generate`, let the PM edit the preview, optionally call `tasks:generate` with the phase echo, then `confirm` with the final proposal; keep temporary IDs stable so tasks resolve to their phases.
+14. For project export: call `GET /api/Projects/{projectId}/export` and download the file; the workbook sheets depend on the caller role (full view for ADMIN/owning PM/assigned customer, inventory view for a linked warehouse manager).
+15. For AI supplier recommendations: retired. The endpoint returns HTTP 410.

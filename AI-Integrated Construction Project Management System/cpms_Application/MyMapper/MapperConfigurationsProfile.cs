@@ -47,6 +47,8 @@ namespace cpms_Application.MyMapper
             CreateMap<Phase, PhaseResponse>()
                 .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.Status.ToString()))
                 .ForMember(dest => dest.RowVersion, opt => opt.MapFrom(src => Convert.ToBase64String(src.RowVersion)));
+            CreateMap<Phase, PhaseSummaryResponse>()
+                .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.Status.ToString()));
   CreateMap<Project, ProjectResponse>()
     .ForMember(dest => dest.RowVersion, opt => opt.MapFrom(src => Convert.ToBase64String(src.RowVersion)))
     .ForMember(dest => dest.BudgetConfigured, opt => opt.MapFrom(src => src.TotalProjectBudget > 0))
@@ -189,6 +191,8 @@ namespace cpms_Application.MyMapper
                 .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.Status.ToString()))
                 .ForMember(dest => dest.RowVersion, opt => opt.MapFrom(src => Convert.ToBase64String(src.RowVersion)))
                 .ForMember(dest => dest.AssignedToUserName, opt => opt.MapFrom(src => src.AssignedToUser != null ? $"{src.AssignedToUser.LastName} {src.AssignedToUser.FirstName}".Trim() : string.Empty))
+                .ForMember(dest => dest.PhaseName, opt => opt.MapFrom(src => src.Phase != null ? src.Phase.Name : src.PhaseName))
+                .ForMember(dest => dest.Phase, opt => opt.MapFrom(src => src.Phase))
                 .ForMember(dest => dest.MaterialRequirements, opt => opt.MapFrom(src => src.MaterialRequirements));
 
             CreateMap<TaskMaterialRequirement, TaskMaterialResponse>()

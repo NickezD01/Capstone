@@ -19,6 +19,16 @@ namespace cpms_Domain.Models
         public int? ApprovedByUserId { get; set; }
         public DateTime? ApprovedAt { get; set; }
         public string? DecisionNote { get; set; }
+
+        // Step 10 issue-time budget ledger. EstimatedCost is PM planning data only
+        // and never debits the budget. ActualCost is the WM-maintained cost basis
+        // (sum of approved quantity x line unit cost). BudgetDebitedAmount tracks
+        // how much has already been posted; only the client must never set it.
+        public decimal EstimatedCost { get; set; }
+        public decimal ActualCost { get; set; }
+        public decimal BudgetDebitedAmount { get; set; }
+        public DateTime? ActualCostUpdatedAt { get; set; }
+        public int? ActualCostUpdatedByUserId { get; set; }
         public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 
         // Navigation Properties

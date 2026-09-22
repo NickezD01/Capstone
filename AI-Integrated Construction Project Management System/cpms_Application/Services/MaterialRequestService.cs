@@ -15,12 +15,14 @@ namespace cpms_Application.Services
         private readonly IUnitOfWork _uow;
         private readonly IMapper _mapper;
         private readonly IClaimService _claimService;
+        private readonly IWarehouseContext _warehouseContext;
 
-        public MaterialRequestService(IUnitOfWork uow, IMapper mapper, IClaimService claimService)
+        public MaterialRequestService(IUnitOfWork uow, IMapper mapper, IClaimService claimService, IWarehouseContext? warehouseContext = null)
         {
             _uow = uow;
             _mapper = mapper;
             _claimService = claimService;
+            _warehouseContext = warehouseContext ?? new WarehouseContext(uow);
         }
 
         public async Task<ApiResponse> CreateRequestAsync(CreateMaterialRequest request)
@@ -31,6 +33,8 @@ namespace cpms_Application.Services
                 return new ApiResponse().SetBadRequest(message: "At least one material item is required.");
             if (!request.TaskId.HasValue)
                 return new ApiResponse().SetBadRequest(message: "TaskId is required so every request remains capped by an approved task material plan.");
+            if (request.EstimatedCost < 0)
+                return new ApiResponse().SetBadRequest(message: "Estimated cost cannot be negative.");
 
             var project = await _uow.Projects.GetByIdAsync(request.ProjectId);
             if (project == null) return new ApiResponse().SetNotFound(message: "Project not found.");
@@ -45,9 +49,6 @@ namespace cpms_Application.Services
                 if (task.Status is cpms_Domain.Models.TaskStatus.COMPLETED or cpms_Domain.Models.TaskStatus.CANCELLED or cpms_Domain.Models.TaskStatus.REJECTED)
                     return new ApiResponse().SetConflict(message: "Closed tasks cannot accept material requests.");
             }
-            if (request.WarehouseId.HasValue && await _uow.Warehouses.GetByIdAsync(request.WarehouseId.Value) == null)
-                return new ApiResponse().SetBadRequest(message: "Assigned warehouse does not exist.");
-
             var resolved = new List<(MaterialItemRequest Item, MaterialVariant Variant)>();
             foreach (var item in request.Items)
             {
@@ -123,11 +124,12 @@ namespace cpms_Application.Services
                     ProjectId = request.ProjectId,
                     Project = currentProject,
                     TaskId = request.TaskId,
-                    WarehouseId = request.WarehouseId,
+                    WarehouseId = null,
                     RequestedBy = user.Id,
                     RequestDate = DateTime.UtcNow,
                     Status = MaterialRequestStatuses.Pending,
-                    RequestNote = request.RequestNote
+                    RequestNote = request.RequestNote,
+                    EstimatedCost = request.EstimatedCost
                 };
                 await _uow.MaterialRequests.AddAsync(entity);
                 await _uow.SaveChangeAsync();
@@ -202,21 +204,22 @@ namespace cpms_Application.Services
         }
 
         public Task<ApiResponse> ApproveRequestAsync(int requestId) =>
-            Task.FromResult(new ApiResponse().SetBadRequest(message: "WarehouseId and approved item quantities are required."));
+            Task.FromResult(new ApiResponse().SetBadRequest(message: "Approved item quantities are required."));
 
         public async Task<ApiResponse> ApproveRequestAsync(int requestId, ApproveMaterialRequest decision)
         {
             var user = _claimService.GetUserClaim();
             if (!IsRole(user, Role.WAREHOUSE_MANAGER)) return Forbidden("Only warehouse managers may approve material requests.");
-            if (decision == null || decision.WarehouseId <= 0 || decision.Items.Count == 0)
-                return new ApiResponse().SetBadRequest(message: "WarehouseId and approved item quantities are required.");
+            if (decision == null || decision.Items.Count == 0)
+                return new ApiResponse().SetBadRequest(message: "Approved item quantities are required.");
             if (decision.Items.All(x => x.ApprovedQuantity == 0))
                 return new ApiResponse().SetBadRequest(message: "At least one request item must have a positive approved quantity; otherwise reject the request.");
-            var warehouse = await _uow.Warehouses.GetByIdAsync(decision.WarehouseId);
+            var warehouse = await _warehouseContext.GetActiveWarehouseAsync();
             if (warehouse == null)
-                return new ApiResponse().SetBadRequest(message: "Warehouse not found.");
+                return new ApiResponse().SetConflict(message: "No active warehouse is configured.");
+            var warehouseId = warehouse.WarehouseId;
             if (warehouse.ManagerId != user.Id)
-                return Forbidden("You may only approve requests against a warehouse you manage.");
+                return Forbidden("You may only approve requests against the active warehouse you manage.");
 
             await _uow.BeginTransactionAsync();
             try
@@ -224,8 +227,6 @@ namespace cpms_Application.Services
                 var request = await _uow.MaterialRequests.GetAsync(r => r.RequestId == requestId,
                     q => q.Include(r => r.Requisitions));
                 if (request == null) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetNotFound(message: "Material request not found."); }
-                if (request.WarehouseId.HasValue && request.WarehouseId.Value != decision.WarehouseId)
-                { await _uow.RollbackTransactionAsync(); return Forbidden("This request is assigned to another warehouse."); }
                 var project = await _uow.Projects.GetByIdAsync(request.ProjectId);
                 if (project == null)
                 { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetNotFound(message: "Project not found."); }
@@ -239,6 +240,8 @@ namespace cpms_Application.Services
                 if (decision.Items.Select(i => i.ItemId).Distinct().Count() != decision.Items.Count ||
                     decision.Items.Any(i => request.Requisitions.All(r => r.ItemId != i.ItemId)))
                 { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetBadRequest(message: "Approval contains invalid or duplicate request items."); }
+                if (decision.Items.Any(i => i.UnitActualCost.HasValue && i.UnitActualCost.Value < 0))
+                { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetBadRequest(message: "Unit actual cost cannot be negative."); }
 
                 foreach (var item in request.Requisitions)
                 {
@@ -246,9 +249,12 @@ namespace cpms_Application.Services
                     if (approved < 0 || approved > item.Quantity)
                     { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetBadRequest(message: "Approved quantity must be between zero and requested quantity."); }
                     item.ApprovedQuantity = approved;
+                    var unitCost = decision.Items.FirstOrDefault(i => i.ItemId == item.ItemId)?.UnitActualCost;
+                    if (unitCost.HasValue)
+                        item.UnitActualCost = unitCost.Value;
                     if (approved == 0) continue;
 
-                    var inventory = await _uow.Inventories.GetAsync(i => i.WarehouseId == decision.WarehouseId && i.VariantId == item.VariantId);
+                    var inventory = await _uow.Inventories.GetAsync(i => i.WarehouseId == warehouseId && i.VariantId == item.VariantId);
                     if (inventory == null || !InventoryQuantityRules.CanReserve(inventory.QuantityOnHand, inventory.ReservedQuantity, inventory.QuarantineQuantity, approved))
                     { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: $"Insufficient available inventory for request item {item.ItemId}."); }
                     inventory.ReservedQuantity += approved;
@@ -265,7 +271,10 @@ namespace cpms_Application.Services
                     });
                 }
 
-                request.WarehouseId = decision.WarehouseId;
+                request.WarehouseId = warehouseId;
+                request.ActualCost = request.Requisitions.Sum(i => i.ApprovedQuantity * i.UnitActualCost);
+                request.ActualCostUpdatedAt = DateTime.UtcNow;
+                request.ActualCostUpdatedByUserId = user.Id;
                 request.Status = request.Requisitions.Any(i => i.ApprovedQuantity < i.Quantity)
                     ? MaterialRequestStatuses.PartiallyApproved
                     : MaterialRequestStatuses.Approved;
@@ -301,6 +310,8 @@ namespace cpms_Application.Services
                 return Forbidden("You may only reject requests assigned to a warehouse you manage.");
             if (request.Status != MaterialRequestStatuses.Pending)
                 return new ApiResponse().SetConflict(message: "Only pending requests can be rejected.");
+            if (request.BudgetDebitedAmount != 0)
+                return new ApiResponse().SetConflict(message: "The request already has posted budget entries and cannot be rejected.");
             request.Status = MaterialRequestStatuses.Rejected;
             request.ApprovedByUserId = user.Id;
             request.ApprovedAt = DateTime.UtcNow;
@@ -309,7 +320,7 @@ namespace cpms_Application.Services
             return await GetRequestByIdAsync(requestId);
         }
 
-        public async Task<ApiResponse> IssueRequestAsync(int requestId)
+        public async Task<ApiResponse> IssueRequestAsync(int requestId, IssueMaterialRequest? options = null)
         {
             var user = _claimService.GetUserClaim();
             if (!IsRole(user, Role.WAREHOUSE_MANAGER)) return Forbidden("Only warehouse managers may issue inventory.");
@@ -319,6 +330,8 @@ namespace cpms_Application.Services
                 var request = await _uow.MaterialRequests.GetAsync(r => r.RequestId == requestId,
                     q => q.Include(r => r.Project).Include(r => r.Warehouse).Include(r => r.Requisitions).Include(r => r.Reservations).ThenInclude(r => r.InventoryRecord));
                 if (request == null) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetNotFound(message: "Material request not found."); }
+                if (!string.IsNullOrWhiteSpace(options?.RowVersion) && !MatchesRowVersion(request.RowVersion, options!.RowVersion))
+                { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "The request was changed by another user. Reload and retry."); }
                 if (request.Warehouse == null || request.Warehouse.ManagerId != user.Id)
                 { await _uow.RollbackTransactionAsync(); return Forbidden("You may only issue from a warehouse you manage."); }
                 if (request.Project.Status is ProjectStatus.CANCELLED or ProjectStatus.COMPLETED or ProjectStatus.PAUSED)
@@ -329,40 +342,137 @@ namespace cpms_Application.Services
                     if (task?.Status is cpms_Domain.Models.TaskStatus.COMPLETED or cpms_Domain.Models.TaskStatus.CANCELLED or cpms_Domain.Models.TaskStatus.REJECTED)
                     { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict("Inventory cannot be issued to a closed task."); }
                 }
-                if (request.Status != MaterialRequestStatuses.Approved && request.Status != MaterialRequestStatuses.PartiallyApproved)
+                if (request.Status != MaterialRequestStatuses.Approved &&
+                    request.Status != MaterialRequestStatuses.PartiallyApproved &&
+                    request.Status != MaterialRequestStatuses.PartiallyIssued)
                 { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "Only approved requests can be issued."); }
-                var active = request.Reservations.Where(r => r.Status == InventoryReservationStatuses.Active).ToList();
-                if (active.Count == 0) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "No active reservations exist for this request."); }
+                var activeReservedByItem = request.Reservations
+                    .Where(r => r.Status == InventoryReservationStatuses.Active)
+                    .GroupBy(r => r.RequestItemId)
+                    .ToDictionary(g => g.Key, g => g.Sum(r => r.Quantity));
+                if (activeReservedByItem.Count == 0) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "No active reservations exist for this request."); }
 
-                foreach (var reservation in active)
+                var toIssue = new Dictionary<int, decimal>();
+                if (options?.Items != null && options.Items.Count > 0)
                 {
-                    var inventory = reservation.InventoryRecord;
-                    if (!InventoryQuantityRules.CanIssue(inventory.QuantityOnHand, inventory.ReservedQuantity, inventory.QuarantineQuantity, reservation.Quantity))
-                    { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "Reserved inventory is no longer available."); }
-                    var before = inventory.QuantityOnHand;
-                    inventory.QuantityOnHand -= reservation.Quantity;
-                    inventory.ReservedQuantity -= reservation.Quantity;
-                    inventory.UpdatedAt = DateTime.UtcNow;
-                    reservation.Status = InventoryReservationStatuses.Fulfilled;
-                    reservation.FulfilledAt = DateTime.UtcNow;
-                    var item = request.Requisitions.Single(i => i.ItemId == reservation.RequestItemId);
-                    item.IssuedQuantity += reservation.Quantity;
-                    await _uow.InventoryTransactions.AddAsync(new InventoryTransaction
+                    if (options.Items.Select(i => i.ItemId).Distinct().Count() != options.Items.Count ||
+                        options.Items.Any(i => request.Requisitions.All(r => r.ItemId != i.ItemId)))
+                    { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetBadRequest(message: "Issue contains invalid or duplicate request items."); }
+                    foreach (var entry in options.Items)
                     {
-                        InventoryId = inventory.InventoryId,
-                        VariantId = inventory.VariantId,
-                        WarehouseId = inventory.WarehouseId,
-                        TransactionType = InventoryTransactionTypes.Issue,
-                        Quantity = -reservation.Quantity,
-                        QuantityBefore = before,
-                        QuantityAfter = inventory.QuantityOnHand,
-                        ReferenceId = requestId,
-                        ReferenceType = "MATERIAL_REQUEST",
-                        UnitCost = inventory.AverageUnitCost,
-                        TotalValue = reservation.Quantity * inventory.AverageUnitCost,
-                        PerformedByUserId = user.Id,
-                        TransactionDate = DateTime.UtcNow
-                    });
+                        if (entry.Quantity <= 0)
+                        { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetBadRequest(message: "Issue quantity must be greater than zero."); }
+                        var line = request.Requisitions.Single(r => r.ItemId == entry.ItemId);
+                        var remaining = line.ApprovedQuantity - line.IssuedQuantity;
+                        if (entry.Quantity > remaining)
+                        { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: $"Issue quantity for item {entry.ItemId} exceeds the remaining approved quantity of {remaining}."); }
+                        if (entry.Quantity > activeReservedByItem.GetValueOrDefault(entry.ItemId))
+                        { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: $"Issue quantity for item {entry.ItemId} exceeds the active reservation of {activeReservedByItem.GetValueOrDefault(entry.ItemId)}."); }
+                        toIssue[entry.ItemId] = entry.Quantity;
+                    }
+                }
+                else
+                {
+                    foreach (var line in request.Requisitions)
+                    {
+                        var qty = Math.Min(activeReservedByItem.GetValueOrDefault(line.ItemId),
+                            Math.Max(0, line.ApprovedQuantity - line.IssuedQuantity));
+                        if (qty > 0)
+                            toIssue[line.ItemId] = qty;
+                    }
+                    if (toIssue.Count == 0) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "No active reservations exist for this request."); }
+                }
+
+                var debits = new List<(MaterialRequisition Line, decimal Quantity, decimal UnitCost)>();
+                var fallbackRecorded = false;
+                foreach (var (itemId, quantity) in toIssue)
+                {
+                    var line = request.Requisitions.Single(r => r.ItemId == itemId);
+                    var unit = line.UnitActualCost;
+                    if (unit <= 0)
+                    {
+                        var lineReservations = request.Reservations
+                            .Where(r => r.Status == InventoryReservationStatuses.Active && r.RequestItemId == itemId)
+                            .ToList();
+                        var reservedQty = lineReservations.Sum(r => r.Quantity);
+                        unit = reservedQty > 0
+                            ? lineReservations.Sum(r => r.Quantity * r.InventoryRecord.AverageUnitCost) / reservedQty
+                            : 0;
+                        if (unit > 0)
+                        {
+                            line.UnitActualCost = unit;
+                            fallbackRecorded = true;
+                        }
+                    }
+                    if (unit < 0) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "A request cannot be issued while its actual cost is negative."); }
+                    debits.Add((line, quantity, unit));
+                }
+                if (fallbackRecorded)
+                {
+                    request.ActualCost = request.Requisitions.Sum(i => i.ApprovedQuantity * i.UnitActualCost);
+                    request.ActualCostUpdatedAt = DateTime.UtcNow;
+                    request.ActualCostUpdatedByUserId = user.Id;
+                }
+
+                var totalDebit = debits.Sum(d => d.Quantity * d.UnitCost);
+                if (request.Project.TotalProjectBudget > 0)
+                {
+                    var spend = await MaterialBudgetLedger.GetProjectSpendAsync(_uow, request.ProjectId);
+                    if (spend + totalDebit > request.Project.TotalProjectBudget)
+                    { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "Issuing would exceed the project's approved budget."); }
+                }
+
+                foreach (var (line, quantity, unit) in debits)
+                {
+                    var need = quantity;
+                    foreach (var reservation in request.Reservations
+                        .Where(r => r.Status == InventoryReservationStatuses.Active && r.RequestItemId == line.ItemId)
+                        .OrderBy(r => r.ReservationId))
+                    {
+                        if (need <= 0) break;
+                        var take = Math.Min(reservation.Quantity, need);
+                        var inventory = reservation.InventoryRecord;
+                        if (!InventoryQuantityRules.CanIssue(inventory.QuantityOnHand, inventory.ReservedQuantity, inventory.QuarantineQuantity, take))
+                        { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "Reserved inventory is no longer available."); }
+                        var before = inventory.QuantityOnHand;
+                        inventory.QuantityOnHand -= take;
+                        inventory.ReservedQuantity -= take;
+                        inventory.UpdatedAt = DateTime.UtcNow;
+                        reservation.Quantity -= take;
+                        if (reservation.Quantity <= 0)
+                        {
+                            reservation.Status = InventoryReservationStatuses.Fulfilled;
+                            reservation.FulfilledAt = DateTime.UtcNow;
+                        }
+                        need -= take;
+                        line.IssuedQuantity += take;
+                        await _uow.InventoryTransactions.AddAsync(new InventoryTransaction
+                        {
+                            InventoryId = inventory.InventoryId,
+                            VariantId = inventory.VariantId,
+                            WarehouseId = inventory.WarehouseId,
+                            TransactionType = InventoryTransactionTypes.Issue,
+                            Quantity = -take,
+                            QuantityBefore = before,
+                            QuantityAfter = inventory.QuantityOnHand,
+                            ReferenceId = requestId,
+                            ReferenceType = "MATERIAL_REQUEST",
+                            UnitCost = inventory.AverageUnitCost,
+                            TotalValue = take * inventory.AverageUnitCost,
+                            PerformedByUserId = user.Id,
+                            TransactionDate = DateTime.UtcNow
+                        });
+                    }
+                    if (need > 0) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "Reserved inventory is no longer available."); }
+
+                    var debit = quantity * unit;
+                    var debitedBefore = request.BudgetDebitedAmount;
+                    request.BudgetDebitedAmount = debitedBefore + debit;
+                    var taskError = await MaterialBudgetLedger.ApplyTaskActualAsync(_uow, request.TaskId, debit);
+                    if (taskError != null) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: taskError); }
+                    await MaterialBudgetLedger.PostAsync(_uow, request.ProjectId, requestId, line.ItemId, line.VariantId,
+                        quantity, MaterialBudgetTransactionTypes.IssueDebit, debit,
+                        request.ActualCost, request.ActualCost, debitedBefore, user.Id, null);
                 }
                 request.Status = request.Requisitions.Any(i => i.IssuedQuantity < i.Quantity)
                     ? MaterialRequestStatuses.PartiallyIssued
@@ -423,12 +533,83 @@ namespace cpms_Application.Services
             }
         }
 
+        public async Task<ApiResponse> AdjustActualCostAsync(int requestId, AdjustActualCostRequest adjustment)
+        {
+            var user = _claimService.GetUserClaim();
+            if (!IsRole(user, Role.WAREHOUSE_MANAGER)) return Forbidden("Only warehouse managers may adjust actual cost.");
+            if (adjustment == null || adjustment.Items.Count == 0)
+                return new ApiResponse().SetBadRequest(message: "Actual-cost items are required.");
+            if (adjustment.Items.Any(i => i.UnitActualCost < 0))
+                return new ApiResponse().SetBadRequest(message: "Unit actual cost cannot be negative.");
+
+            await _uow.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            try
+            {
+                var request = await _uow.MaterialRequests.GetAsync(r => r.RequestId == requestId,
+                    q => q.Include(r => r.Project).Include(r => r.Warehouse).Include(r => r.Requisitions));
+                if (request == null) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetNotFound(message: "Material request not found."); }
+                if (request.Warehouse == null || request.Warehouse.ManagerId != user.Id)
+                { await _uow.RollbackTransactionAsync(); return Forbidden("You may only adjust requests assigned to a warehouse you manage."); }
+                if (!MatchesRowVersion(request.RowVersion, adjustment.RowVersion))
+                { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "The request was changed by another user. Reload and retry."); }
+                if (request.Status != MaterialRequestStatuses.Approved &&
+                    request.Status != MaterialRequestStatuses.PartiallyApproved &&
+                    request.Status != MaterialRequestStatuses.PartiallyIssued &&
+                    request.Status != MaterialRequestStatuses.Issued)
+                { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "Actual cost can only be adjusted on approved or issued requests."); }
+                if (request.Project.Status is ProjectStatus.CANCELLED or ProjectStatus.COMPLETED or ProjectStatus.PAUSED)
+                { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict("Actual cost cannot be adjusted while the project is paused or closed."); }
+                if (adjustment.Items.Select(i => i.ItemId).Distinct().Count() != adjustment.Items.Count ||
+                    adjustment.Items.Any(i => request.Requisitions.All(r => r.ItemId != i.ItemId)))
+                { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetBadRequest(message: "Adjustment contains invalid or duplicate request items."); }
+
+                var oldActualCost = request.ActualCost;
+                foreach (var entry in adjustment.Items)
+                {
+                    var line = request.Requisitions.Single(r => r.ItemId == entry.ItemId);
+                    if (line.UnitActualCost == entry.UnitActualCost) continue;
+                    var outstanding = await MaterialBudgetLedger.GetOutstandingQuantityAsync(_uow, requestId, line.VariantId);
+                    var delta = (entry.UnitActualCost - line.UnitActualCost) * outstanding;
+                    if (request.BudgetDebitedAmount + delta < 0)
+                    { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: "The adjustment would drive the posted budget amount below zero."); }
+                    line.UnitActualCost = entry.UnitActualCost;
+                    if (delta == 0) continue;
+                    var taskError = await MaterialBudgetLedger.ApplyTaskActualAsync(_uow, request.TaskId, delta);
+                    if (taskError != null) { await _uow.RollbackTransactionAsync(); return new ApiResponse().SetConflict(message: taskError); }
+                    var debitedBefore = request.BudgetDebitedAmount;
+                    request.BudgetDebitedAmount = debitedBefore + delta;
+                    await MaterialBudgetLedger.PostAsync(_uow, request.ProjectId, requestId, line.ItemId, line.VariantId,
+                        outstanding, MaterialBudgetTransactionTypes.CorrectionDelta, delta,
+                        oldActualCost, request.Requisitions.Sum(i => i.ApprovedQuantity * i.UnitActualCost),
+                        debitedBefore, user.Id, adjustment.Note);
+                }
+                request.ActualCost = request.Requisitions.Sum(i => i.ApprovedQuantity * i.UnitActualCost);
+                request.ActualCostUpdatedAt = DateTime.UtcNow;
+                request.ActualCostUpdatedByUserId = user.Id;
+                await _uow.SaveChangeAsync();
+                await _uow.CommitTransactionAsync();
+                return await GetRequestByIdAsync(requestId);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                await _uow.RollbackTransactionAsync();
+                return new ApiResponse().SetConflict(message: "The request changed while its cost was being adjusted. Reload and retry.");
+            }
+            catch (Exception)
+            {
+                await _uow.RollbackTransactionAsync();
+                return InternalError("Unable to adjust actual cost.");
+            }
+        }
+
         public async Task<ApiResponse> UpdatePendingRequestAsync(int requestId, UpdatePendingMaterialRequest update)
         {
             var user = _claimService.GetUserClaim();
             if (!IsRole(user, Role.PM)) return Forbidden("Only project managers may edit material requests.");
             if (update.Items.Count == 0 || update.Items.Any(i => i.Quantity <= 0))
                 return new ApiResponse().SetBadRequest(message: "Every request item must have a positive quantity.");
+            if (update.EstimatedCost.HasValue && update.EstimatedCost.Value < 0)
+                return new ApiResponse().SetBadRequest(message: "Estimated cost cannot be negative.");
 
             await _uow.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             try
@@ -466,6 +647,8 @@ namespace cpms_Application.Services
                     item.Note = replacement.Note;
                 }
                 request.RequestNote = update.RequestNote;
+                if (update.EstimatedCost.HasValue)
+                    request.EstimatedCost = update.EstimatedCost.Value;
                 await _uow.SaveChangeAsync();
                 await _uow.CommitTransactionAsync();
                 return await GetRequestByIdAsync(requestId);
@@ -483,6 +666,8 @@ namespace cpms_Application.Services
             if (request.Project.PMUserID != user.Id) return Forbidden("You may only cancel requests for a project you manage.");
             if (request.Status != MaterialRequestStatuses.Pending) return new ApiResponse().SetConflict(message: "Only pending requests can be cancelled by the project manager.");
             if (!MatchesRowVersion(request.RowVersion, cancellation.RowVersion)) return new ApiResponse().SetConflict(message: "The request was changed by another user. Reload and retry.");
+            if (request.BudgetDebitedAmount != 0)
+                return new ApiResponse().SetConflict(message: "The request already has posted budget entries and cannot be cancelled.");
             request.Status = MaterialRequestStatuses.Cancelled;
             request.DecisionNote = cancellation.Reason;
             await _uow.SaveChangeAsync();

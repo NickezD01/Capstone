@@ -200,4 +200,74 @@ namespace cpms_Application.Response.AiConstructionPlanner
         public string RelatedPhaseId { get; set; } = string.Empty;
         public string CompletionCriteria { get; set; } = string.Empty;
     }
+
+    /// <summary>
+    /// Step 12 AI preview/confirm workflow. A preview carries proposed phases and
+    /// tasks with temporary IDs. The PM edits the preview client-side and echoes
+    /// it back to the confirm endpoint; nothing is persisted until confirm.
+    /// </summary>
+    public class ProjectAiPlanPreviewResponse
+    {
+        public List<AiPhaseProposalResponse> Phases { get; set; } = new();
+        public List<AiTaskProposalResponse> Tasks { get; set; } = new();
+        public List<string> Warnings { get; set; } = new();
+    }
+
+    public class AiPhaseProposalResponse
+    {
+        /// <summary>Temporary ID the client uses to reference this proposed phase.</summary>
+        public string TempId { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Stable AI key carried across generate calls so tasks:generate can map
+        /// freshly generated tasks to an edited phase echo. Empty for existing phases.
+        /// </summary>
+        public string AiKey { get; set; } = string.Empty;
+
+        /// <summary>Existing phase id. Set only when the proposal references a persisted phase.</summary>
+        public int? PhaseId { get; set; }
+
+        public string Name { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public int SequenceOrder { get; set; }
+        public DateTime BaselineStart { get; set; }
+        public DateTime BaselineEnd { get; set; }
+    }
+
+    public class AiTaskProposalResponse
+    {
+        public string TempId { get; set; } = string.Empty;
+
+        /// <summary>Temporary ID of a phase in the same preview. Null when <see cref="PhaseId"/> is set.</summary>
+        public string? PhaseTempId { get; set; }
+
+        /// <summary>Existing phase id. Set only when generating for a selected persisted phase.</summary>
+        public int? PhaseId { get; set; }
+
+        public string TaskName { get; set; } = string.Empty;
+        public DateTime BaselineStart { get; set; }
+        public DateTime BaselineEnd { get; set; }
+        public decimal PlannedBudget { get; set; }
+    }
+
+    public class ConfirmProjectAiPlanResponse
+    {
+        public List<ConfirmedAiPhaseResponse> Phases { get; set; } = new();
+        public List<ConfirmedAiTaskResponse> Tasks { get; set; } = new();
+    }
+
+    public class ConfirmedAiPhaseResponse
+    {
+        public string TempId { get; set; } = string.Empty;
+        public int PhaseId { get; set; }
+        public string RowVersion { get; set; } = string.Empty;
+    }
+
+    public class ConfirmedAiTaskResponse
+    {
+        public string TempId { get; set; } = string.Empty;
+        public int TaskId { get; set; }
+        public int PhaseId { get; set; }
+        public string RowVersion { get; set; } = string.Empty;
+    }
 }

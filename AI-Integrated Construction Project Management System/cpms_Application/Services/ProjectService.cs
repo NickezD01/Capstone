@@ -27,12 +27,17 @@ namespace cpms_Application.Services
         private readonly IUnitOfWork _unitOfWork;
         private readonly IMapper _mapper;
         private readonly IClaimService _claimService;
+        private readonly IWarehouseContext _warehouseContext;
+        private readonly IProjectAccessService _projectAccess;
 
-        public ProjectService(IUnitOfWork unitOfWork, IMapper mapper, IClaimService claimService)
+        public ProjectService(IUnitOfWork unitOfWork, IMapper mapper, IClaimService claimService,
+            IWarehouseContext? warehouseContext = null, IProjectAccessService? projectAccess = null)
         {
             _unitOfWork = unitOfWork;
             _mapper = mapper;
             _claimService = claimService;
+            _warehouseContext = warehouseContext ?? new WarehouseContext(unitOfWork);
+            _projectAccess = projectAccess ?? new ProjectAccessService(unitOfWork, claimService);
         }
 
         public async Task<ApiResponse> CreateProjectAsync(CreateProjectRequest request)
@@ -411,20 +416,15 @@ namespace cpms_Application.Services
                 if (project == null)
                     return apiResponse.SetNotFound("Project not found.");
                 var currentUser = _claimService.GetUserClaim();
-                Warehouse? selectedWarehouse = null;
-                if (!warehouseId.HasValue)
-                    return apiResponse.SetBadRequest("warehouseId is required so inventory from another warehouse cannot hide a local shortage.");
-                if (warehouseId.HasValue)
-                {
-                    selectedWarehouse = await _unitOfWork.Warehouses.GetByIdAsync(warehouseId.Value);
-                    if (selectedWarehouse == null) return apiResponse.SetNotFound(message: "Warehouse not found.");
-                }
+                var selectedWarehouse = await _warehouseContext.GetActiveWarehouseAsync();
+                if (selectedWarehouse == null)
+                    return apiResponse.SetConflict("No active warehouse is configured.");
+                var activeWarehouseId = selectedWarehouse.WarehouseId;
                 if (IsRole(currentUser, Role.PM) && project.PMUserID != currentUser.Id)
                     return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You may only calculate MRP for a project you manage.");
-                if (IsRole(currentUser, Role.WAREHOUSE_MANAGER) &&
-                    (selectedWarehouse == null || selectedWarehouse.ManagerId != currentUser.Id))
-                    return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Warehouse managers must select a warehouse they manage.");
-                if (!IsRole(currentUser, Role.ADMIN) && !IsRole(currentUser, Role.PM) && !IsRole(currentUser, Role.WAREHOUSE_MANAGER))
+                if (IsRole(currentUser, Role.WAREHOUSE_MANAGER) && selectedWarehouse.ManagerId != currentUser.Id)
+                    return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Warehouse managers may only calculate MRP against the active warehouse they manage.");
+                if (!IsRole(currentUser, Role.PM) && !IsRole(currentUser, Role.WAREHOUSE_MANAGER))
                     return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "This role cannot calculate MRP.");
 
                 var requirements = await _unitOfWork.TaskMaterialRequirements.GetAllAsync(
@@ -467,7 +467,7 @@ namespace cpms_Application.Services
                 var projectReservations = await _unitOfWork.InventoryReservations.GetAllAsync(
                     filter: r => r.MaterialRequest.ProjectId == projectId &&
                                  r.Status == InventoryReservationStatuses.Active &&
-                                 (!warehouseId.HasValue || r.InventoryRecord.WarehouseId == warehouseId.Value),
+                                 r.InventoryRecord.WarehouseId == activeWarehouseId,
                     include: query => query.Include(r => r.RequestItem).Include(r => r.InventoryRecord));
                 var reservedForProjectByVariant = projectReservations
                     .GroupBy(r => r.RequestItem.VariantId)
@@ -480,7 +480,7 @@ namespace cpms_Application.Services
                                      line.PurchaseOrder.Status == PurchaseOrderStatus.SHIPPED ||
                                      line.PurchaseOrder.Status == PurchaseOrderStatus.PARTIALLY_RECEIVED) &&
                                     line.ReceivedQuantity + line.DamagedQuantity + line.MissingQuantity < line.Quantity &&
-                                    (!warehouseId.HasValue || line.PurchaseOrder.WarehouseId == warehouseId.Value),
+                                    line.PurchaseOrder.WarehouseId == activeWarehouseId,
                     include: query => query.Include(line => line.PurchaseOrder));
                 var openOrderForProjectByVariant = projectOpenOrderLines
                     .GroupBy(line => line.VariantId)
@@ -517,11 +517,11 @@ namespace cpms_Application.Services
                 // TỐI ƯU HÓA TRUY VẤN: Chỉ lấy tồn kho của các Vật tư có trong danh sách yêu cầu
                 var currentInventories = await _unitOfWork.Inventories.GetAllAsync(
                     filter: i => requiredVariantIds.Contains(i.VariantId) &&
-                                 (!warehouseId.HasValue || i.WarehouseId == warehouseId.Value)
+                                 i.WarehouseId == activeWarehouseId
                 );
                 var inventoriesList = currentInventories.ToList();
                 var alternateInventories = await _unitOfWork.Inventories.GetAllAsync(
-                    filter: i => requiredVariantIds.Contains(i.VariantId) && i.WarehouseId != warehouseId.Value);
+                    filter: i => requiredVariantIds.Contains(i.VariantId) && i.WarehouseId != activeWarehouseId);
 
                 var mrpResultList = new List<MRPCalculationResponse>();
 
@@ -561,7 +561,7 @@ namespace cpms_Application.Services
                             return new MRPTransferRecommendation
                             {
                                 SourceWarehouseId = i.WarehouseId,
-                                DestinationWarehouseId = warehouseId.Value,
+                                DestinationWarehouseId = activeWarehouseId,
                                 VariantId = gross.VariantId,
                                 SuggestedQuantity = suggested
                             };
@@ -572,7 +572,7 @@ namespace cpms_Application.Services
                     mrpResultList.Add(new MRPCalculationResponse
                     {
                         VariantId = gross.VariantId,
-                        WarehouseId = warehouseId,
+                        WarehouseId = activeWarehouseId,
                         InventoryScope = "WAREHOUSE",
                         MaterialId = gross.MaterialId,
                         MaterialName = gross.MaterialName,
@@ -594,11 +594,11 @@ namespace cpms_Application.Services
                 await _unitOfWork.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
                 versionTransactionStarted = true;
                 var previousRuns = await _unitOfWork.MrpPlanningRuns.GetAllAsync(
-                    r => r.ProjectId == projectId && r.WarehouseId == warehouseId.Value);
+                    r => r.ProjectId == projectId && r.WarehouseId == activeWarehouseId);
                 var run = new MrpPlanningRun
                 {
                     ProjectId = projectId,
-                    WarehouseId = warehouseId.Value,
+                    WarehouseId = activeWarehouseId,
                     Version = previousRuns.Count == 0 ? 1 : previousRuns.Max(r => r.Version) + 1,
                     CalculatedAt = DateTime.UtcNow,
                     CalculatedByUserId = currentUser.Id,
@@ -631,21 +631,20 @@ namespace cpms_Application.Services
 
         public async Task<ApiResponse> GetLatestMRPForProjectAsync(int projectId, int warehouseId)
         {
-            if (warehouseId <= 0) return new ApiResponse().SetBadRequest("warehouseId is required.");
             var project = await _unitOfWork.Projects.GetByIdAsync(projectId);
             if (project == null) return new ApiResponse().SetNotFound("Project not found.");
-            var warehouse = await _unitOfWork.Warehouses.GetByIdAsync(warehouseId);
-            if (warehouse == null) return new ApiResponse().SetNotFound("Warehouse not found.");
+            var warehouse = await _warehouseContext.GetActiveWarehouseAsync();
+            if (warehouse == null) return new ApiResponse().SetConflict("No active warehouse is configured.");
             var user = _claimService.GetUserClaim();
             if (IsRole(user, Role.PM) && project.PMUserID != user.Id)
                 return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You may only view MRP runs for a project you manage.");
             if (IsRole(user, Role.WAREHOUSE_MANAGER) && warehouse.ManagerId != user.Id)
-                return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You may only view MRP runs for a warehouse you manage.");
+                return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You may only view MRP runs for the active warehouse you manage.");
             if (!IsRole(user, Role.ADMIN) && !IsRole(user, Role.PM) && !IsRole(user, Role.WAREHOUSE_MANAGER))
                 return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "This role cannot view MRP runs.");
 
             var runs = await _unitOfWork.MrpPlanningRuns.GetAllAsync(run =>
-                run.ProjectId == projectId && run.WarehouseId == warehouseId);
+                run.ProjectId == projectId && run.WarehouseId == warehouse.WarehouseId);
             var latest = runs.OrderByDescending(run => run.Version).FirstOrDefault();
             if (latest == null) return new ApiResponse().SetNotFound("No MRP run exists for this project and warehouse.");
             var items = JsonSerializer.Deserialize<List<MRPCalculationResponse>>(latest.SnapshotJson) ?? new();
@@ -679,6 +678,12 @@ namespace cpms_Application.Services
                     await _unitOfWork.RollbackTransactionAsync();
                     transactionStarted = false;
                     return apiResponse.SetNotFound("Project not found.");
+                }
+                if (!_projectAccess.IsOwningProjectManager(project))
+                {
+                    await _unitOfWork.RollbackTransactionAsync();
+                    transactionStarted = false;
+                    return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Only the owning project manager may adjust this project's budget.");
                 }
                 if (project.Status is ProjectStatus.COMPLETED or ProjectStatus.CANCELLED)
                 {
@@ -812,9 +817,8 @@ namespace cpms_Application.Services
                 var project = await _unitOfWork.Projects.GetAsync(p => p.ProjectId == projectId,
                     query => query.Include(p => p.Tasks));
                 if (project == null) return await Abort(new ApiResponse().SetNotFound("Project not found."));
-                var user = _claimService.GetUserClaim();
-                if (!IsRole(user, Role.ADMIN) && (!IsRole(user, Role.PM) || project.PMUserID != user.Id))
-                    return await Abort(new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You cannot change this project."));
+                if (!_projectAccess.IsOwningProjectManager(project))
+                    return await Abort(new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "Only the owning project manager may change this project."));
                 if (!MatchesRowVersion(project.RowVersion, request.RowVersion))
                     return await Abort(new ApiResponse().SetConflict("Project changed. Reload and retry."));
 
@@ -933,22 +937,7 @@ namespace cpms_Application.Services
                 : "Approve or reject pending progress reports before closing the project.";
         }
 
-        private async Task<bool> CanReadProjectAsync(Project project)
-        {
-            var currentUser = _claimService.GetUserClaim();
-            if (IsRole(currentUser, Role.ADMIN)) return true;
-            if (IsRole(currentUser, Role.PM)) return project.PMUserID == currentUser.Id;
-            if (IsRole(currentUser, Role.CUSTOMER))
-                return project.CustomerUserId.HasValue && project.CustomerUserId.Value == currentUser.Id;
-            if (!IsRole(currentUser, Role.WAREHOUSE_MANAGER)) return false;
-
-            var linkedRequest = await _unitOfWork.MaterialRequests.GetAsync(r =>
-                r.ProjectId == project.ProjectId && r.WarehouseId.HasValue && r.Warehouse!.ManagerId == currentUser.Id);
-            if (linkedRequest != null) return true;
-            var linkedOrder = await _unitOfWork.PurchaseOrders.GetAsync(o =>
-                o.ProjectId == project.ProjectId && o.Warehouse.ManagerId == currentUser.Id);
-            return linkedOrder != null;
-        }
+        private Task<bool> CanReadProjectAsync(Project project) => _projectAccess.CanReadProjectAsync(project);
 
         private static bool IsRole(ClaimDTO claim, Role role) =>
             string.Equals(claim.Role, role.ToString(), StringComparison.OrdinalIgnoreCase);

@@ -57,6 +57,7 @@ namespace cpms_Infrastructure
         public IMaterialRequestRepository MaterialRequests { get; }
         public IMaterialRequisitionRepository MaterialRequisitions { get; }
         public IGenericRepository<cpms_Domain.Models.MaterialReturn> MaterialReturns { get; }
+        public IGenericRepository<cpms_Domain.Models.MaterialBudgetTransaction> MaterialBudgetTransactions { get; }
         public IProjectBudgetHistoryRepository ProjectBudgetHistories { get; }
         public IGenericRepository<cpms_Domain.Models.MrpPlanningRun> MrpPlanningRuns { get; }
 
@@ -103,6 +104,7 @@ namespace cpms_Infrastructure
             MaterialRequests = new MaterialRequestRepository(context);
             MaterialRequisitions = new MaterialRequisitionRepository(context);
             MaterialReturns = new GenericRepository<cpms_Domain.Models.MaterialReturn>(context);
+            MaterialBudgetTransactions = new GenericRepository<cpms_Domain.Models.MaterialBudgetTransaction>(context);
             TaskMaterialRequirements = new TaskMaterialRequirementRepository(context);
             ProjectBudgetHistories = new ProjectBudgetHistoryRepository(context);
             MrpPlanningRuns = new GenericRepository<cpms_Domain.Models.MrpPlanningRun>(context);

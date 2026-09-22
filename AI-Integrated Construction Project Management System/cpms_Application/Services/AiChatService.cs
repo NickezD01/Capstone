@@ -22,19 +22,22 @@ namespace cpms_Application.Services
         private readonly IGoogleAIClient _googleAIClient;
         private readonly ITavilySearchClient _tavilySearchClient;
         private readonly AppSetting _appSetting;
+        private readonly IProjectAccessService _projectAccess;
 
         public AiChatService(
             IUnitOfWork uow,
             IClaimService claimService,
             IGoogleAIClient googleAIClient,
             ITavilySearchClient tavilySearchClient,
-            AppSetting appSetting)
+            AppSetting appSetting,
+            IProjectAccessService? projectAccess = null)
         {
             _uow = uow;
             _claimService = claimService;
             _googleAIClient = googleAIClient;
             _tavilySearchClient = tavilySearchClient;
             _appSetting = appSetting;
+            _projectAccess = projectAccess ?? new ProjectAccessService(uow, claimService);
         }
 
         public async Task<ApiResponse> CreateSessionAsync(CreateAiChatSessionRequest request)
@@ -47,6 +50,8 @@ namespace cpms_Application.Services
                 var project = await _uow.Projects.GetByIdAsync(request.ProjectId.Value);
                 if (project == null)
                     return response.SetNotFound("Project not found.");
+                if (!await _projectAccess.CanReadProjectAsync(project))
+                    return response.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You do not have access to this project.");
             }
 
             var title = string.IsNullOrWhiteSpace(request.Title) ? "New chat" : request.Title.Trim();
