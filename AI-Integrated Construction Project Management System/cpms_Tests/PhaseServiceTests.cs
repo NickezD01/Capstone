@@ -23,8 +23,7 @@ public class PhaseServiceTests
             Description = "Groundwork",
             SequenceOrder = 1,
             BaselineStart = new DateTime(2026, 9, 1),
-            BaselineEnd = new DateTime(2026, 9, 30),
-            WorkCategoryId = 1
+            BaselineEnd = new DateTime(2026, 9, 30)
         });
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -53,8 +52,7 @@ public class PhaseServiceTests
             Name = "Foundation",
             SequenceOrder = 1,
             BaselineStart = new DateTime(2026, 8, 31),
-            BaselineEnd = new DateTime(2026, 9, 30),
-            WorkCategoryId = 1
+            BaselineEnd = new DateTime(2026, 9, 30)
         });
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -207,7 +205,6 @@ public class PhaseServiceTests
             SequenceOrder = 1,
             BaselineStart = new DateTime(2026, 9, 1),
             BaselineEnd = new DateTime(2026, 9, 30),
-            WorkCategoryId = 1,
             RowVersion = "Ag=="
         });
 
@@ -220,8 +217,7 @@ public class PhaseServiceTests
         Name = name,
         SequenceOrder = 1,
         BaselineStart = new DateTime(2026, 9, 1),
-        BaselineEnd = new DateTime(2026, 9, 30),
-        WorkCategoryId = 1
+        BaselineEnd = new DateTime(2026, 9, 30)
     };
 
     private static Phase FoundationPhase() => new()
@@ -237,7 +233,6 @@ public class PhaseServiceTests
     private static TestUnitOfWork CreateUnitOfWork()
     {
         var uow = new TestUnitOfWork();
-        uow.WorkCategoryRecords.Add(new WorkCategory { WorkCategoryId = 1, Name = "Structural" });
         uow.ProjectRecords.Add(new Project
         {
             ProjectId = 1,

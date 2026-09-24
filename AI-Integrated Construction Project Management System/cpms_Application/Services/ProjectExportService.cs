@@ -139,12 +139,6 @@ namespace cpms_Application.Services
                 };
             }).ToList();
 
-            var categories = await _uow.WorkCategories.GetAllAsync(null);
-            var categoryById = categories.ToDictionary(c => c.WorkCategoryId, c => c.Name);
-            var categoryByPhaseId = phases.ToDictionary(
-                p => p.PhaseId,
-                p => categoryById.TryGetValue(p.WorkCategoryId, out var name) ? name : string.Empty);
-
             using var workbook = new XLWorkbook();
             ExcelSheetWriter.AddSheet(workbook, "Project", new[] { projectRow });
             if (fullView)
@@ -153,7 +147,6 @@ namespace cpms_Application.Services
                 {
                     PhaseId = p.PhaseId,
                     Name = p.Name,
-                    WorkCategory = categoryByPhaseId.GetValueOrDefault(p.PhaseId, string.Empty),
                     Description = p.Description,
                     SequenceOrder = p.SequenceOrder,
                     BaselineStart = p.BaselineStart,
@@ -169,7 +162,6 @@ namespace cpms_Application.Services
                 {
                     TaskId = t.TaskId,
                     PhaseName = t.PhaseName,
-                    WorkCategory = categoryByPhaseId.GetValueOrDefault(t.PhaseId, string.Empty),
                     TaskName = t.TaskName,
                     AssignedTo = assignees.TryGetValue(t.AssignedToUserID, out var name) ? name : string.Empty,
                     PlannedBudget = t.PlannedBudget,

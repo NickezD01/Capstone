@@ -40,7 +40,6 @@ namespace cpms_Infrastructure
         public DbSet<TaskItem> TaskItems { get; set; }
         public DbSet<TaskIssue> TaskIssues { get; set; }
         public DbSet<Phase> Phases { get; set; }
-        public DbSet<WorkCategory> WorkCategories { get; set; }
         public DbSet<ProgressReport> ProgressReports { get; set; }
         public DbSet<ProjectBudgetHistory> ProjectBudgetHistories { get; set; }
         public DbSet<MrpPlanningRun> MrpPlanningRuns { get; set; }

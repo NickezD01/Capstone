@@ -204,7 +204,6 @@ builder.Services.AddScoped<IAiConstructionPlannerService, AiConstructionPlannerS
 builder.Services.AddScoped<IProjectExportService, ProjectExportService>();
 builder.Services.AddScoped<IRiskAssessmentService, RiskAssessmentService>();
 builder.Services.AddScoped<ITaskIssueService, TaskIssueService>();
-builder.Services.AddScoped<IWorkCategoryService, WorkCategoryService>();
 
 // ======================================================
 // BACKGROUND SERVICES REGISTRATION

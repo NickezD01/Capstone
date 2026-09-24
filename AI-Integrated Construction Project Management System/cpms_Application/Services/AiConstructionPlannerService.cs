@@ -611,19 +611,6 @@ namespace cpms_Application.Services
                     return new ApiResponse().SetBadRequest($"Duplicate phase name '{name}'.");
                 if (takenPhaseNames.Contains(name))
                     return new ApiResponse().SetConflict($"A phase named '{name}' already exists in the project.");
-                if (phase.WorkCategoryId <= 0)
-                    return new ApiResponse().SetBadRequest($"Phase '{name}' must reference a work category.");
-            }
-
-            var categoryById = new Dictionary<int, WorkCategory>();
-            if (phases.Count > 0)
-            {
-                var categoryIds = phases.Select(p => p.WorkCategoryId).Distinct().ToList();
-                foreach (var category in await _uow.WorkCategories.GetAllAsync(c => categoryIds.Contains(c.WorkCategoryId)))
-                    categoryById[category.WorkCategoryId] = category;
-                var missing = categoryIds.FirstOrDefault(id => !categoryById.ContainsKey(id));
-                if (missing != 0)
-                    return new ApiResponse().SetNotFound($"Work category {missing} was not found.");
             }
 
             var takenTaskNames = new Dictionary<int, HashSet<string>>();
@@ -698,8 +685,6 @@ namespace cpms_Application.Services
                     {
                         ProjectId = projectId,
                         Project = project,
-                        WorkCategoryId = phase.WorkCategoryId,
-                        WorkCategory = categoryById[phase.WorkCategoryId],
                         Name = phase.Name.Trim(),
                         Description = string.IsNullOrWhiteSpace(phase.Description) ? null : phase.Description.Trim(),
                         SequenceOrder = phase.SequenceOrder,

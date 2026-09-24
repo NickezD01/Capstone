@@ -23,7 +23,6 @@ namespace cpms_Infrastructure
         public ITaskItemRepository TaskItems { get; }
         public IGenericRepository<cpms_Domain.Models.TaskIssue> TaskIssues { get; }
         public IGenericRepository<cpms_Domain.Models.Phase> Phases { get; }
-        public IGenericRepository<cpms_Domain.Models.WorkCategory> WorkCategories { get; }
         public IProgressReportRepository ProgressReports { get; }
         public IMaterialRepository Materials { get; }
         public IGenericRepository<cpms_Domain.Models.MaterialVariant> MaterialVariants { get; }
@@ -70,7 +69,6 @@ namespace cpms_Infrastructure
             TaskItems = new TaskItemRepository(context);
             TaskIssues = new GenericRepository<cpms_Domain.Models.TaskIssue>(context);
             Phases = new GenericRepository<cpms_Domain.Models.Phase>(context);
-            WorkCategories = new GenericRepository<cpms_Domain.Models.WorkCategory>(context);
             ProgressReports = new ProgressReportRepository(context);
             Materials = new MaterialRepository(context);
             MaterialVariants = new GenericRepository<cpms_Domain.Models.MaterialVariant>(context);

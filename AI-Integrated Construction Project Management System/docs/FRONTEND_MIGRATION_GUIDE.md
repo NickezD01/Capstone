@@ -87,8 +87,7 @@ There is exactly one active warehouse. Warehouse selection no longer exists.
   - `PUT /api/Tasks/{taskId}`, task lifecycle under `/api/Tasks/{taskId}/...`
   - `GET /api/Projects/{projectId}/material-requirements`
 - `TaskResponse` carries `phaseId`, `phaseName`, and nested `phase`. Task dates must sit inside both project and phase baselines.
-- Phase endpoints: `POST /api/Projects/{projectId}/phases`, `GET .../phases`, `GET /api/Phases/{phaseId}`, `PUT /api/Phases/{phaseId}`, `POST /api/Phases/{phaseId}/cancel` (all owning-PM writes; reads are staff-scoped).
-- Work categories: every phase belongs to a category (`workCategoryId`, required). Populate pickers from `GET /api/WorkCategories` (any authenticated user); only `ADMIN` manages the list. Phases/tasks responses and the export Phases/Tasks sheets include the category name.
+- Phase endpoints: `POST /api/Projects/{projectId}/phases`, `GET .../phases`, `GET /api/Phases/{phaseId}`, `PUT /api/Phases/{phaseId}`, `POST /api/Phases/{phaseId}/cancel` (all owning-PM writes; reads are staff-scoped). Project structure is phase → task, nothing in between.
 - Project customer: `PUT /api/Projects/{projectId}/customer` (`customerUserId?`, `rowVersion`, owning PM). `ProjectResponse.customerName` exists. A `CUSTOMER` sees only assigned projects. Populate the picker with `GET /api/UserAccount/Customers?search=` (PM-visible).
 - Visibility grants: assigned customers may list `GET .../phases` and `GET .../tasks` of their projects (detail endpoints stay staff-only); warehouse managers with operational project access may read `GET /api/ProgressReport/task/{taskId}`. Other roles still get 403 — keep the graceful "not shared" notes as fallback.
 - AI import alternative: `POST /api/Projects/import-word-ai` (multipart `.docx`, PM) returns a draft (`project` fields + `plan` preview with temp IDs, persists nothing). Show it for review, create the project normally, then send the preview to `.../ai/confirm`.

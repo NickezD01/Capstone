@@ -25,7 +25,6 @@ namespace cpms_Application
         ITaskItemRepository TaskItems { get; }
         IGenericRepository<TaskIssue> TaskIssues { get; }
         IGenericRepository<Phase> Phases { get; }
-        IGenericRepository<WorkCategory> WorkCategories { get; }
         IProgressReportRepository ProgressReports { get; }
 
         // ========================================================

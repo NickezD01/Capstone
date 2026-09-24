@@ -27,7 +27,6 @@ namespace cpms_Application.Response.ProjectExport
     {
         public int PhaseId { get; set; }
         public string Name { get; set; } = string.Empty;
-        public string WorkCategory { get; set; } = string.Empty;
         public string? Description { get; set; }
         public int SequenceOrder { get; set; }
         public DateTime BaselineStart { get; set; }
@@ -39,7 +38,6 @@ namespace cpms_Application.Response.ProjectExport
     {
         public int TaskId { get; set; }
         public string PhaseName { get; set; } = string.Empty;
-        public string WorkCategory { get; set; } = string.Empty;
         public string TaskName { get; set; } = string.Empty;
         public string AssignedTo { get; set; } = string.Empty;
         public decimal PlannedBudget { get; set; }

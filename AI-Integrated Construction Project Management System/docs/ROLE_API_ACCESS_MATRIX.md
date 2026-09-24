@@ -363,21 +363,9 @@ Phase endpoints are now available as the first additive restructuring slice. The
 
 Phase request/response models:
 
-- `CreatePhaseRequest`: `name`, `description?`, `sequenceOrder`, `baselineStart`, `baselineEnd`, `workCategoryId` (required, must exist).
+- `CreatePhaseRequest`: `name`, `description?`, `sequenceOrder`, `baselineStart`, `baselineEnd`.
 - `UpdatePhaseRequest`: the create fields plus `rowVersion`.
 - `PhaseLifecycleRequest`: `rowVersion`.
-- `PhaseResponse`: `phaseId`, `projectId`, `workCategoryId`, `workCategoryName`, `name`, `description?`, `sequenceOrder`, `baselineStart`, `baselineEnd`, `status`, `createdDate`, `rowVersion`. The nested `phase` summary in `TaskResponse` carries the same category fields.
+- `PhaseResponse`: `phaseId`, `projectId`, `name`, `description?`, `sequenceOrder`, `baselineStart`, `baselineEnd`, `status`, `createdDate`, `rowVersion`.
 
 Phase status values are `PLANNED`, `IN_PROGRESS`, `COMPLETED`, and `CANCELLED`. Phase names are unique within a project. Dates must remain within the project baseline, and stale updates return HTTP 409.
-
-## Work Category APIs
-
-Global admin-managed lookup grouping phases. Reads require any authenticated user; writes are `ADMIN`-only.
-
-| Method | API | Purpose / Extra Rule |
-| --- | --- | --- |
-| GET | `/api/WorkCategories` | List categories ordered by name. |
-| GET | `/api/WorkCategories/{id}` | Category detail. |
-| POST | `/api/WorkCategories` | Create category. Name required (≤ 200 chars), unique; description ≤ 2000 chars. |
-| PUT | `/api/WorkCategories/{id}` | Rename/update a category. Same validation. |
-| DELETE | `/api/WorkCategories/{id}` | Delete a category. Blocked with HTTP 409 while phases still reference it. |

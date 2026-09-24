@@ -408,7 +408,7 @@ AI project planning rules:
 
 - The frontend owns its question form and sends `AiProjectBriefRequest`: `projectType` (required), `floorAreaM2` (> 0), `numberOfFloors` (≥ 1), `startDate` (required), `endDate` (required, on/after start), `budget?` (≥ 0), `specialRequirements?` (≤ 2000 chars). When both `brief` and legacy `answers` are sent, the brief wins. The legacy five-answer input and `GET /questions` still work.
 - `tasks:generate` requires exactly one phase source: an existing `phaseId` (must belong to the project), or the `phases` preview echo. Tasks are mapped to proposed phases by the stable `aiKey`, so the PM may rename phases without breaking the mapping.
-- `confirm` accepts the PM-edited proposal: rename/re-date/re-budget items freely, drop unwanted items, but keep temporary IDs stable so tasks still resolve to their phases. Every task must reference exactly one of `phaseTempId` (a phase in the same request) or `phaseId` (an existing phase in the project). Every proposed phase must carry an existing `workCategoryId`.
+- `confirm` accepts the PM-edited proposal: rename/re-date/re-budget items freely, drop unwanted items, but keep temporary IDs stable so tasks still resolve to their phases. Every task must reference exactly one of `phaseTempId` (a phase in the same request) or `phaseId` (an existing phase in the project).
 - `confirm` validates phase/task names, dates inside the project and phase baselines, closed phases, duplicate names, and the project budget cap, then creates all phases and tasks in a single transaction. Closed projects return HTTP 409.
 - `complete` ("AI finish the planning for me") reads the current phases/tasks, combines them with the brief and optional `focusNote`, and previews only the remaining work. Existing phases become reference entries (empty `TempId` — strip them before `confirm` and keep `PhaseId` on their tasks); duplicates and unresolvable tasks are dropped with reasons in `warnings`.
 - Only phases and tasks are created. The AI never touches inventory, approvals, customers, or material master data.
@@ -694,21 +694,8 @@ The first restructuring slice adds phase APIs while keeping existing task endpoi
 
 Phase request fields:
 
-- `CreatePhaseRequest`: `name`, `description?`, `sequenceOrder`, `baselineStart`, `baselineEnd`, `workCategoryId` (required, must exist).
+- `CreatePhaseRequest`: `name`, `description?`, `sequenceOrder`, `baselineStart`, `baselineEnd`.
 - `UpdatePhaseRequest`: the create fields plus `rowVersion`.
-- `PhaseResponse` / nested `phase`: include `workCategoryId` and `workCategoryName`.
-
-### Work Categories
-
-Base path: `/api/WorkCategories`. Global admin-managed lookup grouping phases. Reads need any authenticated user; writes are `ADMIN`-only.
-
-| Method | Path | Auth | Body | Result |
-| --- | --- | --- | --- | --- |
-| GET | `/` | any authenticated user | none | `WorkCategoryResponse[]` ordered by name |
-| GET | `/{id}` | any authenticated user | none | `WorkCategoryResponse` |
-| POST | `/` | `ADMIN` | `CreateWorkCategoryRequest` (`name`, `description?`) | `WorkCategoryResponse` (HTTP 201) |
-| PUT | `/{id}` | `ADMIN` | `UpdateWorkCategoryRequest` (`name`, `description?`) | `WorkCategoryResponse` |
-| DELETE | `/{id}` | `ADMIN` | none | Message; 409 while phases still reference the category |
 - `PhaseLifecycleRequest`: `rowVersion`.
 
 Phase status values are `PLANNED`, `IN_PROGRESS`, `COMPLETED`, and `CANCELLED`. Phase names are unique within a project. Phase dates must remain inside the project baseline. Keep the latest `rowVersion` and send it on updates and cancellation; stale values return HTTP 409.

@@ -200,7 +200,7 @@ internal class FakeRepository<T> : IGenericRepository<T> where T : class
         p.Name is "Id" or "WarehouseId" or "VariantId" or "InventoryId" or "TransferId" or "TransferItemId" or
         "ProjectId" or "MaterialId" or "ItemId" or "TransactionId" or "TaskId" or "PoId" or "LineItemId" or "RequestId" or
         "SupplierId" or "CatalogId" or "MetricId" or "ReportId" or "ReservationId" or "AdjustmentId" or "ReturnId" or
-        "PhaseId" or "WorkCategoryId" or "IssueId" or
+        "PhaseId" or "IssueId" or
         "TransferReservationId" or "SessionId" or "MessageId");
     private void AssignIdentity(T entity)
     {
@@ -250,7 +250,6 @@ internal sealed class TestUnitOfWork : IUnitOfWork
     public List<TransferInventoryReservation> TransferReservationRecords { get; } = new();
     public List<Project> ProjectRecords { get; } = new();
     public List<Phase> PhaseRecords { get; } = new();
-    public List<WorkCategory> WorkCategoryRecords { get; } = new();
     public List<TaskMaterialRequirement> RequirementRecords { get; } = new();
     public List<MaterialRequisition> RequisitionRecords { get; } = new();
     public List<MaterialReturn> MaterialReturnRecords { get; } = new();
@@ -301,7 +300,6 @@ internal sealed class TestUnitOfWork : IUnitOfWork
         TransferInventoryReservations = new FakeRepository<TransferInventoryReservation>(TransferReservationRecords);
         Projects = new FakeProjectRepository(ProjectRecords);
         Phases = new FakeRepository<Phase>(PhaseRecords);
-        WorkCategories = new FakeRepository<WorkCategory>(WorkCategoryRecords);
         TaskMaterialRequirements = new FakeRequirementRepository(RequirementRecords);
         MaterialRequisitions = new FakeRequisitionRepository(RequisitionRecords);
         MaterialReturns = new FakeRepository<MaterialReturn>(MaterialReturnRecords);
@@ -333,7 +331,6 @@ internal sealed class TestUnitOfWork : IUnitOfWork
     public ITaskItemRepository TaskItems { get; }
     public IGenericRepository<TaskIssue> TaskIssues { get; }
     public IGenericRepository<Phase> Phases { get; }
-    public IGenericRepository<WorkCategory> WorkCategories { get; }
     public IProgressReportRepository ProgressReports { get; }
     public IMaterialRepository Materials { get; }
     public ISupplierRepository Suppliers { get; }

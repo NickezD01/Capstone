@@ -1,28 +1,8 @@
-# Frontend Implementation Guide — Work Categories, Site Workers, Risks, Gantt
+# Frontend Implementation Guide — Site Workers, Risks, Gantt
 
 Everything below is implemented and live. For each feature: what screens to build, which endpoints to call, and how to handle each response.
 
-Locked ground rules: 1 project = 1 PM (no co-PM UI needed); Dependency Risk is out (no data exists for it); chat, AI chat, meetings, recommendations, and Word import are gone — delete those screens entirely.
-
----
-
-## 1. Work categories — phase picker + display
-
-Phases now belong to a category (Structural, Finishing, MEP, External Works, Preliminaries — ADMIN can add more).
-
-**Endpoints**
-
-| Call | Result |
-| --- | --- |
-| `GET /api/WorkCategories` (any signed-in role) | `[{ workCategoryId, name, description? }]` ordered by name — use for every picker and label |
-| `POST /api/WorkCategories` (ADMIN) | body `name`, `description?` → 201 |
-| `PUT /api/WorkCategories/{id}` (ADMIN) | rename/update |
-| `DELETE /api/WorkCategories/{id}` (ADMIN) | 409 while any phase still uses it — show "in use, reassign phases first" |
-
-**UI work**
-- Phase create/edit forms: required category dropdown fed by `GET`. Missing/invalid id returns 400/404 — surface `errorMessage`.
-- AI plan review screen: every proposed phase needs a category before `confirm` (400 otherwise). Offer the same dropdown per proposed phase.
-- Everywhere a phase or task renders (lists, details, export sheets), show `workCategoryName` next to the phase name.
+Locked ground rules: 1 project = 1 PM (no co-PM UI needed); project structure is phase → task with nothing in between (work categories were removed); Dependency Risk is out (no data exists for it); chat, AI chat, meetings, recommendations, and Word import are gone — delete those screens entirely.
 
 ---
 

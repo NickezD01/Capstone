@@ -12,7 +12,6 @@ using cpms_Application.Request.SupplierCatalog;
 using cpms_Application.Request.Tasks;
 using cpms_Application.Request.User;
 using cpms_Application.Request.Warehouse;
-using cpms_Application.Request.WorkCategory;
 using cpms_Application.Response.MaterialRequest;
 using cpms_Application.Response.Phase;
 using cpms_Application.Response.Project;
@@ -20,7 +19,6 @@ using cpms_Application.Response.PurchaseOrder;
 using cpms_Application.Response.SupplierCatalog;
 using cpms_Application.Response.Tasks;
 using cpms_Application.Response.UserAccount;
-using cpms_Application.Response.WorkCategory;
 using cpms_Application.Response;
 using cpms_Application.Services;
 using cpms_Domain;
@@ -2776,94 +2774,6 @@ public class BusinessRuleRegressionTests
             if (request.Reservations.All(r => r.ReservationId != reservation.ReservationId))
                 request.Reservations.Add(reservation);
         }
-    }
-
-    [Fact]
-    public async Task WorkCategoryCrudEnforcesUniquenessAndReferences()
-    {
-        var uow = new TestUnitOfWork();
-        var service = new WorkCategoryService(uow);
-
-        var created = await service.CreateAsync(new CreateWorkCategoryRequest { Name = "Structural" });
-        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
-        Assert.Equal(1, Assert.IsType<WorkCategoryResponse>(created.Result).WorkCategoryId);
-
-        var duplicate = await service.CreateAsync(new CreateWorkCategoryRequest { Name = "structural" });
-        Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode);
-
-        uow.PhaseRecords.Add(new Phase { PhaseId = 1, ProjectId = 1, WorkCategoryId = 1, Name = "P" });
-        var blocked = await service.DeleteAsync(1);
-        Assert.Equal(HttpStatusCode.Conflict, blocked.StatusCode);
-
-        uow.PhaseRecords.Clear();
-        var deleted = await service.DeleteAsync(1);
-        Assert.True(deleted.IsSuccess, deleted.ErrorMessage);
-        Assert.Empty(uow.WorkCategoryRecords);
-    }
-
-    [Fact]
-    public async Task PhaseCreationRequiresExistingWorkCategory()
-    {
-        var uow = new TestUnitOfWork();
-        uow.ProjectRecords.Add(new Project { ProjectId = 1, ProjectName = "P", PMUserID = 5, Status = ProjectStatus.PLANNING, BaselineStart = DateTime.UtcNow.Date, BaselineEnd = DateTime.UtcNow.Date.AddDays(30), StartDate = DateTime.UtcNow.Date });
-        uow.WorkCategoryRecords.Add(new WorkCategory { WorkCategoryId = 1, Name = "Structural" });
-        var service = new PhaseService(uow, CreateMapper(), new FakeClaimService(5, Role.PM));
-
-        var missing = await service.CreatePhaseAsync(1, new CreatePhaseRequest
-        {
-            Name = "P",
-            SequenceOrder = 0,
-            BaselineStart = DateTime.UtcNow.Date,
-            BaselineEnd = DateTime.UtcNow.Date.AddDays(5),
-            WorkCategoryId = 99
-        });
-        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
-
-        var unset = await service.CreatePhaseAsync(1, new CreatePhaseRequest
-        {
-            Name = "P",
-            SequenceOrder = 0,
-            BaselineStart = DateTime.UtcNow.Date,
-            BaselineEnd = DateTime.UtcNow.Date.AddDays(5),
-            WorkCategoryId = 0
-        });
-        Assert.Equal(HttpStatusCode.NotFound, unset.StatusCode);
-
-        var created = await service.CreatePhaseAsync(1, new CreatePhaseRequest
-        {
-            Name = "P",
-            SequenceOrder = 0,
-            BaselineStart = DateTime.UtcNow.Date,
-            BaselineEnd = DateTime.UtcNow.Date.AddDays(5),
-            WorkCategoryId = 1
-        });
-        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
-        Assert.Equal("Structural", Assert.IsType<PhaseResponse>(created.Result).WorkCategoryName);
-    }
-
-    [Fact]
-    public async Task ConfirmRequiresWorkCategory()
-    {
-        var uow = new TestUnitOfWork();
-        uow.ProjectRecords.Add(new Project { ProjectId = 1, ProjectName = "P", PMUserID = 5, Status = ProjectStatus.IN_PROGRESS, TotalProjectBudget = 100000 });
-        uow.WorkCategoryRecords.Add(new WorkCategory { WorkCategoryId = 1, Name = "Structural" });
-        var service = new AiConstructionPlannerService(uow, new FakeClaimService(5, Role.PM),
-            new FakeGoogleAIClient { NextResult = GoogleAITextResult.Success("{}") });
-
-        var response = await service.ConfirmProjectAiPlanAsync(1, new ConfirmProjectAiPlanRequest
-        {
-            Phases = new List<AiPhaseProposalRequest>
-            {
-                new() { TempId = "PH-1", Name = "P", BaselineStart = DateTime.UtcNow.Date, BaselineEnd = DateTime.UtcNow.Date.AddDays(2), WorkCategoryId = 0 }
-            },
-            Tasks = new List<AiTaskProposalRequest>
-            {
-                new() { TempId = "TSK-1", PhaseTempId = "PH-1", TaskName = "T", BaselineStart = DateTime.UtcNow.Date, BaselineEnd = DateTime.UtcNow.Date.AddDays(1) }
-            }
-        });
-
-        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-        Assert.Empty(uow.PhaseRecords);
     }
 
     [Fact]

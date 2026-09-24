@@ -46,13 +46,9 @@ namespace cpms_Application.MyMapper
             CreateMap<CreateProjectRequest, Project>();
             CreateMap<Phase, PhaseResponse>()
                 .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.Status.ToString()))
-                .ForMember(dest => dest.RowVersion, opt => opt.MapFrom(src => Convert.ToBase64String(src.RowVersion)))
-                .ForMember(dest => dest.WorkCategoryName, opt => opt.MapFrom(src =>
-                    src.WorkCategory != null ? src.WorkCategory.Name : string.Empty));
+                .ForMember(dest => dest.RowVersion, opt => opt.MapFrom(src => Convert.ToBase64String(src.RowVersion)));
             CreateMap<Phase, PhaseSummaryResponse>()
-                .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.Status.ToString()))
-                .ForMember(dest => dest.WorkCategoryName, opt => opt.MapFrom(src =>
-                    src.WorkCategory != null ? src.WorkCategory.Name : string.Empty));
+                .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.Status.ToString()));
   CreateMap<Project, ProjectResponse>()
     .ForMember(dest => dest.RowVersion, opt => opt.MapFrom(src => Convert.ToBase64String(src.RowVersion)))
     .ForMember(dest => dest.BudgetConfigured, opt => opt.MapFrom(src => src.TotalProjectBudget > 0))

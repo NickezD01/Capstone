@@ -28,8 +28,6 @@ public class ProjectExportServiceTests
         Assert.Equal("Excavate", CellValue(workbook, "Tasks", "Task Name"));
         Assert.Equal(44m, CellValue(workbook, "Request Lines", "Debited Amount"));
         Assert.Equal(4m, CellValue(workbook, "Request Lines", "Net Issued Quantity"));
-        Assert.Equal("Structural", CellValue(workbook, "Phases", "Work Category"));
-        Assert.Equal("Structural", CellValue(workbook, "Tasks", "Work Category"));
     }
 
     [Fact]
@@ -166,14 +164,11 @@ public class ProjectExportServiceTests
             PMUserID = 5,
             CustomerUserId = 20
         };
-        var category = new WorkCategory { WorkCategoryId = 1, Name = "Structural" };
         var phase = new Phase
         {
             PhaseId = 1,
             ProjectId = 1,
             Project = project,
-            WorkCategoryId = 1,
-            WorkCategory = category,
             Name = "Foundation",
             SequenceOrder = 0,
             BaselineStart = new DateTime(2026, 10, 1),
@@ -231,7 +226,6 @@ public class ProjectExportServiceTests
         };
         item.MaterialRequest = request;
         uow.ProjectRecords.Add(project);
-        uow.WorkCategoryRecords.Add(category);
         uow.PhaseRecords.Add(phase);
         uow.TaskRecords.Add(task);
         uow.TaskRecords.Add(new TaskItem
