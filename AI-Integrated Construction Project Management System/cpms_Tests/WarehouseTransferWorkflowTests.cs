@@ -200,7 +200,7 @@ internal class FakeRepository<T> : IGenericRepository<T> where T : class
         p.Name is "Id" or "WarehouseId" or "VariantId" or "InventoryId" or "TransferId" or "TransferItemId" or
         "ProjectId" or "MaterialId" or "ItemId" or "TransactionId" or "TaskId" or "PoId" or "LineItemId" or "RequestId" or
         "SupplierId" or "CatalogId" or "MetricId" or "ReportId" or "ReservationId" or "AdjustmentId" or "ReturnId" or
-        "PhaseId" or
+        "PhaseId" or "WorkCategoryId" or "IssueId" or
         "TransferReservationId" or "SessionId" or "MessageId");
     private void AssignIdentity(T entity)
     {
@@ -234,8 +234,7 @@ internal sealed class FakeSupplierCatalogRepository : FakeRepository<SupplierCat
 internal sealed class FakeSupplierMetricRepository : FakeRepository<SupplierMetric>, ISupplierMetricRepository { public FakeSupplierMetricRepository(List<SupplierMetric> data) : base(data) { } }
 internal sealed class FakeMaterialRepository : FakeRepository<Material>, IMaterialRepository { public FakeMaterialRepository(List<Material> data) : base(data) { } }
 internal sealed class FakeRefreshTokenRepository : FakeRepository<RefreshToken>, IRefreshTokenRepository { public FakeRefreshTokenRepository(List<RefreshToken> data) : base(data) { } }
-internal sealed class FakeAiChatSessionRepository : FakeRepository<AiChatSession>, IAiChatSessionRepository { public FakeAiChatSessionRepository(List<AiChatSession> data) : base(data) { } }
-internal sealed class FakeAiChatMessageRepository : FakeRepository<AiChatMessage>, IAiChatMessageRepository { public FakeAiChatMessageRepository(List<AiChatMessage> data) : base(data) { } }
+
 
 internal sealed class TestUnitOfWork : IUnitOfWork
 {
@@ -251,6 +250,7 @@ internal sealed class TestUnitOfWork : IUnitOfWork
     public List<TransferInventoryReservation> TransferReservationRecords { get; } = new();
     public List<Project> ProjectRecords { get; } = new();
     public List<Phase> PhaseRecords { get; } = new();
+    public List<WorkCategory> WorkCategoryRecords { get; } = new();
     public List<TaskMaterialRequirement> RequirementRecords { get; } = new();
     public List<MaterialRequisition> RequisitionRecords { get; } = new();
     public List<MaterialReturn> MaterialReturnRecords { get; } = new();
@@ -264,6 +264,7 @@ internal sealed class TestUnitOfWork : IUnitOfWork
     public List<EmailOutboxMessage> EmailOutboxRecords { get; } = new();
     public List<RefreshToken> RefreshTokenRecords { get; } = new();
     public List<TaskItem> TaskRecords { get; } = new();
+    public List<TaskIssue> TaskIssueRecords { get; } = new();
     public List<ProgressReport> ProgressReportRecords { get; } = new();
     public List<Supplier> SupplierRecords { get; } = new();
     public List<SupplierCatalog> SupplierCatalogRecords { get; } = new();
@@ -271,8 +272,7 @@ internal sealed class TestUnitOfWork : IUnitOfWork
     public List<MrpPlanningRun> MrpPlanningRunRecords { get; } = new();
     public List<PhysicalCountSession> PhysicalCountSessionRecords { get; } = new();
     public List<PhysicalCountLine> PhysicalCountLineRecords { get; } = new();
-    public List<AiChatSession> AiChatSessionRecords { get; } = new();
-    public List<AiChatMessage> AiChatMessageRecords { get; } = new();
+
 
     public IWarehouseRepository Warehouses { get; }
     public IInventoryRepository Inventories { get; }
@@ -301,6 +301,7 @@ internal sealed class TestUnitOfWork : IUnitOfWork
         TransferInventoryReservations = new FakeRepository<TransferInventoryReservation>(TransferReservationRecords);
         Projects = new FakeProjectRepository(ProjectRecords);
         Phases = new FakeRepository<Phase>(PhaseRecords);
+        WorkCategories = new FakeRepository<WorkCategory>(WorkCategoryRecords);
         TaskMaterialRequirements = new FakeRequirementRepository(RequirementRecords);
         MaterialRequisitions = new FakeRequisitionRepository(RequisitionRecords);
         MaterialReturns = new FakeRepository<MaterialReturn>(MaterialReturnRecords);
@@ -314,6 +315,7 @@ internal sealed class TestUnitOfWork : IUnitOfWork
         EmailOutboxMessages = new FakeRepository<EmailOutboxMessage>(EmailOutboxRecords);
         RefreshTokens = new FakeRefreshTokenRepository(RefreshTokenRecords);
         TaskItems = new FakeTaskItemRepository(TaskRecords);
+        TaskIssues = new FakeRepository<TaskIssue>(TaskIssueRecords);
         ProgressReports = new FakeProgressReportRepository(ProgressReportRecords);
         Suppliers = new FakeSupplierRepository(SupplierRecords);
         SupplierCatalogs = new FakeSupplierCatalogRepository(SupplierCatalogRecords);
@@ -321,8 +323,7 @@ internal sealed class TestUnitOfWork : IUnitOfWork
         MrpPlanningRuns = new FakeRepository<MrpPlanningRun>(MrpPlanningRunRecords);
         PhysicalCountSessions = new FakeRepository<PhysicalCountSession>(PhysicalCountSessionRecords);
         PhysicalCountLines = new FakeRepository<PhysicalCountLine>(PhysicalCountLineRecords);
-        AiChatSessions = new FakeAiChatSessionRepository(AiChatSessionRecords);
-        AiChatMessages = new FakeAiChatMessageRepository(AiChatMessageRecords);
+
     }
 
     public IUserAccountRepository UserAccounts { get; }
@@ -330,7 +331,9 @@ internal sealed class TestUnitOfWork : IUnitOfWork
     public IEmailVerificationRepository EmailVerifications { get; }
     public IGenericRepository<EmailOutboxMessage> EmailOutboxMessages { get; }
     public ITaskItemRepository TaskItems { get; }
+    public IGenericRepository<TaskIssue> TaskIssues { get; }
     public IGenericRepository<Phase> Phases { get; }
+    public IGenericRepository<WorkCategory> WorkCategories { get; }
     public IProgressReportRepository ProgressReports { get; }
     public IMaterialRepository Materials { get; }
     public ISupplierRepository Suppliers { get; }
@@ -342,13 +345,7 @@ internal sealed class TestUnitOfWork : IUnitOfWork
     public IGenericRepository<MrpPlanningRun> MrpPlanningRuns { get; }
     public IGenericRepository<PhysicalCountSession> PhysicalCountSessions { get; }
     public IGenericRepository<PhysicalCountLine> PhysicalCountLines { get; }
-    public IChatConversationRepository ChatConversations => null!;
-    public IChatParticipantRepository ChatParticipants => null!;
-    public IChatMessageRepository ChatMessages => null!;
-    public IAiChatSessionRepository AiChatSessions { get; }
-    public IAiChatMessageRepository AiChatMessages { get; }
-    public IMeetingRepository Meetings => null!;
-    public IMeetingParticipantRepository MeetingParticipants => null!;
+
     public IPurchaseOrderRepository PurchaseOrders { get; }
     public IOrderLineItemRepository OrderLineItems { get; }
     public IGenericRepository<InventoryReservation> InventoryReservations { get; }

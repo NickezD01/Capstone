@@ -105,7 +105,12 @@ namespace cpms_Application.Services
                     }
                 }
 
-                var currentAccount = await _uow.UserAccounts.GetByIdAsync(currentUser.Id);
+                var assignee = await ResolveAssigneeAsync(request.AssignedToUserID, currentUser.Id);
+                if (assignee.Error != null)
+                {
+                    await _uow.RollbackTransactionAsync();
+                    return assignee.Error;
+                }
 
                 // 2. Map dữ liệu cơ bản và cấu hình mặc định cho Task mới
                 var taskItem = _mapper.Map<TaskItem>(request);
@@ -114,8 +119,8 @@ namespace cpms_Application.Services
                 taskItem.PhaseId = phase.PhaseId;
                 taskItem.Phase = phase;
                 taskItem.PhaseName = phase.Name;
-                taskItem.AssignedToUserID = currentUser.Id;
-                if (currentAccount != null) taskItem.AssignedToUser = currentAccount;
+                taskItem.AssignedToUserID = assignee.AssigneeId;
+                if (assignee.Account != null) taskItem.AssignedToUser = assignee.Account;
                 taskItem.ActualCost = 0;
                 taskItem.ActualProgressPct = 0;
                 taskItem.Status = DomainTaskStatus.PENDING;
@@ -234,7 +239,10 @@ namespace cpms_Application.Services
             if (task == null) return new ApiResponse().SetNotFound("Task not found.");
             var project = await _uow.Projects.GetByIdAsync(task.ProjectId);
             if (project == null) return new ApiResponse().SetNotFound("Project not found.");
-            if (!await CanReadProjectAsync(project))
+            var reader = _claimService.GetUserClaim();
+            if (!await CanReadProjectAsync(project) &&
+                !(string.Equals(reader.Role, Role.WORKER.ToString(), StringComparison.OrdinalIgnoreCase) &&
+                  task.AssignedToUserID == reader.Id))
                 return new ApiResponse().SetApiResponse(System.Net.HttpStatusCode.Forbidden, false,
                     "You do not have access to this task.");
             return new ApiResponse().SetOk(_mapper.Map<TaskResponse>(task));
@@ -289,11 +297,14 @@ namespace cpms_Application.Services
             if (request.PlannedBudget < task.ActualCost)
                 return new ApiResponse().SetConflict("Task budget cannot be reduced below its approved actual cost.");
 
+            var assignee = await ResolveAssigneeAsync(request.AssignedToUserID, user.Id);
+            if (assignee.Error != null) return assignee.Error;
             try
             {
                 task.Phase = phase;
-                task.UpdatePlan(phase.PhaseId, phase.Name, request.TaskName, user.Id,
+                task.UpdatePlan(phase.PhaseId, phase.Name, request.TaskName, assignee.AssigneeId,
                     request.PlannedBudget, request.BaselineStart, request.BaselineEnd);
+                if (assignee.Account != null) task.AssignedToUser = assignee.Account;
                 await _uow.SaveChangeAsync();
                 return new ApiResponse().SetOk(_mapper.Map<TaskResponse>(task));
             }
@@ -361,6 +372,20 @@ namespace cpms_Application.Services
 
         private static bool MatchesRowVersion(byte[] current, string supplied) =>
             !string.IsNullOrWhiteSpace(supplied) && Convert.ToBase64String(current).Equals(supplied, StringComparison.Ordinal);
+
+        private async Task<(int AssigneeId, UserAccount? Account, ApiResponse? Error)> ResolveAssigneeAsync(
+            int requestedId, int pmId)
+        {
+            if (requestedId <= 0 || requestedId == pmId)
+            {
+                var pm = await _uow.UserAccounts.GetByIdAsync(pmId);
+                return (pmId, pm, null);
+            }
+            var account = await _uow.UserAccounts.GetByIdAsync(requestedId);
+            if (account == null || account.Role != Role.WORKER)
+                return (0, null, new ApiResponse().SetBadRequest(message: "Tasks may only be assigned to the owning PM or a site worker."));
+            return (account.Id, account, null);
+        }
 
         private Task<bool> CanReadProjectAsync(Project project) => _projectAccess.CanViewProjectAsStaffAsync(project);
     }

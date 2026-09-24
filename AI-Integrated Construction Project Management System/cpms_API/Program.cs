@@ -124,7 +124,7 @@ builder.Services
 
                 var db = context.HttpContext.RequestServices.GetRequiredService<AppDbContext>();
                 var account = await db.UserAccounts.AsNoTracking().SingleOrDefaultAsync(x => x.Id == userId);
-                if (account == null || account.IsEmailVerified != true ||
+                if (account == null ||
                     !string.Equals(account.Role.ToString(), roleValue, StringComparison.OrdinalIgnoreCase))
                 {
                     context.Fail("The account is inactive or its authorization has changed. Sign in again.");
@@ -171,13 +171,7 @@ builder.Services.AddSwaggerGen(options =>
 // CORE SERVICES INFRASTRUCTURE & MAPPING
 // ======================================================
 builder.Services.AddHttpContextAccessor();
-builder.Services.AddHttpClient<ITeamsMeetingClient, TeamsMeetingClient>();
 builder.Services.AddHttpClient<IGoogleAIClient, GoogleAIClient>();
-builder.Services.AddHttpClient<ITavilySearchClient, TavilySearchClient>(client =>
-{
-    client.BaseAddress = new Uri("https://api.tavily.com/");
-    client.Timeout = TimeSpan.FromSeconds(30);
-});
 builder.Services.AddAutoMapper(_ => { }, typeof(MapperConfigurationsProfile).Assembly);
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 
@@ -196,7 +190,6 @@ builder.Services.AddScoped<IProjectService, ProjectService>();
 builder.Services.AddScoped<IPhaseService, PhaseService>();
 builder.Services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
 builder.Services.AddScoped<ISupplierService, SupplierService>();
-builder.Services.AddScoped<ISupplierRecommendationService, SupplierRecommendationService>();
 builder.Services.AddScoped<ICatalogService, CatalogService>();
 builder.Services.AddScoped<ICategoryService, CategoryService>();
 builder.Services.AddScoped<IMaterialService, MaterialService>();
@@ -207,11 +200,11 @@ builder.Services.AddScoped<IWarehouseTransferService, WarehouseTransferService>(
 builder.Services.AddScoped<ITaskService, TaskService>();
 builder.Services.AddScoped<IProgressReportService, ProgressReportService>();
 builder.Services.AddScoped<IMaterialRequestService, MaterialRequestService>();
-builder.Services.AddScoped<IChatService, ChatService>();
-builder.Services.AddScoped<IAiChatService, AiChatService>();
 builder.Services.AddScoped<IAiConstructionPlannerService, AiConstructionPlannerService>();
 builder.Services.AddScoped<IProjectExportService, ProjectExportService>();
-builder.Services.AddScoped<IMeetingService, MeetingService>();
+builder.Services.AddScoped<IRiskAssessmentService, RiskAssessmentService>();
+builder.Services.AddScoped<ITaskIssueService, TaskIssueService>();
+builder.Services.AddScoped<IWorkCategoryService, WorkCategoryService>();
 
 // ======================================================
 // BACKGROUND SERVICES REGISTRATION

@@ -64,8 +64,8 @@ namespace cpms_Application.Services
                 if (request.CustomerUserId.HasValue)
                 {
                     customer = await _unitOfWork.UserAccounts.GetByIdAsync(request.CustomerUserId.Value);
-                    if (customer == null || customer.Role != Role.CUSTOMER || customer.IsEmailVerified != true)
-                        return apiResponse.SetBadRequest("The assigned customer must be a verified account with the CUSTOMER role.");
+                    if (customer == null || customer.Role != Role.CUSTOMER)
+                        return apiResponse.SetBadRequest("The assigned customer must be an account with the CUSTOMER role.");
                 }
 
                 // Mapping Request -> Entity
@@ -171,6 +171,38 @@ namespace cpms_Application.Services
             catch (Exception)
             {
                 return InternalError("Unable to retrieve the project.");
+            }
+        }
+
+        public async Task<ApiResponse> GetProjectContextAsync(int projectId)
+        {
+            var apiResponse = new ApiResponse();
+            try
+            {
+                var project = await _unitOfWork.Projects.GetByIdAsync(projectId);
+                if (project == null)
+                    return apiResponse.SetNotFound("Project not found or has been deleted.");
+                var currentUser = _claimService.GetUserClaim();
+                if (!string.Equals(currentUser.Role, Role.WORKER.ToString(), StringComparison.OrdinalIgnoreCase))
+                    return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You do not have access to this project's context.");
+                var assignment = await _unitOfWork.TaskItems.GetAsync(t =>
+                    t.ProjectId == projectId && t.AssignedToUserID == currentUser.Id);
+                if (assignment == null)
+                    return apiResponse.SetApiResponse(System.Net.HttpStatusCode.Forbidden, false, "You do not have access to this project's context.");
+
+                return apiResponse.SetOk(new ProjectContextResponse
+                {
+                    ProjectId = project.ProjectId,
+                    ProjectName = project.ProjectName,
+                    Address = project.Address,
+                    StartDate = project.StartDate,
+                    BaselineStart = project.BaselineStart,
+                    BaselineEnd = project.BaselineEnd
+                });
+            }
+            catch (Exception)
+            {
+                return InternalError("Unable to retrieve the project context.");
             }
         }
 
@@ -869,8 +901,8 @@ namespace cpms_Application.Services
             if (!MatchesRowVersion(project.RowVersion, request.RowVersion))
                 return new ApiResponse().SetConflict("Project changed. Reload and retry.");
             var manager = await _unitOfWork.UserAccounts.GetByIdAsync(request.ProjectManagerUserId);
-            if (manager == null || manager.Role != Role.PM || manager.IsEmailVerified != true)
-                return new ApiResponse().SetBadRequest("The new manager must be a verified PM.");
+            if (manager == null || manager.Role != Role.PM)
+                return new ApiResponse().SetBadRequest("The new manager must hold the PM role.");
             project.PMUserID = manager.Id;
             await _unitOfWork.SaveChangeAsync();
             return await GetProjectByIdAsync(projectId);
@@ -894,8 +926,8 @@ namespace cpms_Application.Services
             if (request.CustomerUserId.HasValue)
             {
                 customer = await _unitOfWork.UserAccounts.GetByIdAsync(request.CustomerUserId.Value);
-                if (customer == null || customer.Role != Role.CUSTOMER || customer.IsEmailVerified != true)
-                    return new ApiResponse().SetBadRequest("The assigned customer must be a verified account with the CUSTOMER role.");
+                if (customer == null || customer.Role != Role.CUSTOMER)
+                    return new ApiResponse().SetBadRequest("The assigned customer must be an account with the CUSTOMER role.");
             }
 
             project.CustomerUserId = request.CustomerUserId;

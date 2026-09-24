@@ -287,6 +287,7 @@ public class AiConstructionPlannerServiceTests
     {
         var uow = new TestUnitOfWork();
         uow.ProjectRecords.Add(CreateOwnedProject());
+        uow.WorkCategoryRecords.Add(new WorkCategory { WorkCategoryId = 1, Name = "Structural" });
         var service = CreateService(uow);
 
         var response = await service.ConfirmProjectAiPlanAsync(1, new ConfirmProjectAiPlanRequest
@@ -299,7 +300,8 @@ public class AiConstructionPlannerServiceTests
                     Name = "Edited phase",
                     SequenceOrder = 0,
                     BaselineStart = new DateTime(2026, 10, 1),
-                    BaselineEnd = new DateTime(2026, 10, 31)
+                    BaselineEnd = new DateTime(2026, 10, 31),
+                    WorkCategoryId = 1
                 }
             },
             Tasks = new List<AiTaskProposalRequest>
@@ -328,6 +330,7 @@ public class AiConstructionPlannerServiceTests
         Assert.Equal("Edited phase", task.PhaseName);
         Assert.Equal(7, task.AssignedToUserID);
         Assert.Equal(phase.PhaseId, result.Tasks[0].PhaseId);
+        Assert.Equal(1, phase.WorkCategoryId);
     }
 
     [Fact]
@@ -436,13 +439,14 @@ public class AiConstructionPlannerServiceTests
         var project = CreateOwnedProject();
         project.TotalProjectBudget = 1000000;
         uow.ProjectRecords.Add(project);
+        uow.WorkCategoryRecords.Add(new WorkCategory { WorkCategoryId = 1, Name = "Structural" });
         var service = CreateService(uow);
 
         var response = await service.ConfirmProjectAiPlanAsync(1, new ConfirmProjectAiPlanRequest
         {
             Phases = new List<AiPhaseProposalRequest>
             {
-                new() { TempId = "PH-1", Name = "P", BaselineStart = new DateTime(2026, 10, 1), BaselineEnd = new DateTime(2026, 10, 2) }
+                new() { TempId = "PH-1", Name = "P", BaselineStart = new DateTime(2026, 10, 1), BaselineEnd = new DateTime(2026, 10, 2), WorkCategoryId = 1 }
             },
             Tasks = new List<AiTaskProposalRequest>
             {

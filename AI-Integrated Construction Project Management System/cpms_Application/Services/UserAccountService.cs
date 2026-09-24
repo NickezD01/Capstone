@@ -119,27 +119,47 @@ namespace cpms_Application.Services
             ApiResponse apiResponse = new ApiResponse();
             try
             {
-                var term = string.IsNullOrWhiteSpace(search) ? null : search.Trim().ToLower();
-                var customers = await _unitOfWork.UserAccounts.GetAllAsync(x =>
-                    x.Role == cpms_Domain.Models.Role.CUSTOMER && x.IsEmailVerified == true &&
-                    (term == null || ((x.FirstName ?? "") + " " + (x.LastName ?? "") + " " + (x.Email ?? "")).ToLower().Contains(term)));
-                var result = customers
-                    .OrderBy(x => x.LastName)
-                    .ThenBy(x => x.FirstName)
-                    .Select(x => new CustomerListResponse
-                    {
-                        Id = x.Id,
-                        FirstName = x.FirstName ?? string.Empty,
-                        LastName = x.LastName ?? string.Empty,
-                        Email = x.Email ?? string.Empty
-                    })
-                    .ToList();
-                return apiResponse.SetOk(result);
+                var customers = await GetVerifiedUsersByRoleAsync(cpms_Domain.Models.Role.CUSTOMER, search);
+                return apiResponse.SetOk(customers.Select(x => new CustomerListResponse
+                {
+                    Id = x.Id,
+                    FirstName = x.FirstName ?? string.Empty,
+                    LastName = x.LastName ?? string.Empty,
+                    Email = x.Email ?? string.Empty
+                }).ToList());
             }
             catch (Exception)
             {
                 return InternalError("Unable to retrieve customers.");
             }
+        }
+        public async Task<ApiResponse> GetWorkersAsync(string? search)
+        {
+            ApiResponse apiResponse = new ApiResponse();
+            try
+            {
+                var workers = await GetVerifiedUsersByRoleAsync(cpms_Domain.Models.Role.WORKER, search);
+                return apiResponse.SetOk(workers.Select(x => new WorkerListResponse
+                {
+                    Id = x.Id,
+                    FirstName = x.FirstName ?? string.Empty,
+                    LastName = x.LastName ?? string.Empty,
+                    Email = x.Email ?? string.Empty
+                }).ToList());
+            }
+            catch (Exception)
+            {
+                return InternalError("Unable to retrieve site workers.");
+            }
+        }
+        private async Task<List<cpms_Domain.Models.UserAccount>> GetVerifiedUsersByRoleAsync(
+            cpms_Domain.Models.Role role, string? search)
+        {
+            var term = string.IsNullOrWhiteSpace(search) ? null : search.Trim().ToLower();
+            var users = await _unitOfWork.UserAccounts.GetAllAsync(x =>
+                x.Role == role &&
+                (term == null || ((x.FirstName ?? "") + " " + (x.LastName ?? "") + " " + (x.Email ?? "")).ToLower().Contains(term)));
+            return users.OrderBy(x => x.LastName).ThenBy(x => x.FirstName).ToList();
         }
         public Task<ApiResponse> GetUserIdAsync()
         {

@@ -37,6 +37,9 @@ public sealed class PhaseService : IPhaseService
             request.BaselineStart, request.BaselineEnd);
         if (validation != null) return validation;
 
+        var category = await _unitOfWork.WorkCategories.GetByIdAsync(request.WorkCategoryId);
+        if (category == null) return response.SetNotFound("Work category not found.");
+
         var duplicate = await _unitOfWork.Phases.GetAsync(phase =>
             phase.ProjectId == projectId &&
             phase.Name.ToLower() == request.Name.Trim().ToLower());
@@ -46,6 +49,8 @@ public sealed class PhaseService : IPhaseService
         {
             ProjectId = projectId,
             Project = project,
+            WorkCategoryId = category.WorkCategoryId,
+            WorkCategory = category,
             Name = request.Name.Trim(),
             Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
             SequenceOrder = request.SequenceOrder,
@@ -109,6 +114,9 @@ public sealed class PhaseService : IPhaseService
             request.BaselineStart, request.BaselineEnd);
         if (validation != null) return validation;
 
+        var category = await _unitOfWork.WorkCategories.GetByIdAsync(request.WorkCategoryId);
+        if (category == null) return response.SetNotFound("Work category not found.");
+
         var duplicate = await _unitOfWork.Phases.GetAsync(candidate =>
             candidate.ProjectId == phase.ProjectId && candidate.PhaseId != phaseId &&
             candidate.Name.ToLower() == request.Name.Trim().ToLower());
@@ -118,6 +126,8 @@ public sealed class PhaseService : IPhaseService
         {
             phase.UpdatePlan(request.Name, request.Description, request.SequenceOrder,
                 request.BaselineStart, request.BaselineEnd);
+            phase.WorkCategoryId = category.WorkCategoryId;
+            phase.WorkCategory = category;
             phase.ModifiedBy = _claimService.GetUserClaim().Id;
             phase.ModifiedDate = DateTime.UtcNow;
             await _unitOfWork.SaveChangeAsync();

@@ -15,10 +15,12 @@ namespace cpms_API.Controllers
     public class TaskController : ControllerBase
     {
         private readonly ITaskService _taskService;
+        private readonly ITaskIssueService _taskIssueService;
 
-        public TaskController(ITaskService taskService)
+        public TaskController(ITaskService taskService, ITaskIssueService taskIssueService)
         {
             _taskService = taskService;
+            _taskIssueService = taskIssueService;
         }
 
         // POST: /api/Phases/{phaseId}/tasks
@@ -53,7 +55,7 @@ namespace cpms_API.Controllers
 
         // GET: /api/Tasks/{taskId}
         [HttpGet("{taskId:int}")]
-        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER")]
+        [Authorize(Roles = "ADMIN,PM,WAREHOUSE_MANAGER,WORKER")]
         public async Task<IActionResult> GetTaskById(int taskId)
         {
             var response = await _taskService.GetTaskByIdAsync(taskId);
@@ -62,7 +64,7 @@ namespace cpms_API.Controllers
 
         // GET: /api/Tasks/assigned
         [HttpGet("assigned")]
-        [Authorize(Roles = "PM")]
+        [Authorize(Roles = "PM,WORKER")]
         public async Task<IActionResult> GetAssignedTasks()
         {
             var response = await _taskService.GetAssignedTasksAsync();
@@ -96,6 +98,30 @@ namespace cpms_API.Controllers
         private async Task<IActionResult> ChangeStatus(int taskId, string action, TaskLifecycleRequest request)
         {
             var response = await _taskService.ChangeTaskStatusAsync(taskId, action, request);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpPost("{taskId:int}/issues")]
+        [Authorize(Roles = "PM,WORKER")]
+        public async Task<IActionResult> ReportIssue(int taskId, [FromBody] CreateTaskIssueRequest request)
+        {
+            var response = await _taskIssueService.CreateIssueAsync(taskId, request);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpGet("{taskId:int}/issues")]
+        [Authorize(Roles = "ADMIN,PM,WORKER")]
+        public async Task<IActionResult> GetIssues(int taskId)
+        {
+            var response = await _taskIssueService.GetIssuesByTaskAsync(taskId);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpPut("issues/{issueId:int}/resolve")]
+        [Authorize(Roles = "PM")]
+        public async Task<IActionResult> ResolveIssue(int issueId, [FromBody] ResolveTaskIssueRequest request)
+        {
+            var response = await _taskIssueService.ResolveIssueAsync(issueId, request);
             return StatusCode((int)response.StatusCode, response);
         }
     }

@@ -49,6 +49,13 @@ namespace cpms_API.Controllers
             var response = await _service.GetCustomersAsync(search);
             return StatusCode((int)response.StatusCode, response);
         }
+        [Authorize(Roles = "ADMIN,PM")]
+        [HttpGet("Workers")]
+        public async Task<IActionResult> GetWorkers([FromQuery] string? search)
+        {
+            var response = await _service.GetWorkersAsync(search);
+            return StatusCode((int)response.StatusCode, response);
+        }
         [Authorize]
         [HttpGet("GetUserId")]
         public async Task<IActionResult> GetUserId()

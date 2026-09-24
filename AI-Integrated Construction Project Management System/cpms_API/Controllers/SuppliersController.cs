@@ -12,12 +12,10 @@ namespace cpms_API.Controllers
     public class SuppliersController : ControllerBase
     {
         private readonly ISupplierService _supplierService;
-        private readonly ISupplierRecommendationService _supplierRecommendationService;
 
-        public SuppliersController(ISupplierService supplierService, ISupplierRecommendationService supplierRecommendationService)
+        public SuppliersController(ISupplierService supplierService)
         {
             _supplierService = supplierService;
-            _supplierRecommendationService = supplierRecommendationService;
         }
 
         [HttpPost]

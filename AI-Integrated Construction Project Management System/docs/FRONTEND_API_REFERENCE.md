@@ -25,7 +25,7 @@ There is also a duplicated project tree at `AI-Integrated Construction Project M
 - CORS in Development allows any origin, method, and header.
 - Auth is JWT Bearer. Send `Authorization: Bearer <accessToken>` for protected endpoints.
 - All `/api/Auth/*` calls are rate limited to 5 requests per minute per IP/path. A limit hit returns HTTP 429 with `Retry-After: 60`.
-- JWT validation rejects tokens if the account is not found, email is unverified, role changed, or password changed after the token was issued.
+- JWT validation rejects tokens if the account is not found, role changed, or password changed after the token was issued.
 
 ## JSON Conventions
 
@@ -64,6 +64,8 @@ Frontend-relevant roles in route authorization are mostly `ADMIN`, `PM`, and `WA
 
 `SUPPLIER` is a retired role: existing supplier accounts are locked out, and `ADMIN` can no longer assign it. Supplier and catalog records remain as admin-managed reference data only.
 
+`WORKER` is the restricted site-worker role: assigned tasks only (`GET /api/Tasks/assigned`, `GET /api/Tasks/{taskId}` for own tasks), a minimal project header (`GET /api/Projects/{id}/context`: name, address, dates), and progress submit/read for own tasks. Everything else returns 403. Task assignment targets the owning PM or a `WORKER`.
+
 `ADMIN` is read-only for project/phase/task/inventory business actions in the target model: it can view data and manage accounts, users, categories, materials, suppliers, catalogs, and project-manager reassignment, but project lifecycle, budget adjustment, and inventory reviews belong to the owning `PM` or the `WAREHOUSE_MANAGER`.
 
 ## Endpoint Index
@@ -95,7 +97,8 @@ Base path: `/api/UserAccount`
 | PUT | `/UpdateUserProfile` | Authenticated | `UpdateUserRequest` | Message |
 | GET | `/GetAllAccountAsync` | `ADMIN` | none | `AccountResponse[]` |
 | POST | `/` | `ADMIN` | `CreateUserAccountRequest` (`firstName`, `lastName`, `email`, `phoneNumber?`, `role` except `SUPPLIER`, `password` + `confirmPassword` meeting policy) | HTTP 201, created user id; account is verified immediately |
-| GET | `/Customers` | `ADMIN,PM` | query `search?` | `CustomerListResponse[]` (`id`, `firstName`, `lastName`, `email` — verified customers only) |
+| GET | `/Customers` | `ADMIN,PM` | query `search?` | `CustomerListResponse[]` (`id`, `firstName`, `lastName`, `email`) |
+| GET | `/Workers` | `ADMIN,PM` | query `search?` | `WorkerListResponse[]` (`id`, `firstName`, `lastName`, `email` — for the task-assignment picker) |
 | GET | `/GetUserId` | Authenticated | none | `{ userId }` |
 | PUT | `/UpdateUserRoleProfile/{customerId}` | `ADMIN` | `UpdateUserRoleRequest` | Message |
 | GET | `/CountUser` | `ADMIN` | none | number |
@@ -109,6 +112,7 @@ Base path: `/api/Projects`
 | POST | `/` | `PM` | `CreateProjectRequest` (optional `customerUserId`) | `ProjectResponse` |
 | GET | `/` | `ADMIN,PM,WAREHOUSE_MANAGER,CUSTOMER` | none | `ProjectResponse[]` |
 | GET | `/{id}` | `ADMIN,PM,WAREHOUSE_MANAGER,CUSTOMER` | none | `ProjectResponse` |
+| GET | `/{id}/context` | `WORKER` | none | `ProjectContextResponse` (`projectId`, `projectName`, `address?`, `startDate`, `baselineStart`, `baselineEnd`) — assigned tasks only |
 | POST | `/import-word` | `PM` | multipart form-data field `file`, `.docx`, max 10 MB | imported `ProjectResponse` |
 | POST | `/import-word-ai` | `PM` | multipart form-data field `file`, `.docx`, max 10 MB | `AiImportPreviewResponse` (`project` draft + `plan` preview; persists nothing) |
 | POST | `/tasks/{taskId}/materials` | `PM` | `CreateTaskMaterialRequirementRequest` | task material requirement response/object |
@@ -118,6 +122,8 @@ Base path: `/api/Projects`
 | POST | `/adjust-budget` | `PM` (owning PM only) | `AdjustBudgetRequest` | `ProjectResponse` or budget history object |
 | GET | `/{projectId}/budget-histories` | `ADMIN,PM` | none | `ProjectBudgetHistoryResponse[]` |
 | GET | `/{projectId}/export` | `ADMIN,PM,WAREHOUSE_MANAGER,CUSTOMER` | none | Excel file download (role-specific sheets, see Project Export) |
+| GET | `/{projectId}/risks` | `ADMIN,PM` (owning PM only) | none | `ProjectRiskResponse` (`generatedAt`, `risks[]` with `riskType`, `severity`, `taskId?`, `variantId?`, `message`, `metrics`) |
+| POST | `/{projectId}/risks/recommend-actions` | `PM` (owning PM only) | none | `RecommendRiskActionsResponse` (`actions[]` with `priority` 1–5, `title`, `detail`, `ownerRole` PM/WAREHOUSE_MANAGER, `relatedRiskTypes[]`); empty when no risks |
 | PUT | `/{projectId}` | `PM` | `UpdateProjectRequest` | updated project/status object |
 | POST | `/{projectId}/start` | `PM` (owning PM only) | `ProjectLifecycleRequest` | `{ projectId, status, rowVersion }` |
 | POST | `/{projectId}/pause` | `PM` (owning PM only) | `ProjectLifecycleRequest` | `{ projectId, status, rowVersion }` |
@@ -133,7 +139,7 @@ Project access rules:
 - PMs can read/update/change projects they own. Project lifecycle (`start`/`pause`/`cancel`/`reopen`/`complete`) and budget adjustment are owning-PM-only; `ADMIN` can no longer perform them.
 - `ADMIN` is read-only for project/phase/task/inventory business actions. Project manager reassignment (`PUT /{projectId}/project-manager`) remains `ADMIN`-only.
 - Warehouse managers can read project/MRP data only in allowed contexts; MRP always runs against the single active warehouse, which they must manage.
-- CUSTOMER accounts can read only projects explicitly assigned to them (`customerUserId`). Assigning or clearing the customer is done by the owning PM via `PUT /{projectId}/customer`; the target account must be a verified `CUSTOMER`. Reassignment revokes the former customer's access immediately. A closed (`COMPLETED`/`CANCELLED`) project cannot change its customer.
+- CUSTOMER accounts can read only projects explicitly assigned to them (`customerUserId`). Assigning or clearing the customer is done by the owning PM via `PUT /{projectId}/customer`; the target account must hold the `CUSTOMER` role. Reassignment revokes the former customer's access immediately. A closed (`COMPLETED`/`CANCELLED`) project cannot change its customer.
 - Closed projects cannot accept many downstream changes.
 
 ### Tasks
@@ -145,15 +151,18 @@ Canonical base path: `/api/Tasks`. The legacy `/api/task` aliases were removed; 
 | POST | `/api/Phases/{phaseId}/tasks` | `PM` | `CreateTaskRequest` (no `ProjectId`/`PhaseName`; project is derived from the phase) | `TaskResponse` |
 | POST | `/api/task` | `PM` | none | `410 Gone` - deprecated. Use `POST /api/Phases/{phaseId}/tasks`. |
 | GET | `/api/Projects/{projectId}/tasks` | `ADMIN,PM,WAREHOUSE_MANAGER,CUSTOMER` | none | `TaskResponse[]` (assigned customers see their projects) |
-| GET | `/api/Tasks/{taskId}` | `ADMIN,PM,WAREHOUSE_MANAGER` | none | `TaskResponse` |
+| GET | `/api/Tasks/{taskId}` | `ADMIN,PM,WAREHOUSE_MANAGER,WORKER` | none | `TaskResponse` (assigned workers see their own tasks) |
 | GET | `/api/Projects/{projectId}/material-requirements` | `ADMIN,PM,WAREHOUSE_MANAGER` | none | `TaskMaterialResponse[]` |
-| GET | `/api/Tasks/assigned` | `PM` | none | `TaskResponse[]` |
+| GET | `/api/Tasks/assigned` | `PM,WORKER` | none | `TaskResponse[]` |
 | PUT | `/api/Tasks/{taskId}` | `PM` | `UpdateTaskRequest` (has `PhaseId`; the target phase must belong to the same project) | updated task/status object |
 | POST | `/api/Tasks/{taskId}/cancel` | `PM` | `TaskLifecycleRequest` | `{ taskId, status, rowVersion }` |
 | POST | `/api/Tasks/{taskId}/reject` | `PM` | `TaskLifecycleRequest` | `{ taskId, status, rowVersion }` |
 | POST | `/api/Tasks/{taskId}/reopen` | `PM` | `TaskLifecycleRequest` | `{ taskId, status, rowVersion }` |
+| POST | `/api/Tasks/{taskId}/issues` | `PM,WORKER` | `CreateTaskIssueRequest` (`description`, `photoUrl?`) | `TaskIssueResponse` (HTTP 201; owning PM or assigned worker) |
+| GET | `/api/Tasks/{taskId}/issues` | `ADMIN,PM,WORKER` | none | `TaskIssueResponse[]` (owning PM, assigned worker, or ADMIN) |
+| PUT | `/api/Tasks/issues/{issueId}/resolve` | `PM` | `ResolveTaskIssueRequest` (`resolutionNote?`, `rowVersion`) | `TaskIssueResponse` (owning PM only) |
 
-`CreateTaskRequest` body: `taskName`, `assignedToUserID`, `plannedBudget`, `baselineStart`, `baselineEnd`, `materials[]. Task dates must stay inside both the project and the phase baseline. Creating or updating a task under a `COMPLETED`/`CANCELLED` phase returns 409.
+`CreateTaskRequest` body: `taskName`, `assignedToUserID`, `plannedBudget`, `baselineStart`, `baselineEnd`, `materials[]. Task dates must stay inside both the project and the phase baseline. Creating or updating a task under a `COMPLETED`/`CANCELLED` phase returns 409. `assignedToUserID` must be the owning PM (0 or self defaults to self) or a `WORKER`; anything else returns 400.
 
 ### Progress Reports
 
@@ -161,8 +170,8 @@ Base path: `/api/ProgressReport`
 
 | Method | Path | Auth | Body | Result |
 | --- | --- | --- | --- | --- |
-| POST | `/` | `PM` | `SubmitProgressReportRequest` | `ProgressReportResponse` |
-| GET | `/task/{taskId}` | `ADMIN,PM,WAREHOUSE_MANAGER` | none | `ProgressReportResponse[]` (warehouse manager requires operational project access) |
+| POST | `/` | `PM,WORKER` | `SubmitProgressReportRequest` | `ProgressReportResponse` (assigned workers submit for their own tasks; PM approval still required) |
+| GET | `/task/{taskId}` | `ADMIN,PM,WAREHOUSE_MANAGER,WORKER` | none | `ProgressReportResponse[]` (warehouse manager requires operational project access; assigned workers see their own tasks) |
 | POST | `/{reportId}/approve` | `PM` | `ReviewProgressReportRequest` | `ProgressReportResponse` or status object |
 | POST | `/{reportId}/reject` | `PM` | `ReviewProgressReportRequest` | `ProgressReportResponse` or status object |
 | POST | `/{reportId}/correct` | `PM` | `CorrectProgressReportRequest` | `ProgressReportResponse` |
@@ -399,7 +408,7 @@ AI project planning rules:
 
 - The frontend owns its question form and sends `AiProjectBriefRequest`: `projectType` (required), `floorAreaM2` (> 0), `numberOfFloors` (≥ 1), `startDate` (required), `endDate` (required, on/after start), `budget?` (≥ 0), `specialRequirements?` (≤ 2000 chars). When both `brief` and legacy `answers` are sent, the brief wins. The legacy five-answer input and `GET /questions` still work.
 - `tasks:generate` requires exactly one phase source: an existing `phaseId` (must belong to the project), or the `phases` preview echo. Tasks are mapped to proposed phases by the stable `aiKey`, so the PM may rename phases without breaking the mapping.
-- `confirm` accepts the PM-edited proposal: rename/re-date/re-budget items freely, drop unwanted items, but keep temporary IDs stable so tasks still resolve to their phases. Every task must reference exactly one of `phaseTempId` (a phase in the same request) or `phaseId` (an existing phase in the project).
+- `confirm` accepts the PM-edited proposal: rename/re-date/re-budget items freely, drop unwanted items, but keep temporary IDs stable so tasks still resolve to their phases. Every task must reference exactly one of `phaseTempId` (a phase in the same request) or `phaseId` (an existing phase in the project). Every proposed phase must carry an existing `workCategoryId`.
 - `confirm` validates phase/task names, dates inside the project and phase baselines, closed phases, duplicate names, and the project budget cap, then creates all phases and tasks in a single transaction. Closed projects return HTTP 409.
 - `complete` ("AI finish the planning for me") reads the current phases/tasks, combines them with the brief and optional `focusNote`, and previews only the remaining work. Existing phases become reference entries (empty `TempId` — strip them before `confirm` and keep `PhaseId` on their tasks); duplicates and unresolvable tasks are dropped with reasons in `warnings`.
 - Only phases and tasks are created. The AI never touches inventory, approvals, customers, or material master data.
@@ -410,30 +419,20 @@ AI project planning rules:
 
 | View | Caller | Sheets |
 | --- | --- | --- |
-| Full | `ADMIN`, owning `PM`, assigned `CUSTOMER` | Project, Phases, Tasks, Material Requests, Request Lines, Budget Ledger, Budget Summary, Progress |
+| Full | `ADMIN`, owning `PM`, assigned `CUSTOMER` | Project, Phases, Tasks, Gantt, Material Requests, Request Lines, Budget Ledger, Budget Summary, Progress |
 | Inventory | operationally linked `WAREHOUSE_MANAGER` | Project, Material Requests, Request Lines, Inventory, Stock Movements |
 
 Project export rules:
 
 - The customer workbook is identical to the PM workbook: same request costs, budget impact, and progress details.
 - Request Lines show per-line estimate/actual/debited figures derived from the immutable budget ledger; Budget Summary shows total budget, ledger spend, and remaining.
+- The Gantt sheet (full view only) shows one row per phase and task across weekly columns from baseline start to end (capped at 104 weeks): green = completed, blue = in progress, gray = pending, ⚠ = at risk. Tasks and Gantt rows include the phase work category.
 - The inventory view covers only variants tied to the project's requests at the active warehouse (latest 500 stock movements).
 - No user/account administration data is included in any view.
 
 ### Meetings
 
-Base path: `/api/Meetings`
-
-All meeting endpoints require any authenticated user.
-
-| Method | Path | Body | Result |
-| --- | --- | --- | --- |
-| POST | `/` | `CreateMeetingRequest` | `MeetingResponse` |
-| GET | `/project/{projectId}` | none | `MeetingResponse[]` |
-| GET | `/{meetingId}` | none | `MeetingResponse` |
-| PUT | `/{meetingId}/cancel` | `CancelMeetingRequest` | `MeetingResponse` |
-
-Meetings can schedule with Microsoft Teams if configured. Response includes `joinUrl`, external IDs, and `failureReason`.
+Removed — the controller, service, and tables were deleted. All former endpoints now return 404.
 
 ## Request DTOs
 
@@ -463,6 +462,9 @@ Project/task/progress:
 - `CreateTaskRequest`: `taskName`, `assignedToUserID`, `plannedBudget`, `baselineStart`, `baselineEnd`, `materials[]` (the phase comes from the route `phaseId`; the project is derived from the phase)
 - `TaskMaterialRequest`: `variantId`, `materialId`, `grossQuantityRequired`
 - `UpdateTaskRequest`: `phaseId`, `taskName`, `assignedToUserID`, `plannedBudget`, `baselineStart`, `baselineEnd`, `rowVersion`
+- `CreateTaskIssueRequest`: `description`, `photoUrl?`
+- `ResolveTaskIssueRequest`: `resolutionNote?`, `rowVersion`
+- `TaskIssueResponse`: `issueId`, `taskId`, `reportedByUserId`, `reportedByName`, `description`, `photoUrl?`, `status` (`OPEN`/`RESOLVED`), `resolutionNote?`, `createdAt`, `resolvedAt?`, `rowVersion`
 - `TaskLifecycleRequest`: `rowVersion`
 - `SubmitProgressReportRequest`: `taskId`, `progressIncrement`, `actualCostIncrement`, `notes?`, `sitePhotoUrl?`
 - `ReviewProgressReportRequest`: `reviewNote?`, `allowCostOverrun`, `rowVersion`
@@ -526,9 +528,9 @@ Chat (retired) and meetings:
 - `UpdateMessageRequest`: `body` (retired)
 - `CreateAiChatSessionRequest`: `title?`, `projectId?` (retired)
 - `SendAiChatMessageRequest`: `message`, `useWebSearch` (retired)
-- `CreateMeetingRequest`: `projectId`, `taskId?`, `subject`, `agenda?`, `startDateTime`, `endDateTime`, `timeZone`, `scheduleWithTeams`, `participants[]`
-- `MeetingParticipantRequest`: `userId?`, `email`, `displayName?`, `role`
-- `CancelMeetingRequest`: `reason?`
+- `CreateMeetingRequest`: removed with the meetings feature.
+- `MeetingParticipantRequest`: removed with the meetings feature.
+- `CancelMeetingRequest`: removed with the meetings feature.
 
 ## Main Response DTOs
 
@@ -538,6 +540,7 @@ Use these as the shape inside `result`.
 - `UserProfileResponse`: `id`, `firstName`, `lastName`, `email`, `phoneNumber`, `imgUrl?`, `role`
 - `AccountResponse`: `id`, `firstName`, `lastName`, `email`, `phoneNumber`, `role`
 - `CustomerListResponse`: `id`, `firstName`, `lastName`, `email`
+- `WorkerListResponse`: `id`, `firstName`, `lastName`, `email`
 - `ProjectResponse`: `projectId`, `projectName`, `address?`, `status`, `createdDate`, `startDate`, `baselineStart`, `baselineEnd`, `totalProjectBudget`, `budgetConfigured`, `actualCost`, `plannedTaskBudget`, `reportedTaskActualCost`, `purchaseOrderCommittedCost`, `purchaseOrderReceivedCost`, `remainingProcurementBudget`, `currency`, `pmUserID`, `pmName`, `customerUserId?`, `customerName?`, `totalTasks`, `totalAIAlerts`, `rowVersion`
 - `ProjectBudgetHistoryResponse`: `id`, `projectId`, `amountChanged`, `previousBudget`, `newBudget`, `currency`, `reason`, `updatedByUserId`, `createdAt`
 - `TaskResponse`: `taskId`, `projectId`, `phaseId`, `phaseName`, `phase` (`phaseId`, `name`, `sequenceOrder`, `status`, `baselineStart`, `baselineEnd`), `taskName`, `assignedToUserID`, `assignedToUserName`, `plannedBudget`, `actualCost`, `actualProgressPct`, `status`, `baselineStart`, `baselineEnd`, `rowVersion`, `materialRequirements[]`
@@ -565,7 +568,7 @@ Use these as the shape inside `result`.
 - `AiChatSessionResponse`: `sessionId`, `userId`, `projectId?`, `title`, `createdAt?`, `lastMessageAt?`, `messageCount` (retired)
 - `AiChatMessageResponse`: `messageId`, `sessionId`, `role`, `content`, `createdAt`, `sentAt` (retired)
 - `AiChatReplyResponse`: `userMessage` (`AiChatMessageResponse`), `assistantMessage` (`AiChatMessageResponse`), `usedWebSearch`, `webSearchSources[]` (`title`, `url`) (retired)
-- `MeetingResponse`: `meetingId`, `projectId`, `taskId?`, `organizerId`, `organizerName?`, `subject`, `agenda?`, `startDateTime`, `endDateTime`, `timeZone`, `status`, `joinUrl?`, `externalEventId?`, `externalOnlineMeetingId?`, `failureReason?`, `participants[]`
+- `MeetingResponse`: removed with the meetings feature.
 
 ## Status and Code Values
 
@@ -659,7 +662,7 @@ The backend uses two providers with separate responsibilities:
 Frontend UX suggestions:
 
 - Surface backend `errorMessage` directly for missing-provider configuration (`Tavily:ApiKey...`, `GoogleAI:ApiKey...`).
-- Do not build UI for chat, AI chat, or supplier recommendations; those endpoints return HTTP 410.
+- Do not build UI for chat, AI chat, meetings, or supplier recommendations; chat/AI-chat/meeting code and tables were deleted (calls now 404), while PO writes, transfers writes, and recommendations still return HTTP 410.
 
 Backend configuration keys (for DevOps, not sent by frontend):
 
@@ -691,8 +694,21 @@ The first restructuring slice adds phase APIs while keeping existing task endpoi
 
 Phase request fields:
 
-- `CreatePhaseRequest`: `name`, `description?`, `sequenceOrder`, `baselineStart`, `baselineEnd`.
+- `CreatePhaseRequest`: `name`, `description?`, `sequenceOrder`, `baselineStart`, `baselineEnd`, `workCategoryId` (required, must exist).
 - `UpdatePhaseRequest`: the create fields plus `rowVersion`.
+- `PhaseResponse` / nested `phase`: include `workCategoryId` and `workCategoryName`.
+
+### Work Categories
+
+Base path: `/api/WorkCategories`. Global admin-managed lookup grouping phases. Reads need any authenticated user; writes are `ADMIN`-only.
+
+| Method | Path | Auth | Body | Result |
+| --- | --- | --- | --- | --- |
+| GET | `/` | any authenticated user | none | `WorkCategoryResponse[]` ordered by name |
+| GET | `/{id}` | any authenticated user | none | `WorkCategoryResponse` |
+| POST | `/` | `ADMIN` | `CreateWorkCategoryRequest` (`name`, `description?`) | `WorkCategoryResponse` (HTTP 201) |
+| PUT | `/{id}` | `ADMIN` | `UpdateWorkCategoryRequest` (`name`, `description?`) | `WorkCategoryResponse` |
+| DELETE | `/{id}` | `ADMIN` | none | Message; 409 while phases still reference the category |
 - `PhaseLifecycleRequest`: `rowVersion`.
 
 Phase status values are `PLANNED`, `IN_PROGRESS`, `COMPLETED`, and `CANCELLED`. Phase names are unique within a project. Phase dates must remain inside the project baseline. Keep the latest `rowVersion` and send it on updates and cancellation; stale values return HTTP 409.

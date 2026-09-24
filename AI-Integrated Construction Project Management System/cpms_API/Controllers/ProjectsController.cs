@@ -14,15 +14,18 @@ namespace cpms_API.Controllers
         private readonly IProjectService _projectService;
         private readonly IProjectExportService _projectExportService;
         private readonly IAiConstructionPlannerService _plannerService;
+        private readonly IRiskAssessmentService _riskAssessmentService;
 
         public ProjectsController(
             IProjectService projectService,
             IProjectExportService projectExportService,
-            IAiConstructionPlannerService plannerService)
+            IAiConstructionPlannerService plannerService,
+            IRiskAssessmentService riskAssessmentService)
         {
             _projectService = projectService;
             _projectExportService = projectExportService;
             _plannerService = plannerService;
+            _riskAssessmentService = riskAssessmentService;
         }
 
         // POST: api/projects
@@ -49,6 +52,15 @@ namespace cpms_API.Controllers
         public async Task<IActionResult> GetProjectById(int id)
         {
             var response = await _projectService.GetProjectByIdAsync(id);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
+        // GET: api/projects/{id}/context (minimal header for assigned site workers)
+        [HttpGet("{id}/context")]
+        [Authorize(Roles = "WORKER")]
+        public async Task<IActionResult> GetProjectContext(int id)
+        {
+            var response = await _projectService.GetProjectContextAsync(id);
             return StatusCode((int)response.StatusCode, response);
         }
 
@@ -118,6 +130,22 @@ namespace cpms_API.Controllers
         public async Task<IActionResult> GetBudgetHistories(int projectId)
         {
             var response = await _projectService.GetBudgetHistoriesByProjectIdAsync(projectId);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpGet("{projectId:int}/risks")]
+        [Authorize(Roles = "ADMIN,PM")]
+        public async Task<IActionResult> GetProjectRisks(int projectId)
+        {
+            var response = await _riskAssessmentService.GetProjectRisksAsync(projectId);
+            return StatusCode((int)response.StatusCode, response);
+        }
+
+        [HttpPost("{projectId:int}/risks/recommend-actions")]
+        [Authorize(Roles = "PM")]
+        public async Task<IActionResult> RecommendRiskActions(int projectId)
+        {
+            var response = await _riskAssessmentService.RecommendActionsAsync(projectId);
             return StatusCode((int)response.StatusCode, response);
         }
 

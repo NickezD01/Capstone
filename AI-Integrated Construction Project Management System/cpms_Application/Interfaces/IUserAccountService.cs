@@ -16,6 +16,7 @@ namespace cpms_Application.Interfaces
         Task<ApiResponse> GetAllAccountAsync();
         Task<ApiResponse> CreateAccountAsync(CreateUserAccountRequest request);
         Task<ApiResponse> GetCustomersAsync(string? search);
+        Task<ApiResponse> GetWorkersAsync(string? search);
         Task<ApiResponse> GetUserIdAsync();
         Task<ApiResponse> CountUser();
         //Task<ApiResponse> GetMemberAccount();

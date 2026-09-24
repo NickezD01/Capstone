@@ -23,7 +23,9 @@ namespace cpms_Application
         // ========================================================
         IProjectRepository Projects { get; }
         ITaskItemRepository TaskItems { get; }
+        IGenericRepository<TaskIssue> TaskIssues { get; }
         IGenericRepository<Phase> Phases { get; }
+        IGenericRepository<WorkCategory> WorkCategories { get; }
         IProgressReportRepository ProgressReports { get; }
 
         // ========================================================
@@ -58,17 +60,6 @@ namespace cpms_Application
         IWarehouseTransferRepository WarehouseTransfers { get; }
         IWarehouseTransferItemRepository WarehouseTransferItems { get; }
         IGenericRepository<TransferInventoryReservation> TransferInventoryReservations { get; }
-
-        // ========================================================
-        // CHAT & MEETINGS
-        // ========================================================
-        IChatConversationRepository ChatConversations { get; }
-        IChatParticipantRepository ChatParticipants { get; }
-        IChatMessageRepository ChatMessages { get; }
-        IAiChatSessionRepository AiChatSessions { get; }
-        IAiChatMessageRepository AiChatMessages { get; }
-        IMeetingRepository Meetings { get; }
-        IMeetingParticipantRepository MeetingParticipants { get; }
 
         // ========================================================
         // CORE METHODS

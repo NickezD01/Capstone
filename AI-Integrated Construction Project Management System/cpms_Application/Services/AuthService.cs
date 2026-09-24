@@ -148,9 +148,6 @@ public sealed class AuthService : IAuthService
             return Unauthorized();
         }
 
-        if (account.IsEmailVerified != true)
-            return new ApiResponse().SetApiResponse(HttpStatusCode.Forbidden, false, "Email verification is required.");
-
         account.FailedLoginAttempts = 0;
         account.LockoutEnd = null;
         if (IsLegacyPasswordHash(account.PasswordSalt))
@@ -200,7 +197,7 @@ public sealed class AuthService : IAuthService
                 return Unauthorized();
             }
             var user = await _unitOfWork.UserAccounts.GetByIdAsync(current.UserId);
-            if (user == null || user.IsEmailVerified != true)
+            if (user == null)
             {
                 current.IsRevoked = true;
                 current.RevokedAt = DateTime.UtcNow;
@@ -264,7 +261,7 @@ public sealed class AuthService : IAuthService
         var generic = new ApiResponse().SetOk("If the address is eligible, password reset instructions will be sent.");
         if (string.IsNullOrWhiteSpace(email)) return generic;
         var user = await FindByNormalizedEmailAsync(NormalizeEmail(email));
-        if (user == null || user.IsEmailVerified != true) return generic;
+        if (user == null) return generic;
 
         var code = GenerateSecurityCode();
         await ReplaceSecurityTokensAsync(user.Id, SecurityTokenPurposes.PasswordReset, code);

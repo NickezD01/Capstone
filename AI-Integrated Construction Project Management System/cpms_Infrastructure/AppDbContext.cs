@@ -31,20 +31,16 @@ namespace cpms_Infrastructure
         public DbSet<AuthRateLimitEntry> AuthRateLimitEntries { get; set; }
         public DbSet<AIAlert> AIAlerts { get; set; }
         public DbSet<SystemReport> SystemReports { get; set; }
-        public DbSet<ChatConversation> ChatConversations { get; set; }
-        public DbSet<ChatParticipant> ChatParticipants { get; set; }
-        public DbSet<ChatMessage> ChatMessages { get; set; }
-        public DbSet<AiChatSession> AiChatSessions { get; set; }
-        public DbSet<AiChatMessage> AiChatMessages { get; set; }
-        public DbSet<Meeting> Meetings { get; set; }
-        public DbSet<MeetingParticipant> MeetingParticipants { get; set; }
+
 
         // ========================================================
         // CORE PROJECT MANAGEMENT & PROGRESS
         // ========================================================
         public DbSet<Project> Projects { get; set; }
         public DbSet<TaskItem> TaskItems { get; set; }
+        public DbSet<TaskIssue> TaskIssues { get; set; }
         public DbSet<Phase> Phases { get; set; }
+        public DbSet<WorkCategory> WorkCategories { get; set; }
         public DbSet<ProgressReport> ProgressReports { get; set; }
         public DbSet<ProjectBudgetHistory> ProjectBudgetHistories { get; set; }
         public DbSet<MrpPlanningRun> MrpPlanningRuns { get; set; }

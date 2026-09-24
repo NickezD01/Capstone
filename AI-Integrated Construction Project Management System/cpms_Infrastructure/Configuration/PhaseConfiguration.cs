@@ -38,6 +38,11 @@ namespace cpms_Infrastructure.Configuration
                 .WithMany(project => project.Phases)
                 .HasForeignKey(p => p.ProjectId)
                 .OnDelete(DeleteBehavior.Cascade);
+
+            builder.HasOne(p => p.WorkCategory)
+                .WithMany(category => category.Phases)
+                .HasForeignKey(p => p.WorkCategoryId)
+                .OnDelete(DeleteBehavior.Restrict);
         }
     }
 }

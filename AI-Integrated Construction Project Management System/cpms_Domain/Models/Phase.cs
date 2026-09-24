@@ -7,6 +7,7 @@ namespace cpms_Domain.Models
     {
         public int PhaseId { get; set; }
         public int ProjectId { get; set; }
+        public int WorkCategoryId { get; set; }
         public string Name { get; set; } = null!;
         public string? Description { get; set; }
         public int SequenceOrder { get; set; }
@@ -16,6 +17,7 @@ namespace cpms_Domain.Models
         public byte[] RowVersion { get; set; } = Array.Empty<byte>();
 
         public virtual Project Project { get; set; } = null!;
+        public virtual WorkCategory WorkCategory { get; set; } = null!;
         public virtual ICollection<TaskItem> Tasks { get; set; } = new List<TaskItem>();
 
         public void UpdatePlan(string name, string? description, int sequenceOrder,

@@ -32,8 +32,8 @@ Rule of thumb for status codes:
 | Project export | ✅ full report | ✅ own, full | ✅ linked, inventory view | ✅ assigned, full |
 | AI plan preview/confirm | ❌ | ✅ own only | ❌ | ❌ |
 | AI planner `generate-json`/`generate-excel` | ✅ staff | ✅ staff | ✅ staff | ❌ |
-| Purchase-order writes, chat, AI chat, recommendations | ❌ 410 | ❌ 410 | ❌ 410 | ❌ 410 |
-| Meetings | ✅ | ✅ | ✅ | ✅ (unchanged) |
+| Purchase-order writes, chat, AI chat, recommendations | ❌ removed | ❌ removed | ❌ removed | ❌ removed |
+| Meetings | ❌ removed (code + tables dropped) | ❌ removed | ❌ removed | ❌ removed |
 | Supplier/catalog admin CRUD | ✅ (reference data only) | ❌ | ❌ | ❌ |
 
 `SUPPLIER` is a **retired role**: existing supplier accounts are locked out, `ADMIN` can no longer assign it — remove it from role dropdowns.
@@ -45,6 +45,22 @@ Rule of thumb for status codes:
 - Show inventory review (approve/reject) buttons to `WAREHOUSE_MANAGER`, including on their own submissions (self-review is allowed).
 - Remove warehouse create/edit screens, transfer create/approve/ship/receive screens, all chat screens, all AI-chat screens, recommendation screens, and all purchase-order write screens (keep PO history views).
 - Remove warehouse dropdowns everywhere (see §2).
+
+## 1b. Site Worker (new restricted role)
+
+A `WORKER` sees only what they're assigned to — build them a minimal workspace, not the PM dashboard:
+
+| Worker can access | Notes |
+| --- | --- |
+| `GET /api/Tasks/assigned` | Their task list (includes nested phase + work category) |
+| `GET /api/Tasks/{taskId}` | Own tasks only; others 403 |
+| `GET /api/Projects/{id}/context` | Minimal header only: name, address, start/end dates. No budget, no other tasks |
+| `POST /api/ProgressReport` | Submit for own tasks (still needs PM approval) |
+| `GET /api/ProgressReport/task/{taskId}` | Reports on own tasks (PM feedback) |
+
+PM side: task create/update now accept `assignedToUserID` — must be the PM themself (or 0) or a `WORKER`, anything else is 400. Feed the worker picker from `GET /api/UserAccount/Workers?search=` (ADMIN/PM).
+
+Work problems: workers (and PMs) report via `POST /api/Tasks/{taskId}/issues`; list via `GET .../issues`; PM resolves via `PUT /api/Tasks/issues/{issueId}/resolve` with `rowVersion`. Show open issues on the task view with reporter names and timestamps.
 
 ---
 
@@ -72,7 +88,8 @@ There is exactly one active warehouse. Warehouse selection no longer exists.
   - `GET /api/Projects/{projectId}/material-requirements`
 - `TaskResponse` carries `phaseId`, `phaseName`, and nested `phase`. Task dates must sit inside both project and phase baselines.
 - Phase endpoints: `POST /api/Projects/{projectId}/phases`, `GET .../phases`, `GET /api/Phases/{phaseId}`, `PUT /api/Phases/{phaseId}`, `POST /api/Phases/{phaseId}/cancel` (all owning-PM writes; reads are staff-scoped).
-- Project customer: `PUT /api/Projects/{projectId}/customer` (`customerUserId?`, `rowVersion`, owning PM). `ProjectResponse.customerName` exists. A `CUSTOMER` sees only assigned projects. Populate the picker with `GET /api/UserAccount/Customers?search=` (PM-visible, verified customers only).
+- Work categories: every phase belongs to a category (`workCategoryId`, required). Populate pickers from `GET /api/WorkCategories` (any authenticated user); only `ADMIN` manages the list. Phases/tasks responses and the export Phases/Tasks sheets include the category name.
+- Project customer: `PUT /api/Projects/{projectId}/customer` (`customerUserId?`, `rowVersion`, owning PM). `ProjectResponse.customerName` exists. A `CUSTOMER` sees only assigned projects. Populate the picker with `GET /api/UserAccount/Customers?search=` (PM-visible).
 - Visibility grants: assigned customers may list `GET .../phases` and `GET .../tasks` of their projects (detail endpoints stay staff-only); warehouse managers with operational project access may read `GET /api/ProgressReport/task/{taskId}`. Other roles still get 403 — keep the graceful "not shared" notes as fallback.
 - AI import alternative: `POST /api/Projects/import-word-ai` (multipart `.docx`, PM) returns a draft (`project` fields + `plan` preview with temp IDs, persists nothing). Show it for review, create the project normally, then send the preview to `.../ai/confirm`.
 
@@ -122,10 +139,28 @@ New fields on `MaterialRequestResponse`: `estimatedCost`, `actualCost`, `budgetD
 
 | Caller | Sheets |
 | --- | --- |
-| ADMIN, owning PM, assigned CUSTOMER (identical for PM/customer) | Project, Phases, Tasks, Material Requests, Request Lines, Budget Ledger, Budget Summary, Progress |
+| ADMIN, owning PM, assigned CUSTOMER (identical for PM/customer) | Project, Phases, Tasks, Gantt, Material Requests, Request Lines, Budget Ledger, Budget Summary, Progress |
 | Linked WAREHOUSE_MANAGER | Project, Material Requests, Request Lines, Inventory, Stock Movements |
 
 **Frontend changes:** add a download button; expect different sheets per role; no user/account data is ever included.
+
+---
+
+## 6b. Project risks (new)
+
+`GET /api/Projects/{projectId}/risks` (ADMIN, owning PM) returns a computed, never-persisted scan. Empty `risks[]` means all clear. Dependency risk is intentionally excluded (no dependency data exists).
+
+| Risk | Triggers |
+| --- | --- |
+| Schedule Delay | Progress gap > 10pp with deadline ≤ 14 days out (Warning), or past deadline (Critical) |
+| Work Item Delay | Current pace finishes after the task baseline end, or no progress with deadline ≤ 28 days out |
+| Progress Deviation | Actual ≥ 25pp below time-expected progress |
+| Material Shortage | Remaining task requirement exceeds available stock (Critical when nothing available) |
+| Material Availability | Task starts within 7 days with demand still unrequested or unfulfilled |
+| Budget Risk | Ledger spend ≥ 80% of budget (Warning), ≥ 100% (Critical); task actual over planned |
+| Overall Project Delay | Any Critical, or ≥ 2 warnings, or latest task end past project baseline |
+
+**Frontend changes:** risk dashboard/badge from this endpoint; render `message` + `metrics`; poll on project views (no push notifications). For AI-recommended actions, call `POST .../risks/recommend-actions` (owning PM) and render the suggestion list — actions are never applied automatically.
 
 ---
 
@@ -139,7 +174,7 @@ New fields on `MaterialRequestResponse`: `estimatedCost`, `actualCost`, `budgetD
 | All `/api/Chat` and `/api/AiChat` endpoints (writes and reads) | Remove chat UIs entirely |
 | Legacy `/api/task` aliases | `POST /api/task` keeps its 410 pointer |
 
-Kept as-is: meetings, supplier/catalog admin CRUD + staff reads, transfer/PO reads, inventory reads.
+Kept as-is: supplier/catalog admin CRUD + staff reads, transfer/PO reads, inventory reads. Chat/AI-chat/meeting code and tables were deleted outright (not just 410) — remove every reference including history views.
 
 ---
 
@@ -154,5 +189,7 @@ Kept as-is: meetings, supplier/catalog admin CRUD + staff reads, transfer/PO rea
 - [ ] WM actual-cost adjustment form + partial-issue flow + 409 handling.
 - [ ] AI preview → edit → confirm flow (stable temp IDs).
 - [ ] Export download button with role-aware sheet expectations.
-- [ ] Retired screens removed (PO writes, chat, AI chat, recommendations); 410 handled as "feature retired".
+- [ ] Retired screens removed (PO writes, chat, AI chat, recommendations, meetings); 410 handled as "feature retired", deleted routes as 404.
+- [ ] Worker workspace (assigned tasks, project header, report submit) + PM worker picker on task forms.
+- [ ] Risk dashboard: call `GET /api/Projects/{id}/risks` (ADMIN/owning PM), render `WARNING`/`CRITICAL` badges with messages + metrics; empty list means all clear.
 - [ ] `rowVersion` round-trip on every edit screen; 409 → refetch → retry.

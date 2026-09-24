@@ -11,7 +11,7 @@ Source files checked:
 ## Important Reading Notes
 
 - `Public` means no `[Authorize]` attribute is required by the controller/action.
-- `Authenticated` means any logged-in, email-verified user with a valid JWT can call the API, regardless of role.
+- `Authenticated` means any logged-in user with a valid JWT can call the API, regardless of role.
 - `ADMIN`, `PM`, and `WAREHOUSE_MANAGER` are the main app roles used by controller authorization.
 - The domain also has `SUPPLIER`, `CUSTOMER`, and `WORKER`, but almost no protected business APIs explicitly allow these roles. They can only call APIs marked `Authenticated`, plus public APIs.
 - Some APIs have extra service-level ownership checks. Example: a `PM` may be allowed by route attribute, but the service may still require that the PM owns the project.
@@ -21,44 +21,48 @@ Source files checked:
 
 Use this as the high-level menu/sidebar rule:
 
-| Area | ADMIN | PM | WAREHOUSE_MANAGER | CUSTOMER / SUPPLIER / WORKER |
-| --- | --- | --- | --- | --- |
-| Auth self-service | yes | yes | yes | yes |
-| Own profile | yes | yes | yes | yes |
-| User/account administration | yes | customer list only | no | no |
-| Categories read | yes | yes | yes | yes, even public |
-| Categories write | yes | no | no | no |
-| Materials read | yes | yes | yes | yes, if logged in |
-| Materials write | yes | no | no | no |
-| Projects read | yes | yes | yes | assigned only (CUSTOMER); no (SUPPLIER, WORKER) |
-| Projects create/import/update owned | no (create/import/update/lifecycle are PM-only) | yes | no | no |
-| Project budget adjustment | no | yes (owning PM only) | no | no |
-| Project manager reassignment | yes | no | no | no |
-| Tasks read | yes | yes | yes | yes (assigned projects only) |
-| Tasks create/update/lifecycle | no | yes | no | no |
-| Progress reports review | no | yes | no | no |
-| Progress reports read | yes | yes | yes (linked projects only) | no |
-| Material request creation/update/cancel | no | yes | no | no |
-| Material request approve/reject/issue/release | no | no | yes | no |
-| Material budget ledger (issue debits, cost corrections, return reversals) | read only | estimate only | yes (must manage the warehouse) | no |
-| Purchase order writes (create/approve/reject/procure/receive/ship/cancel) | no (retired, HTTP 410) | no (retired, HTTP 410) | no (retired, HTTP 410) | no |
-| Purchase order reads | yes (history) | yes (history) | yes (history) | no |
-| Suppliers read | yes | yes | yes | no |
-| Suppliers write | yes | no | no | no |
-| Supplier recommendations | no (retired, HTTP 410) | no (retired, HTTP 410) | no (retired, HTTP 410) | no (retired, HTTP 410) |
-| Catalog/offers read | yes | yes | yes | no |
-| Catalog/offers write | yes | no | no | no |
-| Warehouses read | yes | no | yes | no |
-| Warehouses create/update | no (both retired, HTTP 410) | no | no | no |
-| Inventory adjustments/count review | no | no | yes (must manage the warehouse; self-review allowed) | no |
-| Inventory operations/count creation/returns | no | no | yes (always active warehouse) | no |
-| Warehouse transfers | read only (writes retired, HTTP 410) | no | read only (writes retired, HTTP 410) | no |
-| Chat | no (retired, HTTP 410) | no (retired, HTTP 410) | no (retired, HTTP 410) | no (retired, HTTP 410) |
-| AI Chat | no (retired, HTTP 410) | no (retired, HTTP 410) | no (retired, HTTP 410) | no (retired, HTTP 410) |
-| AI Construction Planner | yes | yes | yes | no |
-| Project export | yes (full report) | yes (owned, full) | yes (linked, inventory view) | yes (assigned, full) |
-| AI project plan preview/confirm | no | yes (owning PM only) | no | no |
-| Meetings | yes | yes | yes | yes, if logged in |
+| Area | ADMIN | PM | WAREHOUSE_MANAGER | CUSTOMER | WORKER |
+| --- | --- | --- | --- | --- | --- |
+| Auth self-service | yes | yes | yes | yes | yes |
+| Own profile | yes | yes | yes | yes | yes |
+| User/account administration | yes | customer list only | no | no | no |
+| Categories read | yes | yes | yes | yes, even public | yes, if logged in |
+| Categories write | yes | no | no | no | no |
+| Materials read | yes | yes | yes | yes, if logged in | yes, if logged in |
+| Materials write | yes | no | no | no | no |
+| Projects read | yes | yes | yes | assigned only | no |
+| Project context (minimal header) | no | no | no | no | yes (assigned tasks only) |
+| Projects create/import/update owned | no (PM-only) | yes | no | no | no |
+| Project budget adjustment | no | yes (owning PM only) | no | no | no |
+| Project manager reassignment | yes | no | no | no | no |
+| Tasks read | yes | yes | yes | yes (assigned projects only) | yes (assigned tasks only) |
+| Tasks create/update/lifecycle | no | yes | no | no | no |
+| Task assignment | no | yes (self or worker) | no | no | no |
+| Progress reports submit | no | yes | no | no | yes (assigned tasks only) |
+| Progress reports review | no | yes | no | no | no |
+| Progress reports read | yes | yes | yes (linked projects only) | no | yes (assigned tasks only) |
+| Material request creation/update/cancel | no | yes | no | no | no |
+| Material request approve/reject/issue/release | no | no | yes | no | no |
+| Material budget ledger (issue debits, cost corrections, return reversals) | read only | estimate only | yes (must manage the warehouse) | no | no |
+| Purchase order writes (create/approve/reject/procure/receive/ship/cancel) | no (retired, HTTP 410) | no (retired, HTTP 410) | no (retired, HTTP 410) | no | no |
+| Purchase order reads | yes (history) | yes (history) | yes (history) | no | no |
+| Suppliers read | yes | yes | yes | no | no |
+| Suppliers write | yes | no | no | no | no |
+| Supplier recommendations | no (retired, HTTP 410) | no (retired, HTTP 410) | no (retired, HTTP 410) | no | no |
+| Catalog/offers read | yes | yes | yes | no | no |
+| Catalog/offers write | yes | no | no | no | no |
+| Warehouses read | yes | no | yes | no | no |
+| Warehouses create/update | no (both retired, HTTP 410) | no | no | no | no |
+| Inventory adjustments/count review | no | no | yes (must manage the warehouse; self-review allowed) | no | no |
+| Inventory operations/count creation/returns | no | no | yes (always active warehouse) | no | no |
+| Warehouse transfers | read only (writes retired, HTTP 410) | no | read only (writes retired, HTTP 410) | no | no |
+| Chat | removed | removed | removed | removed | removed |
+| AI Chat | removed | removed | removed | removed | removed |
+| AI Construction Planner | yes | yes | yes | no | no |
+| Project export | yes (full report) | yes (owned, full) | yes (linked, inventory view) | yes (assigned, full) | no |
+| AI project plan preview/confirm | no | yes (owning PM only) | no | no | no |
+| Project risks | yes | yes (owned) | no | no | no |
+| Meetings | removed | removed | removed | removed | removed |
 
 ## Public APIs
 
@@ -67,7 +71,7 @@ These APIs do not require a JWT.
 | Method | API | Purpose |
 | --- | --- | --- |
 | POST | `/api/Auth/register` | Retired — returns HTTP 410. Accounts are created by an administrator. |
-| POST | `/api/Auth/login` | Login and receive access/refresh tokens. Requires verified email. |
+| POST | `/api/Auth/login` | Login and receive access/refresh tokens. |
 | POST | `/api/Auth/Verification` | Retired — returns HTTP 410. Admin-created accounts are verified automatically. |
 | POST | `/api/Auth/resend-verification` | Retired — returns HTTP 410. |
 | POST | `/api/Auth/refresh` | Exchange refresh token for a new token pair. |
@@ -104,10 +108,10 @@ Any logged-in user can call these. That includes `ADMIN`, `PM`, `WAREHOUSE_MANAG
 | GET | `/api/AiChat/sessions/{sessionId}/messages` | Retired — returns HTTP 410. |
 | POST | `/api/AiChat/sessions/{sessionId}/messages` | Retired — returns HTTP 410. |
 | DELETE | `/api/AiChat/sessions/{sessionId}` | Retired — returns HTTP 410. |
-| POST | `/api/Meetings` | Any logged-in user. |
-| GET | `/api/Meetings/project/{projectId}` | Any logged-in user by route. |
-| GET | `/api/Meetings/{meetingId}` | Any logged-in user by route. |
-| PUT | `/api/Meetings/{meetingId}/cancel` | Any logged-in user by route. |
+| POST | `/api/Meetings` | Removed. |
+| GET | `/api/Meetings/project/{projectId}` | Removed. |
+| GET | `/api/Meetings/{meetingId}` | Removed. |
+| PUT | `/api/Meetings/{meetingId}/cancel` | Removed. |
 
 ## ADMIN APIs
 
@@ -145,26 +149,27 @@ Only `PM` can call these by controller attribute.
 
 | Method | API | Purpose / Extra Rule |
 | --- | --- | --- |
-| POST | `/api/Projects` | Create project. Service requires `PMUserID` to equal the current PM's user id. Optional `customerUserId` must be a verified `CUSTOMER`. |
+| POST | `/api/Projects` | Create project. Service requires `PMUserID` to equal the current PM's user id. Optional `customerUserId` must hold the `CUSTOMER` role. |
 | PUT | `/api/Projects/{projectId}/customer` | Assign or clear the project customer. Service requires owning PM, non-closed project, and `rowVersion`. |
 | POST | `/api/Projects/import-word` | Import project from Word. Service requires PM role/current user. |
 | POST | `/api/Projects/import-word-ai` | AI-extract a project + phase/task draft preview from a Word file. Persists nothing; create the project normally, then `confirm` the preview. |
 | POST | `/api/Projects/tasks/{taskId}/materials` | Assign planned material requirement to task. Service requires PM manages the project. |
 | PUT | `/api/Projects/{projectId}` | Update project. Service requires owning PM and `rowVersion`. |
 | POST | `/api/Projects/adjust-budget` | Adjust project budget. Service requires owning PM. |
+| POST | `/api/Projects/{projectId}/risks/recommend-actions` | AI-recommended corrective actions for the risk scan. Owning PM only; preview only, never auto-applied. |
 | POST | `/api/Projects/{projectId}/start` | Start project. Service requires owning PM. |
 | POST | `/api/Projects/{projectId}/pause` | Pause project. Service requires owning PM. |
 | POST | `/api/Projects/{projectId}/cancel` | Cancel project. Service requires owning PM. |
 | POST | `/api/Projects/{projectId}/reopen` | Reopen project. Service requires owning PM. |
 | POST | `/api/Projects/{projectId}/complete` | Complete project. Service requires owning PM. |
-| POST | `/api/Phases/{phaseId}/tasks` | Create task under a phase. Service requires owning PM; phase/project must not be completed or cancelled. |
+| POST | `/api/Phases/{phaseId}/tasks` | Create task under a phase. Service requires owning PM; phase/project must not be completed or cancelled. `assignedToUserId` must be the PM or a `WORKER`. |
 | POST | `/api/task` | Deprecated. Returns `410 Gone` pointing to `POST /api/Phases/{phaseId}/tasks`. |
-| GET | `/api/Tasks/assigned` | Get tasks assigned to current PM by service logic. |
-| PUT | `/api/Tasks/{taskId}` | Update task. Service requires owning PM, row version, and the target phase must belong to the same project. |
+| GET | `/api/Tasks/assigned` | Get tasks assigned to the caller (`PM` or `WORKER`) by service logic. |
+| PUT | `/api/Tasks/{taskId}` | Update task. Service requires owning PM, row version, and the target phase must belong to the same project. May reassign to the PM or a `WORKER`. |
 | POST | `/api/Tasks/{taskId}/cancel` | Cancel task. |
 | POST | `/api/Tasks/{taskId}/reject` | Reject task. |
 | POST | `/api/Tasks/{taskId}/reopen` | Reopen task. |
-| POST | `/api/ProgressReport` | Submit progress report. |
+| POST | `/api/ProgressReport` | Submit progress report. Owning PM, or assigned `WORKER` for their own tasks; PM approval still required. |
 | POST | `/api/ProgressReport/{reportId}/approve` | Approve progress report. |
 | POST | `/api/ProgressReport/{reportId}/reject` | Reject progress report. |
 | POST | `/api/ProgressReport/{reportId}/correct` | Correct progress report. |
@@ -207,6 +212,7 @@ Both `ADMIN` and `PM` can call these.
 | Method | API | Purpose / Extra Rule |
 | --- | --- | --- |
 | GET | `/api/Projects/{projectId}/budget-histories` | View budget history. Service requires ADMIN or owning PM. |
+| GET | `/api/Projects/{projectId}/risks` | Deterministic delay/risk scan (schedule, work-item, overall, material, progress, budget). Service requires ADMIN or owning PM. Computed on demand, never persisted. |
 | PUT | `/api/PurchaseOrders/{id}/approve` | Retired — returns HTTP 410. |
 | PUT | `/api/PurchaseOrders/{id}/reject` | Retired — returns HTTP 410. |
 
@@ -246,6 +252,7 @@ These are the main shared business read APIs.
 | GET | `/api/MaterialRequest/project/{projectId}` | Material requests by project. |
 | GET | `/api/Projects` | List projects. PM sees owned projects; CUSTOMER sees only projects assigned to them; warehouse manager sees operationally linked projects. |
 | GET | `/api/Projects/{id}` | Project detail. PM requires ownership; CUSTOMER requires that the project's `customerUserId` equals their user id. |
+| GET | `/api/Projects/{id}/context` | Minimal project header (`projectId`, name, address, dates) for assigned `WORKER`s. |
 | GET | `/api/Projects/{projectId}/material-requirements` | Project material requirements. |
 | POST | `/api/Projects/{projectId}/mrp-runs` | Calculate MRP. PM must own project; warehouse manager must manage the active warehouse. Any supplied `warehouseId` is ignored. |
 | GET | `/api/Projects/{projectId}/mrp-runs/latest` | Latest MRP run. PM must own project; warehouse manager must manage the active warehouse. Any supplied `warehouseId` is ignored. |
@@ -255,7 +262,7 @@ These are the main shared business read APIs.
 | GET | `/api/Suppliers` | List suppliers. |
 | GET | `/api/Suppliers/{supplierId}` | Supplier detail. |
 | GET | `/api/Projects/{projectId}/tasks` | Tasks by project. Assigned `CUSTOMER` may list tasks of their projects. The legacy `/api/task` aliases were removed. |
-| GET | `/api/Tasks/{taskId}` | Task detail. |
+| GET | `/api/Tasks/{taskId}` | Task detail. Assigned `WORKER` may read their own tasks. |
 | GET | `/api/Projects/{projectId}/material-requirements` | Task/project material requirements. |
 
 ## AI Construction Planner APIs
@@ -267,6 +274,16 @@ These are the main shared business read APIs.
 | GET | `/api/AiConstructionPlanner/questions` | Returns the fixed planner questions. Any authenticated user. |
 | POST | `/api/AiConstructionPlanner/generate-json` | Generate a construction plan. If `projectId` is supplied, the caller must have staff project access (ADMIN, owning PM, or operationally linked warehouse manager). |
 | POST | `/api/AiConstructionPlanner/generate-excel` | Build an Excel workbook from a generated plan. If `projectId` is supplied, the same staff project-access rule applies. |
+
+## Task Issue APIs (Work Problems)
+
+Reported by the owning PM or the assigned site worker; resolved only by the owning PM.
+
+| Method | API | Purpose / Extra Rule |
+| --- | --- | --- |
+| POST | `/api/Tasks/{taskId}/issues` | Report a work problem (`description`, `photoUrl?`). Owning PM or assigned `WORKER`. |
+| GET | `/api/Tasks/{taskId}/issues` | List work problems, newest first. Owning PM, assigned `WORKER`, or ADMIN. |
+| PUT | `/api/Tasks/issues/{issueId}/resolve` | Resolve a work problem (`resolutionNote?`, `rowVersion`). Owning PM only; open issues only. |
 
 ## AI Project Planning APIs (Preview/Confirm)
 
@@ -285,16 +302,18 @@ Only the owning `PM` may call these. Generation returns a stateless preview with
 
 | View | Sheets |
 | --- | --- |
-| Full (ADMIN, owning PM, assigned CUSTOMER) | Project, Phases, Tasks, Material Requests, Request Lines, Budget Ledger, Budget Summary, Progress |
+| Full (ADMIN, owning PM, assigned CUSTOMER) | Project, Phases, Tasks, Gantt, Material Requests, Request Lines, Budget Ledger, Budget Summary, Progress |
 | Inventory (linked WAREHOUSE_MANAGER) | Project, Material Requests, Request Lines, Inventory, Stock Movements |
 
 Rules: the customer workbook is identical to the PM workbook (same request costs, budget impact, and progress). The inventory view covers only variants tied to the project's requests at the active warehouse (latest 500 movements). No user/account administration data is included in any view.
 
 ## APIs Not Intended for CUSTOMER, SUPPLIER, WORKER
 
-`SUPPLIER`, `CUSTOMER`, and `WORKER` exist in the domain enum, but the controller attributes do not grant them access to the main project/procurement/warehouse/user-admin APIs.
+`SUPPLIER` and `CUSTOMER` exist in the domain enum, but the controller attributes do not grant them access to the main project/procurement/warehouse/user-admin APIs. `WORKER` has its own narrow grants (see below).
 
 `CUSTOMER` has four exceptions, all scoped by service logic to projects where `customerUserId` equals the caller's user id: `GET /api/Projects` and `GET /api/Projects/{id}`; `GET /api/Projects/{projectId}/export`, which returns the assigned project's full workbook (identical to the PM view); and the read-only lists `GET /api/Projects/{projectId}/phases` and `GET /api/Projects/{projectId}/tasks`.
+
+`WORKER` exceptions (all scoped to tasks assigned to the caller): `GET /api/Tasks/assigned`, `GET /api/Tasks/{taskId}`, `GET /api/Projects/{id}/context` (minimal header: name, address, dates), `POST /api/ProgressReport` (submit for assigned tasks), and `GET /api/ProgressReport/task/{taskId}` (reports of assigned tasks).
 
 They cannot access APIs restricted to:
 
@@ -310,7 +329,6 @@ They can access:
 - Public auth/category endpoints.
 - Own profile endpoints.
 - Authenticated material read endpoints.
-- Authenticated meeting endpoints.
 
 ## User List API Example
 
@@ -319,7 +337,8 @@ The user list/count/role APIs are admin-only:
 | Method | API | Allowed role |
 | --- | --- | --- |
 | GET | `/api/UserAccount/GetAllAccountAsync` | `ADMIN` only |
-| GET | `/api/UserAccount/Customers` | `ADMIN`, `PM` — verified customers only (`id`, name, email), optional `?search=` |
+| GET | `/api/UserAccount/Customers` | `ADMIN`, `PM` — customers only (`id`, name, email), optional `?search=` |
+| GET | `/api/UserAccount/Workers` | `ADMIN`, `PM` — site workers only (`id`, name, email), optional `?search=` |
 | GET | `/api/UserAccount/CountUser` | `ADMIN` only |
 | PUT | `/api/UserAccount/UpdateUserRoleProfile/{customerId}` | `ADMIN` only (`SUPPLIER` can no longer be assigned) |
 | POST | `/api/Auth/admin/reset-password/{userId}` | `ADMIN` only |
@@ -344,9 +363,21 @@ Phase endpoints are now available as the first additive restructuring slice. The
 
 Phase request/response models:
 
-- `CreatePhaseRequest`: `name`, `description?`, `sequenceOrder`, `baselineStart`, `baselineEnd`.
+- `CreatePhaseRequest`: `name`, `description?`, `sequenceOrder`, `baselineStart`, `baselineEnd`, `workCategoryId` (required, must exist).
 - `UpdatePhaseRequest`: the create fields plus `rowVersion`.
 - `PhaseLifecycleRequest`: `rowVersion`.
-- `PhaseResponse`: `phaseId`, `projectId`, `name`, `description?`, `sequenceOrder`, `baselineStart`, `baselineEnd`, `status`, `createdDate`, `rowVersion`.
+- `PhaseResponse`: `phaseId`, `projectId`, `workCategoryId`, `workCategoryName`, `name`, `description?`, `sequenceOrder`, `baselineStart`, `baselineEnd`, `status`, `createdDate`, `rowVersion`. The nested `phase` summary in `TaskResponse` carries the same category fields.
 
 Phase status values are `PLANNED`, `IN_PROGRESS`, `COMPLETED`, and `CANCELLED`. Phase names are unique within a project. Dates must remain within the project baseline, and stale updates return HTTP 409.
+
+## Work Category APIs
+
+Global admin-managed lookup grouping phases. Reads require any authenticated user; writes are `ADMIN`-only.
+
+| Method | API | Purpose / Extra Rule |
+| --- | --- | --- |
+| GET | `/api/WorkCategories` | List categories ordered by name. |
+| GET | `/api/WorkCategories/{id}` | Category detail. |
+| POST | `/api/WorkCategories` | Create category. Name required (≤ 200 chars), unique; description ≤ 2000 chars. |
+| PUT | `/api/WorkCategories/{id}` | Rename/update a category. Same validation. |
+| DELETE | `/api/WorkCategories/{id}` | Delete a category. Blocked with HTTP 409 while phases still reference it. |

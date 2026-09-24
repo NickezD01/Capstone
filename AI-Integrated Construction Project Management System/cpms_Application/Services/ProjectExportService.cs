@@ -139,6 +139,12 @@ namespace cpms_Application.Services
                 };
             }).ToList();
 
+            var categories = await _uow.WorkCategories.GetAllAsync(null);
+            var categoryById = categories.ToDictionary(c => c.WorkCategoryId, c => c.Name);
+            var categoryByPhaseId = phases.ToDictionary(
+                p => p.PhaseId,
+                p => categoryById.TryGetValue(p.WorkCategoryId, out var name) ? name : string.Empty);
+
             using var workbook = new XLWorkbook();
             ExcelSheetWriter.AddSheet(workbook, "Project", new[] { projectRow });
             if (fullView)
@@ -147,6 +153,7 @@ namespace cpms_Application.Services
                 {
                     PhaseId = p.PhaseId,
                     Name = p.Name,
+                    WorkCategory = categoryByPhaseId.GetValueOrDefault(p.PhaseId, string.Empty),
                     Description = p.Description,
                     SequenceOrder = p.SequenceOrder,
                     BaselineStart = p.BaselineStart,
@@ -162,6 +169,7 @@ namespace cpms_Application.Services
                 {
                     TaskId = t.TaskId,
                     PhaseName = t.PhaseName,
+                    WorkCategory = categoryByPhaseId.GetValueOrDefault(t.PhaseId, string.Empty),
                     TaskName = t.TaskName,
                     AssignedTo = assignees.TryGetValue(t.AssignedToUserID, out var name) ? name : string.Empty,
                     PlannedBudget = t.PlannedBudget,
@@ -171,6 +179,7 @@ namespace cpms_Application.Services
                     ActualProgressPct = t.ActualProgressPct,
                     Status = t.Status.ToString()
                 }).ToList());
+                AddGanttSheet(workbook, project, phases, tasks);
             }
             ExcelSheetWriter.AddSheet(workbook, "Material Requests", requestRows);
             ExcelSheetWriter.AddSheet(workbook, "Request Lines", lineRows);
@@ -264,6 +273,108 @@ namespace cpms_Application.Services
                 Content = stream.ToArray(),
                 FileName = ExcelSheetWriter.BuildDownloadFileName(null, $"{project.ProjectName}-export")
             });
+        }
+
+        private static void AddGanttSheet(
+            XLWorkbook workbook, Project project, List<Phase> phases, List<TaskItem> tasks)
+        {
+            const int maxWeeks = 104;
+            var rangeStart = project.BaselineStart.Date;
+            var totalDays = Math.Max(1, (project.BaselineEnd.Date - rangeStart).Days + 1);
+            var weekCount = Math.Min(maxWeeks, (totalDays + 6) / 7);
+            var weekStarts = Enumerable.Range(0, weekCount).Select(w => rangeStart.AddDays(w * 7)).ToList();
+            var today = DateTime.UtcNow.Date;
+
+            var worksheet = workbook.Worksheets.Add("Gantt");
+            worksheet.Cell(1, 1).Value =
+                "Legend: green = completed, blue = in progress, gray = pending, \u26a0 = at risk. " +
+                $"Weeks run {rangeStart:yyyy-MM-dd} to {weekStarts[weekCount - 1]:yyyy-MM-dd}." +
+                (totalDays > maxWeeks * 7 ? " Timeline truncated at 104 weeks." : string.Empty);
+            worksheet.Cell(1, 1).Style.Font.Bold = true;
+
+            var headers = new[] { "Phase / Task", "Progress %", "Status", "At Risk" };
+            for (var column = 0; column < headers.Length; column++)
+            {
+                var cell = worksheet.Cell(2, column + 1);
+                cell.Value = headers[column];
+                cell.Style.Font.Bold = true;
+                cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#E8F1FF");
+                cell.Style.Border.BottomBorder = XLBorderStyleValues.Thin;
+            }
+            for (var week = 0; week < weekCount; week++)
+            {
+                var cell = worksheet.Cell(2, headers.Length + week + 1);
+                cell.Value = weekStarts[week];
+                cell.Style.NumberFormat.Format = "yyyy-mm-dd";
+                cell.Style.Font.Bold = true;
+                cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#E8F1FF");
+                cell.Style.Border.BottomBorder = XLBorderStyleValues.Thin;
+            }
+
+            var rowNumber = 3;
+            var phasesInOrder = phases.OrderBy(p => p.SequenceOrder).ThenBy(p => p.Name).ToList();
+            var ungrouped = tasks.Where(t => phasesInOrder.All(p => p.PhaseId != t.PhaseId))
+                .OrderBy(t => t.TaskId).ToList();
+            foreach (var group in phasesInOrder
+                .Select(p => (Phase: (Phase?)p, Tasks: tasks.Where(t => t.PhaseId == p.PhaseId).OrderBy(t => t.TaskId).ToList()))
+                .Concat(ungrouped.Count == 0
+                    ? Enumerable.Empty<(Phase? Phase, List<TaskItem> Tasks)>()
+                    : new[] { (Phase: (Phase?)null, Tasks: ungrouped) }))
+            {
+                if (group.Phase != null)
+                {
+                    var cell = worksheet.Cell(rowNumber, 1);
+                    cell.Value = group.Phase.Name;
+                    cell.Style.Font.Bold = true;
+                    for (var column = 1; column <= headers.Length + weekCount; column++)
+                        worksheet.Cell(rowNumber, column).Style.Fill.BackgroundColor = XLColor.FromHtml("#D9E1F2");
+                    rowNumber++;
+                }
+                foreach (var task in group.Tasks)
+                {
+                    worksheet.Cell(rowNumber, 1).Value = "  " + task.TaskName;
+                    worksheet.Cell(rowNumber, 2).Value = task.ActualProgressPct;
+                    worksheet.Cell(rowNumber, 3).Value = task.Status.ToString();
+                    var atRisk = IsTaskAtRisk(task, today);
+                    worksheet.Cell(rowNumber, 4).Value = atRisk ? "\u26a0" : string.Empty;
+                    var bar = task.Status switch
+                    {
+                        cpms_Domain.Models.TaskStatus.COMPLETED => XLColor.FromHtml("#C6EFCE"),
+                        cpms_Domain.Models.TaskStatus.IN_PROGRESS or cpms_Domain.Models.TaskStatus.ACTIVE => XLColor.FromHtml("#BDD7EE"),
+                        _ => XLColor.FromHtml("#D9D9D9")
+                    };
+                    for (var week = 0; week < weekCount; week++)
+                    {
+                        var weekStart = weekStarts[week];
+                        var weekEnd = weekStart.AddDays(6);
+                        if (weekStart <= task.BaselineEnd.Date && weekEnd >= task.BaselineStart.Date)
+                            worksheet.Cell(rowNumber, headers.Length + week + 1).Style.Fill.BackgroundColor = bar;
+                    }
+                    rowNumber++;
+                }
+            }
+
+            worksheet.SheetView.FreezeRows(2);
+            worksheet.Columns(1, headers.Length).AdjustToContents();
+            worksheet.Columns(headers.Length + 1, headers.Length + weekCount).Width = 13;
+        }
+
+        /// <summary>
+        /// Display mirror of the risk scan's schedule rules: overdue incomplete
+        /// work, or progress more than 10 points behind with 14 days to deadline.
+        /// </summary>
+        private static bool IsTaskAtRisk(TaskItem task, DateTime today)
+        {
+            if (task.Status is cpms_Domain.Models.TaskStatus.COMPLETED or
+                cpms_Domain.Models.TaskStatus.CANCELLED or cpms_Domain.Models.TaskStatus.REJECTED)
+                return false;
+            if (task.BaselineEnd.Date < today)
+                return true;
+            var durationDays = Math.Max(1, (task.BaselineEnd.Date - task.BaselineStart.Date).Days + 1);
+            var elapsedDays = Math.Clamp((today - task.BaselineStart.Date).Days + 1, 0, durationDays);
+            var expectedPct = Math.Round(100m * elapsedDays / durationDays, 2);
+            return expectedPct - task.ActualProgressPct > 10 &&
+                (task.BaselineEnd.Date - today).Days <= 14;
         }
 
         private async Task<string> DisplayNameAsync(int userId)

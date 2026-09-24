@@ -21,7 +21,9 @@ namespace cpms_Infrastructure
         public IUserAccountRepository UserAccounts { get; }
         public IProjectRepository Projects { get; }
         public ITaskItemRepository TaskItems { get; }
+        public IGenericRepository<cpms_Domain.Models.TaskIssue> TaskIssues { get; }
         public IGenericRepository<cpms_Domain.Models.Phase> Phases { get; }
+        public IGenericRepository<cpms_Domain.Models.WorkCategory> WorkCategories { get; }
         public IProgressReportRepository ProgressReports { get; }
         public IMaterialRepository Materials { get; }
         public IGenericRepository<cpms_Domain.Models.MaterialVariant> MaterialVariants { get; }
@@ -45,13 +47,7 @@ namespace cpms_Infrastructure
         public IWarehouseTransferRepository WarehouseTransfers { get; }
         public IWarehouseTransferItemRepository WarehouseTransferItems { get; }
         public IGenericRepository<cpms_Domain.Models.TransferInventoryReservation> TransferInventoryReservations { get; }
-        public IChatConversationRepository ChatConversations { get; }
-        public IChatParticipantRepository ChatParticipants { get; }
-        public IChatMessageRepository ChatMessages { get; }
-        public IAiChatSessionRepository AiChatSessions { get; }
-        public IAiChatMessageRepository AiChatMessages { get; }
-        public IMeetingRepository Meetings { get; }
-        public IMeetingParticipantRepository MeetingParticipants { get; }
+
 
 
         public IMaterialRequestRepository MaterialRequests { get; }
@@ -72,7 +68,9 @@ namespace cpms_Infrastructure
             UserAccounts = new UserAccountRepository(context);
             Projects = new ProjectRepository(context);
             TaskItems = new TaskItemRepository(context);
+            TaskIssues = new GenericRepository<cpms_Domain.Models.TaskIssue>(context);
             Phases = new GenericRepository<cpms_Domain.Models.Phase>(context);
+            WorkCategories = new GenericRepository<cpms_Domain.Models.WorkCategory>(context);
             ProgressReports = new ProgressReportRepository(context);
             Materials = new MaterialRepository(context);
             MaterialVariants = new GenericRepository<cpms_Domain.Models.MaterialVariant>(context);
@@ -92,13 +90,7 @@ namespace cpms_Infrastructure
             InventoryAdjustments = new GenericRepository<cpms_Domain.Models.InventoryAdjustment>(context);
             PhysicalCountSessions = new GenericRepository<cpms_Domain.Models.PhysicalCountSession>(context);
             PhysicalCountLines = new GenericRepository<cpms_Domain.Models.PhysicalCountLine>(context);
-            ChatConversations = new ChatConversationRepository(context);
-            ChatParticipants = new ChatParticipantRepository(context);
-            ChatMessages = new ChatMessageRepository(context);
-            AiChatSessions = new AiChatSessionRepository(context);
-            AiChatMessages = new AiChatMessageRepository(context);
-            Meetings = new MeetingRepository(context);
-            MeetingParticipants = new MeetingParticipantRepository(context);
+
 
  
             MaterialRequests = new MaterialRequestRepository(context);

@@ -21,13 +21,15 @@ public class ProjectExportServiceTests
         Assert.True(response.IsSuccess, response.ErrorMessage);
         using var workbook = OpenWorkbook(response);
         Assert.Equal(
-            new[] { "Project", "Phases", "Tasks", "Material Requests", "Request Lines", "Budget Ledger", "Budget Summary", "Progress" },
+            new[] { "Project", "Phases", "Tasks", "Gantt", "Material Requests", "Request Lines", "Budget Ledger", "Budget Summary", "Progress" },
             workbook.Worksheets.Select(w => w.Name).ToArray());
         Assert.Equal("Tower A", CellValue(workbook, "Project", "Project Name"));
         Assert.Equal(956m, CellValue(workbook, "Budget Summary", "Remaining Budget"));
         Assert.Equal("Excavate", CellValue(workbook, "Tasks", "Task Name"));
         Assert.Equal(44m, CellValue(workbook, "Request Lines", "Debited Amount"));
         Assert.Equal(4m, CellValue(workbook, "Request Lines", "Net Issued Quantity"));
+        Assert.Equal("Structural", CellValue(workbook, "Phases", "Work Category"));
+        Assert.Equal("Structural", CellValue(workbook, "Tasks", "Work Category"));
     }
 
     [Fact]
@@ -92,8 +94,31 @@ public class ProjectExportServiceTests
 
         Assert.True(response.IsSuccess, response.ErrorMessage);
         using var workbook = OpenWorkbook(response);
-        Assert.Equal(8, workbook.Worksheets.Count);
+        Assert.Equal(9, workbook.Worksheets.Count);
         Assert.True(workbook.Worksheets.Contains("Budget Ledger"));
+        Assert.True(workbook.Worksheets.Contains("Gantt"));
+    }
+
+    [Fact]
+    public async Task FullWorkbookContainsGanttSheet()
+    {
+        var uow = CreateFixture();
+        var service = new ProjectExportService(uow, new FakeClaimService(5, Role.PM));
+
+        var response = await service.ExportProjectAsync(1);
+
+        Assert.True(response.IsSuccess, response.ErrorMessage);
+        using var workbook = OpenWorkbook(response);
+        var gantt = workbook.Worksheet("Gantt");
+        Assert.Contains("Legend", gantt.Cell(1, 1).GetString());
+        Assert.Equal(new DateTime(2026, 10, 1), gantt.Cell(2, 5).GetDateTime());
+        Assert.Equal("Foundation", gantt.Cell(3, 1).GetString());
+        Assert.True(gantt.Cell(3, 1).Style.Font.Bold);
+        Assert.Equal("Excavate", gantt.Cell(4, 1).GetString().Trim());
+        Assert.Equal(XLColor.FromHtml("#BDD7EE"), gantt.Cell(4, 5).Style.Fill.BackgroundColor);
+        Assert.NotEqual(XLColor.FromHtml("#BDD7EE"), gantt.Cell(4, 14).Style.Fill.BackgroundColor);
+        Assert.Equal("Old works", gantt.Cell(5, 1).GetString().Trim());
+        Assert.Equal("\u26a0", gantt.Cell(5, 4).GetString());
     }
 
     [Fact]
@@ -141,11 +166,14 @@ public class ProjectExportServiceTests
             PMUserID = 5,
             CustomerUserId = 20
         };
+        var category = new WorkCategory { WorkCategoryId = 1, Name = "Structural" };
         var phase = new Phase
         {
             PhaseId = 1,
             ProjectId = 1,
             Project = project,
+            WorkCategoryId = 1,
+            WorkCategory = category,
             Name = "Foundation",
             SequenceOrder = 0,
             BaselineStart = new DateTime(2026, 10, 1),
@@ -203,8 +231,26 @@ public class ProjectExportServiceTests
         };
         item.MaterialRequest = request;
         uow.ProjectRecords.Add(project);
+        uow.WorkCategoryRecords.Add(category);
         uow.PhaseRecords.Add(phase);
         uow.TaskRecords.Add(task);
+        uow.TaskRecords.Add(new TaskItem
+        {
+            TaskId = 2,
+            ProjectId = 1,
+            Project = project,
+            PhaseId = 1,
+            Phase = phase,
+            PhaseName = "Foundation",
+            TaskName = "Old works",
+            AssignedToUserID = 5,
+            PlannedBudget = 100,
+            ActualCost = 0,
+            BaselineStart = new DateTime(2000, 1, 1),
+            BaselineEnd = new DateTime(2000, 2, 1),
+            ActualProgressPct = 10,
+            Status = cpms_Domain.Models.TaskStatus.IN_PROGRESS
+        });
         uow.UserAccountRecords.AddRange(new[]
         {
             new UserAccount { Id = 5, Role = Role.PM, IsEmailVerified = true, FirstName = "Pat", LastName = "Manager" },

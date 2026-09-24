@@ -34,8 +34,9 @@ public sealed class ProgressReportService : IProgressReportService
         var project = await _uow.Projects.GetByIdAsync(task.ProjectId);
         if (project == null) return new ApiResponse().SetNotFound("Project not found.");
         var isOwner = IsRole(currentUser, Role.PM) && project.PMUserID == currentUser.Id;
-        if (!isOwner)
-            return Forbidden("Only the owning project manager may submit progress.");
+        var isAssignee = IsRole(currentUser, Role.WORKER) && task.AssignedToUserID == currentUser.Id;
+        if (!isOwner && !isAssignee)
+            return Forbidden("Only the owning project manager or the assigned site worker may submit progress.");
         if (project.Status is not (ProjectStatus.IN_PROGRESS or ProjectStatus.DELAYED))
             return new ApiResponse().SetConflict("Progress can only be submitted after the project has started and while it remains active.");
         if (task.Status is DomainTaskStatus.CANCELLED or DomainTaskStatus.REJECTED or DomainTaskStatus.COMPLETED)
@@ -230,7 +231,8 @@ public sealed class ProgressReportService : IProgressReportService
         if (project == null) return new ApiResponse().SetNotFound("Project not found.");
         var user = _claimService.GetUserClaim();
         if (!IsRole(user, Role.ADMIN) && !(IsRole(user, Role.PM) && project.PMUserID == user.Id) &&
-            !(IsRole(user, Role.WAREHOUSE_MANAGER) && await _projectAccess.CanViewProjectAsStaffAsync(project)))
+            !(IsRole(user, Role.WAREHOUSE_MANAGER) && await _projectAccess.CanViewProjectAsStaffAsync(project)) &&
+            !(IsRole(user, Role.WORKER) && task.AssignedToUserID == user.Id))
             return Forbidden("You do not have access to this task's progress reports.");
         var reports = await _uow.ProgressReports.GetAllAsync(r => r.TaskId == taskId,
             query => query.Include(r => r.Reporter).Include(r => r.Task));

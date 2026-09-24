@@ -1,7 +1,5 @@
 using AutoMapper;
 using cpms_Application.MyMapper;
-using cpms_Application.Request.AiChat;
-using cpms_Application.Request.Chat;
 using cpms_Application.Request.PurchaseOrder;
 using cpms_Application.Request.SupplierRecommendation;
 using cpms_Application.Request.User;
@@ -48,37 +46,11 @@ public class DeprecatedEndpointTests
     [Fact]
     public void SupplierRecommendationsAreGone()
     {
-        var controller = new SuppliersController(null!, null!);
+        var controller = new SuppliersController(null!);
 
         var result = controller.RecommendBalancedSuppliers(new BalancedSupplierRecommendationRequest());
 
         Assert.Equal(410, StatusOf(result));
-    }
-
-    [Fact]
-    public void ChatEndpointsAreGone()
-    {
-        var controller = new ChatController(null!);
-
-        Assert.Equal(410, StatusOf(controller.CreateConversation(new CreateConversationRequest())));
-        Assert.Equal(410, StatusOf(controller.GetProjectConversations(1)));
-        Assert.Equal(410, StatusOf(controller.GetMessages(1)));
-        Assert.Equal(410, StatusOf(controller.SendMessage(1, new SendMessageRequest())));
-        Assert.Equal(410, StatusOf(controller.UpdateMessage(1, new UpdateMessageRequest())));
-        Assert.Equal(410, StatusOf(controller.DeleteMessage(1)));
-        Assert.Equal(410, StatusOf(controller.MarkRead(1)));
-    }
-
-    [Fact]
-    public void AiChatEndpointsAreGone()
-    {
-        var controller = new AiChatController(null!);
-
-        Assert.Equal(410, StatusOf(controller.CreateSession(new CreateAiChatSessionRequest())));
-        Assert.Equal(410, StatusOf(controller.GetSessions()));
-        Assert.Equal(410, StatusOf(controller.GetMessages(1)));
-        Assert.Equal(410, StatusOf(controller.SendMessage(1, new SendAiChatMessageRequest())));
-        Assert.Equal(410, StatusOf(controller.DeleteSession(1)));
     }
 
     [Fact]
